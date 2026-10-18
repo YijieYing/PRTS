@@ -27,6 +27,7 @@
 |---|---|
 | **Mac**（本机） | Apple M5，24GB 内存，macOS 26.4，用户名 `prts`。Claude Code / Codex 跑在这里。 |
 | **lain**（Dell，远程服务器） | `ssh lain` → `yijieying@lain-linux`。Ubuntu 22.04，16 核，15GB 内存，RTX 4050 Laptop GPU（6GB 显存），根分区 317G（已用 83%，剩约 53G）。24h 插电运行。 |
+| ⚠️ lain 注意 | 笔记本合盖运行，但 logind 的合盖挂起没有关掉，导致 auth.log 被刷屏（2026-10-18 发现，见 prts.md 日志）。 |
 | 第三台服务器 | 还没搭好。 |
 | 云端 VM | prts.md 中提到过，具体情况未知。 |
 
