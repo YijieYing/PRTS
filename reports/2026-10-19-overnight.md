@@ -26,3 +26,11 @@
 - 美股 16:00 ET（东京 05:00）收盘，所以盘中时间只剩大约 2 小时。之后的研究都基于历史数据。
 - 如果 Claude desktop 关闭：supervisor 是用 nohup 启动的，会继续跑完；只是我的验收要等到下次会话再做。
 - `~/Projects/aquant` 里那 12 个未提交的改动，不在 worktree 基线中。
+
+## 03:06 JST 改为接管已有 thread（用户提出）
+- 发现：用户手开的 Codex（thread `01a1532a`）已经在做第五阶段，也已经做完第四阶段的 159 组实验；而 worktree worker 的起点是旧基线，等于重复劳动。这是一次真实发生的“多 agent 信息不同步”。
+- 处理：
+  1. 停掉 worktree worker。它在分支 `overnight/2026-10-19` 上留下 1 个 commit，已作废。
+  2. 新增 `supervisor-resume.sh`。它等 TUI 这一轮出现 `task_complete` 后，用 SIGTERM 结束 TUI，然后按轮执行 `codex exec resume 01a1532a…`，全程沿用同一个 thread 的上下文。
+  3. worker 的改动提交到分支 `overnight/phase5-2026-10-19`。日报写在 `docs/overnight/REPORT-2026-10-19.md`。
+- 教训：派发新 worker 前，应该先查同一目录下有没有正在运行的 agent，以及它在做什么。这是“话题路由 / 总控登记表”要解决的问题。

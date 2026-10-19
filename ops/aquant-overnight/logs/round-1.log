@@ -2259,3 +2259,1507 @@ equity (47970, 6) ['time', 'day', 'cash', 'equity', 'SPY_qty', 'QQQ_qty']
 codex
 已确认这不是模块改名：本 worktree 缺少 `backtest.py`、`history.py` 和 `evaluation/intraday.py`，主工作区则存在这些未包含在当前提交中的文件。为避免把正在变化的另一工作区当成可复现基线，本轮先记录阻塞与预定实验，不自行移植代码；也不重新评估已曝光的 locked_test。
 
+exec
+/bin/zsh -lc 'mkdir -p overnight/round-01; git ls-files src/aquant/backtest.py src/aquant/history.py src/aquant/evaluation/intraday.py docs/intraday.md docs/intraday_results.md; git rev-parse HEAD' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+31d47f271f30b6a5982377a91b082a668cfaaea1
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant-overnight/overnight/STATE.md
+/Users/prts/Projects/aquant-overnight/overnight/preflight.py
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a372648b70675eb7f99c5c49da149e39f4b9f53e
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0909bee5b5602ab175aa00aecec3ecd31000b3b1
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a372648b70675eb7f99c5c49da149e39f4b9f53e
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0909bee5b5602ab175aa00aecec3ecd31000b3b1
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc 'env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data AQUANT_OUTPUT_DIR="$PWD/outputs" .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json' in /Users/prts/Projects/aquant-overnight
+ exited 2 in 0ms:
+exec
+/bin/zsh -lc "cat overnight/round-01/preflight.json; git diff --check; git status --short; sed -n '1,45p' overnight/STATE.md" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+{
+  "status": "blocked",
+  "branch": "overnight/2026-10-19",
+  "commit": "31d47f271f30b6a5982377a91b082a668cfaaea1",
+  "python": "/Users/prts/Projects/aquant-overnight/.venv/bin/python",
+  "package": "/Users/prts/Projects/aquant-overnight/src/aquant/__init__.py",
+  "data_root": "/Users/prts/Projects/aquant/data",
+  "output_dir": "/Users/prts/Projects/aquant-overnight/outputs",
+  "checks": {
+    "worktree": true,
+    "branch": true,
+    "data_root": true,
+    "output_inside_worktree": true,
+    "local_package": true,
+    "no_bytecode_writes": true,
+    "src/aquant/backtest.py": false,
+    "src/aquant/history.py": false,
+    "src/aquant/evaluation/intraday.py": false,
+    "docs/intraday.md": false,
+    "docs/intraday_results.md": false
+  },
+  "network_requests": 0,
+  "backtests": 0,
+  "locked_test_evaluations": 0
+}
+?? .venv
+?? overnight/
+# 夜间研究状态
+
+## 目标与边界
+
+提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
+只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
+共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
+禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
+使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
+后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
+只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
+候选 locked_test 只能留待最终报告一次评估，必须记录次数。
+
+## 第 1 轮：前置条件阻塞
+
+核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
+起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
+初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
+
+已验证事实：
+
+- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
+  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
+  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
+- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
+- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
+  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
+- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
+  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
+- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
+  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
+- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
+  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
+
+这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
+网络请求、订单入口或策略回测；没有写入共享数据目录。
+不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
+
+## 假设清单
+
+|编号|假设|预定实验|状态|
+|---|---|---|---|
+|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
+
+H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a372648b70675eb7f99c5c49da149e39f4b9f53e
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0909bee5b5602ab175aa00aecec3ecd31000b3b1
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant-overnight/overnight/STATE.md
+/Users/prts/Projects/aquant-overnight/overnight/preflight.py
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc 'env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 AQUANT_OUTPUT_DIR="$PWD/outputs" .venv/bin/python -m ruff check --no-cache overnight/preflight.py' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+All checks passed!
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+codex
+前置检查已复现：路径和环境检查全部通过，五个必需文件缺失，检查程序按预期返回阻塞。已在 STATE.md 记录未执行回测、各收益指标为 N/A，以及待总控提供冻结代码的事项；现在提交这份记录和可复现检查脚本。
+
+exec
+/bin/zsh -lc 'git add overnight/STATE.md overnight/preflight.py overnight/round-01/preflight.json; git diff --cached --check; git diff --cached --stat; git diff --cached --name-only' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+ overnight/STATE.md                | 80 +++++++++++++++++++++++++++++++++++++++
+ overnight/preflight.py            | 58 ++++++++++++++++++++++++++++
+ overnight/round-01/preflight.json | 25 ++++++++++++
+ 3 files changed, 163 insertions(+)
+overnight/STATE.md
+overnight/preflight.py
+overnight/round-01/preflight.json
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc 'git commit -m "overnight: record missing intraday baseline and reproducible preflight"' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+[overnight/2026-10-19 aa904f2] overnight: record missing intraday baseline and reproducible preflight
+ 3 files changed, 163 insertions(+)
+ create mode 100644 overnight/STATE.md
+ create mode 100644 overnight/preflight.py
+ create mode 100644 overnight/round-01/preflight.json
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc "git status --short; git log -1 --format='%h %s'; git show --format= --name-only HEAD; git branch --show-current" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+?? .venv
+aa904f2 overnight: record missing intraday baseline and reproducible preflight
+overnight/STATE.md
+overnight/preflight.py
+overnight/round-01/preflight.json
+overnight/2026-10-19
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+codex
+本轮阻塞：worktree 缺少日内回测代码及指定文档，未完成收益实验，指标均为 N/A。
+已创建 [STATE.md](/Users/prts/Projects/aquant-overnight/overnight/STATE.md)，记录证据、预定实验与下一步。
+可复现检查按预期返回阻塞；Ruff 检查通过。
+未下单、未修改主工作区或共享数据，locked_test 新增评估 0 次。
+需总控提供日内代码冻结提交或一致快照，已记入“待人类决定”。
+已提交 `aa904f2`：`overnight: record missing intraday baseline and reproducible preflight`。
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+tokens used
+50,910
+本轮阻塞：worktree 缺少日内回测代码及指定文档，未完成收益实验，指标均为 N/A。
+已创建 [STATE.md](/Users/prts/Projects/aquant-overnight/overnight/STATE.md)，记录证据、预定实验与下一步。
+可复现检查按预期返回阻塞；Ruff 检查通过。
+未下单、未修改主工作区或共享数据，locked_test 新增评估 0 次。
+需总控提供日内代码冻结提交或一致快照，已记入“待人类决定”。
+已提交 `aa904f2`：`overnight: record missing intraday baseline and reproducible preflight`。
