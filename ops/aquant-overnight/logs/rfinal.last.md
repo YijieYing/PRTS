@@ -1,0 +1,6 @@
+- A已完成：[中文总报告](/Users/prts/Projects/aquant/docs/overnight/REPORT-2026-10-19.md)，119行，包含基线、成本敏感性、学习要点及明日建议。
+- B已完成：[晨晚文本工具说明](/Users/prts/Projects/aquant/docs/overnight/secretary/README.md)和[微信接入方案](/Users/prts/Projects/aquant/docs/overnight/secretary/BRIDGE.md)，仅dry-run。
+- 最终测试：**684 passed、1 skipped**；Ruff与格式检查通过。
+- 结论保持：尚无可信独立前向盈利证据，Paper最终现金净收益仍UNRESOLVED。
+- 未下单、未发送消息、未安装或修改定时任务；STATE/PENDING已更新。
+- **提交受阻：`.git`只读，仍在main，未commit。** 三份收尾补丁保存在 `outputs/overnight/closing/`，累计49个文件顺序应用验证通过。

@@ -40,3 +40,30 @@
 - 端到端冒烟测试：同一份 fixture 导入两次，结果分别是 inserted 7 和 duplicates 7，确认幂等。`list` 中的字段完整：reason 为空、reimbursable 为未知、invoice_status 和 invoice_path 都在。
 - 隐私：`inbox/`、`invoices/`、`*.db`、`rules.toml` 都被 `.gitignore` 排除，真实账单不会进 git。
 - **还没验证**：真实微信导出文件的兼容性。需要你先导出一次，放进 `inbox/`。
+
+## 05:35 JST 验收结果（Claude）
+
+**运行情况**：03:20 TUI 这一轮结束后，supervisor 用 SIGTERM 结束了它，然后用 `exec resume` 跑了 13 轮加 1 个收尾轮，每轮约 7–15 分钟，全部 exit 0。没有超时，也没有连续失败。
+
+**aquant 结论**（详见 `~/Projects/aquant/docs/overnight/REPORT-2026-10-19.md`）：
+- 没有找到经过样本外验证、扣成本后仍然可信的盈利策略。趋势策略有稀疏的正向迹象：33 笔交易，基础成本下 +$6.39，但置信区间跨零，压力成本下转为亏损。
+- 发现一个样本筛选偏差：旧的 IEX“全天完整”条件用到了收盘后才知道的信息，排除了 22 个早盘有效信号中的 21 个。
+- 前向观察还是 0 天。免费 IEX 报价不满足 NBBO 门禁，是否要取得 NBBO 需要你决定（见 PENDING.md）。
+
+**Claude 抽查**：
+- 复跑全量测试：684 passed、1 skipped，和日报一致。
+- 核对“趋势 SIP 基础成本 +6.39”：与 RESULTS-2 的原始表一致。
+- 下单检查：worker 日志里没有执行过任何下单命令，匹配到的都是测试用的假 key 和假订单 ID；launchd 的 plist 最后修改于 23:47，早于这次运行。局限：我没有直接调用 Alpaca API 去核对 Paper 账户的订单记录。
+
+**Git**：
+- worker 没能提交。原因是 Codex 的 workspace-write 沙箱默认把 `.git` 设为只读，而我在 resume 路径上漏配了写权限。**这是我的配置失误**，`supervisor-resume.sh` 已补上 `writable_roots`。worker 如实上报了这件事，没有假装已经提交。
+- 我用临时 index 打了一个快照分支 `overnight/snapshot-2026-10-20`（78c7a4a）。main、HEAD、暂存区都没动，工作区仍有 63 处未提交改动。快照混有你此前从未提交的核心代码（例如 `src/aquant/alpaca.py`），只用作备份，**怎么整理提交由你决定**。
+
+**总控成本（PRTS 指标）**：
+- 整夜 Claude 被唤醒 4 次：2 次派发、1 次记账验收、1 次 aquant 验收。
+- 中间 13 轮完全由 shell 驱动，没有消耗总控的上下文。
+- 你早上需要做的决定：PENDING 里的 6 项，加上 git 怎么整理。
+
+**教训**：
+1. 派发前要先查同一目录下有没有正在运行的 agent。
+2. 沙箱的权限要在派发前用一次小测试验证（比如能不能 `git switch`），而不是靠想当然。这又是“已尝试 ≠ 已验证”。

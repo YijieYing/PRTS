@@ -43,6 +43,7 @@
 | 2026-10-19 | 第一次横向分工实验：总控 Claude 向 Codex（`codex exec`）派发两个调研任务：AGENTS.md 加载与上下文机制，以及 CodexBridge 的 thread 路由。任务、prompt 和产出归档在 `~/research/LearnCodex`（独立 git 仓库，`codex-src/` 为 rust-v0.155.1 源码）。 |
 | 2026-10-19 | 两个 Codex 任务都已完成，Claude 抽查了 6 处源码引用，全部属实。要点：Codex 只在会话开始时读一次 AGENTS.md，之后用缓存（以环境选择和信任级别为键，不看文件 mtime/hash），所以已有会话看不到文件更新；自动压缩阈值约为窗口的 90%；子 agent 共享同一个目录，但没有文件锁，也没有文件变更广播；CodexBridge 不会按话题自动切换 thread，只能靠显式命令。**分工观测**：Codex 适合“有明确交付物、只读调研、需要写源码引用”的任务；Claude 负责派发、抽查和汇总。总控只读了产出笔记（约 190 行），没读源码。 |
 | 2026-10-20 | 第一次夜间实验，用“状态 vs 推理”的总控结构：`ops/aquant-overnight/supervisor.sh`（确定性的 shell 加 caffeinate），在 git worktree 中按轮运行 Codex 优化 aquant 的模拟策略，禁止任何下单；另派一个 Codex 做记账 MVP（`~/Projects/ledger`，用官方账单导出，不自动化操作微信）。报告见 `reports/2026-10-19-overnight.md`。 |
+| 2026-10-20 | 夜间实验完成。aquant：13 轮 + 收尾全部 exit 0；没有发现可信的盈利策略，也没有下单；Claude 抽查数字和测试，结果一致。记账 MVP 通过验收。总控只被唤醒 4 次。失误：resume 时沙箱的 `.git` 只读导致没能提交，改为由 Claude 创建快照分支作为备份。详见 `reports/2026-10-19-overnight.md`。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。

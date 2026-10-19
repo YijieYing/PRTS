@@ -1,0 +1,2456 @@
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1532a-c005-7360-a2e8-859f9de0843a
+--------
+user
+[PRTS 总控夜间指令 · 第 3 轮 · 纽约 14:46，16:00 收盘]
+用户已经去睡觉。从现在起，本线程由 PRTS 总控（Claude）通过 `codex exec resume` 驱动，**不会有人类回复你**。
+
+规则：
+- 继续推进你手上的第五阶段：只读前向验证，以及策略研究与优化。目标是样本外、扣成本后的风险调整收益；不要拿 locked_test 调参。
+- **不发送任何订单，包括 Paper**；不改 launchd 和 `.env`。
+- 遇到需要人类判断的事，写进 `docs/overnight/PENDING.md`，然后改做不依赖这个判断的工作。
+- 第 1 轮先执行 `git switch -c overnight/phase5-2026-10-19`，保留当前未提交的改动。之后每轮结束前，把本轮改动用小步 commit 提交到这个分支，不要提交到 main。
+- 每轮控制在约 25 分钟。把进度追加到 `docs/overnight/STATE.md`，包括做了什么、结果数字、产物路径、下一步。
+- 结束时输出不超过 8 行的摘要。
+codex
+本轮聚焦前向验证的运行审计：检查冻结配置、实时记录与报告之间是否一致，并增加离线可复现的核查命令。研究部分继续保持参数冻结，不发送订单、不改调度或 `.env`；Git 只读阻碍仍按 PENDING 处理。
+exec
+/bin/zsh -lc "sed -n '285,405p' src/aquant/forward.py && sed -n '570,660p' src/aquant/forward.py && sed -n '1,120p' tests/test_forward.py && git branch --show-current" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+                "ax",
+                "z",
+            }
+        }
+        identity = digest(safe)
+        cursor = self.journal.connection.execute(
+            "INSERT OR IGNORE INTO observations VALUES (?,?,?,?,?)",
+            (
+                identity,
+                self.s["day"],
+                stamp(received),
+                safe.get("T", "unknown"),
+                json.dumps(
+                    {
+                        "event": safe,
+                        "feed": "iex",
+                        "source": source,
+                        "received_at": stamp(received),
+                        "regular_session_receipt": self.opening <= received < self.closing,
+                    }
+                ),
+            ),
+        )
+        return bool(cursor.rowcount)
+
+    def consume(self, message, received, source="iex_websocket"):
+        if source != "iex_websocket":
+            raise AcceptanceError("Historical input is not a live observation")
+        if self.s["complete"] or received < pd.Timestamp(self.p["activated_at"]):
+            raise AcceptanceError("Event outside activated forward session")
+        if message.get("S") not in {"SPY", "QQQ"} or message.get("T") not in {"b", "q", "u"}:
+            return
+        if message["T"] == "q":
+            try:
+                self.quote(message, pd.Timestamp(message["t"]), received)
+                self.s["quotes_received"] += 1
+                previous = self.quote_saved.get(message["S"])
+                if previous is None or (received - previous).total_seconds() >= 1:
+                    with self.journal.connection:
+                        self.event(message, received, source)
+                    self.quote_saved[message["S"]] = received
+            except (ValueError, KeyError, TypeError, ArithmeticError):
+                self.anomaly("malformed_quote", received)
+            return
+        # Commit the bar and decision together; quote sampling is not strategy input sampling.
+        with self.journal.connection:
+            if not self.event(message, received, source):
+                return
+            try:
+                t = pd.Timestamp(message["t"])
+                if t.tzinfo is None:
+                    raise ValueError("naive event")
+                if message["T"] == "u":
+                    self.anomaly("bar_revision_not_applied", received)
+                elif message["T"] == "q":
+                    self.quote(message, t, received)
+                else:
+                    self.bar(message, t, received)
+            except (ValueError, KeyError, TypeError, ArithmeticError):
+                self.anomaly("malformed_market_event", received)
+            self.persist()
+
+    def quote(self, m, t, received):
+        symbol = m["S"]
+        numbers = [D(str(m[k])) for k in ("bp", "ap", "bs", "as")]
+        if (
+            t.tzinfo is None
+            or t > received
+            or (received - t).total_seconds() > 2
+            or not all(x.is_finite() and x > 0 for x in numbers)
+            or numbers[0] > numbers[1]
+        ):
+            self.anomaly("stale_or_invalid_quote", received)
+            self.s["quotes"].pop(symbol, None)
+            return
+        q = {
+            "symbol": symbol,
+            "t": str(t),
+            "received_at": stamp(received),
+            "scope": "iex",
+            "bid": m["bp"],
+            "ask": m["ap"],
+            # Legacy stream docs say round lots; the 2025 changelog says CTA/UTP
+            # quotes use shares. Never multiply by 100 with unverified IEX units.
+            "bid_size": str(m["bs"]),
+            "ask_size": str(m["as"]),
+            "raw_bid_size": m["bs"],
+            "raw_ask_size": m["as"],
+            "size_basis": "raw numeric lower bound in shares; IEX unit not independently verified",
+        }
+        q["bid_size"], q["ask_size"] = str(q["bid_size"]), str(q["ask_size"])
+        previous = self.s["quotes"].get(symbol)
+        if previous and t < pd.Timestamp(previous["t"]):
+            self.anomaly("out_of_order_quote", received)
+            return
+        self.s["quotes"][symbol] = q
+        self.advance(symbol, q, received)
+
+    def bar(self, m, t, received):
+        symbol = m["S"]
+        if not self.opening <= t < self.closing:
+            return
+        b = {
+            "symbol": symbol,
+            "t": str(t),
+            "received_at": stamp(received),
+            "day": self.s["day"],
+            **{k: m[k] for k in ("o", "h", "l", "c", "v", "vw", "n")},
+        }
+        bars = self.s["bars"][symbol]
+        end = t + pd.Timedelta(minutes=1)
+        processing = self.clock() if self.clock else received
+        valid = (
+            t.second == t.microsecond == t.nanosecond == 0
+            and end <= received <= end + pd.Timedelta(seconds=90)
+            and received <= processing <= end + pd.Timedelta(seconds=90)
+        )
+        nums = [D(str(b[k])) for k in ("o", "h", "l", "c", "v", "vw")]
+        valid = (
+            valid
+            and all(x.is_finite() and x > 0 for x in nums)
+                    break
+                equity += D(pos["qty"]) * D(str(quote["bid"]))
+            else:
+                book["marks"].append({"time": stamp(instant), "equity": str(equity)})
+                book["peak"] = str(max(D(book["peak"]), equity))
+                if equity <= D(book["peak"]) * D(".9"):
+                    self.s["halted"] = True
+                    self.anomaly("drawdown_review_required", instant)
+
+    def finish(self, instant):
+        self.heartbeat(instant)
+        self.s.update(complete=True, ended_at=stamp(instant), connected=False)
+        for book in self.s["books"].values():
+            for symbol in book["pending"]:
+                book["events"].append(
+                    {
+                        "time": stamp(instant),
+                        "symbol": symbol,
+                        "reason": "no_eligible_quote_before_close",
+                    }
+                )
+            book["pending"].clear()
+        self.persist()
+
+
+def summarize_days(days, p):
+    """No historical/Paper PnL is accepted or added to these metrics."""
+    output = {
+        "kind": "forward_simulated",
+        "hypothetical": True,
+        "feed": "iex",
+        "config_hash": p["config_hash"],
+        "days": [],
+        "costs": {},
+        "orders_authorized": False,
+    }
+    for s in days:
+        if s["kind"] != "forward_simulated" or s["config_hash"] != p["config_hash"]:
+            raise AcceptanceError("Cannot mix historical/Paper results or different strategies")
+        count = int((pd.Timestamp(s["close"]) - pd.Timestamp(s["open"])).total_seconds() / 60)
+        expected = {
+            str(t) for t in pd.date_range(s["open"], s["close"], freq="min", inclusive="left")
+        }
+        missing = {
+            symbol: sorted(expected - {str(pd.Timestamp(b["t"])) for b in bars})
+            for symbol, bars in s["bars"].items()
+        }
+        unresolved = any(b["positions"] for b in s["books"].values())
+        output["days"].append(
+            {
+                "day": s["day"],
+                "complete": s["complete"],
+                "coverage": {k: len(v) / count for k, v in s["bars"].items()},
+                "online_seconds": s["online_seconds"],
+                "anomalies": s["anomalies"],
+                "missing": missing,
+                "valid_observation": s["complete"]
+                and not s["compromised"]
+                and not any(missing.values())
+                and not unresolved,
+                "execution_evidence": False,
+                "quotes_received": s["quotes_received"],
+                "unevaluable_minutes": sum(not d["signal_evaluable"] for d in s["decisions"]),
+                "halted": s["halted"],
+                "signals": sum(d["signal"] for d in s["decisions"]),
+                "rejected_signals": sum(
+                    d["signal"] and not d["availability"]["allowed"] for d in s["decisions"]
+                ),
+                "hypothetical_trades": len(s["books"]["base"]["trades"]),
+                "unresolved_positions": unresolved,
+                "net_pnl": str(sum((D(t["net_pnl"]) for t in s["books"]["base"]["trades"]), D(0)))
+                if s["books"]["base"]["trades"] and not unresolved
+                else None,
+            }
+        )
+    for cost in frozen_costs(p):
+        trades = [t for s in days for t in s["books"][cost.name]["trades"]]
+        pnl = [D(t["net_pnl"]) for t in trades]
+        wins, losses = sum((x for x in pnl if x > 0), D(0)), -sum((x for x in pnl if x < 0), D(0))
+        peak = D(days[0]["books"][cost.name]["starting_cash"]) if days else D(p["capital"])
+        drawdown = D(0)
+        for s in days:
+            for mark in s["books"][cost.name]["marks"]:
+                value = D(mark["equity"])
+                peak = max(peak, value)
+                drawdown = max(drawdown, 1 - value / peak)
+        unresolved = any(s["books"][cost.name]["positions"] for s in days)
+        output["costs"][cost.name] = {
+            "trades": len(pnl),
+            "net_pnl": str(sum(pnl)) if pnl and not unresolved else None,
+            "profit_factor": str(wins / losses) if losses else None,
+import asyncio
+import copy
+import hashlib
+import json
+from dataclasses import asdict
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pandas as pd
+import pytest
+from requests import Request, Response
+from requests.exceptions import ConnectionError
+
+from aquant import backtest, forward, history, readonly, reconciliation, strategy
+from aquant.alpaca import AcceptanceError
+from aquant.journal import Journal
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    from requests.adapters import HTTPAdapter
+
+    def deny(*a, **kw):
+        pytest.fail("offline forward tests cannot access API")
+
+    monkeypatch.setattr(HTTPAdapter, "send", deny)
+    monkeypatch.setattr(readonly, "credentials", lambda: ("PK1234567890", "fake-secret"))
+
+
+def config():
+    s = strategy.BASELINES[1]
+    return {
+        "strategy": asdict(s),
+        "config_hash": s.hash,
+        "protocol": strategy.specification()["forward"],
+        "costs": [asdict(c) for c in backtest.COSTS],
+        "capital": "2000",
+        "allocation": "1000",
+        "activated_at": "2026-10-19T18:00:00Z",
+        "orders_authorized": False,
+        "code_hashes": {},
+    }
+
+
+def session(day="2026-10-20", close="16:00"):
+    return history.sessions([{"date": day, "open": "09:30", "close": close}])[day]
+
+
+def bar(opening, i, symbol="SPY"):
+    price = 100 + 0.5 * min(i, 59) / 59 if i < 65 else 100.7
+    return {
+        "T": "b",
+        "S": symbol,
+        "t": opening + pd.Timedelta(minutes=i),
+        "o": price,
+        "h": price + 0.02,
+        "l": price - 0.02,
+        "c": price,
+        "vw": price,
+        "v": 1000,
+        "n": 10,
+    }
+
+
+def quote(t, symbol="SPY", bid=100.69, ask=100.71):
+    return {
+        "T": "q",
+        "S": symbol,
+        "t": t,
+        "bp": bid,
+        "ap": ask,
+        "bs": 10,
+        "as": 10,
+        "bx": "V",
+        "ax": "V",
+    }
+
+
+def feed(day, minutes=66, skip=None):
+    for i in range(minutes):
+        received = day.opening + pd.Timedelta(minutes=i + 1, milliseconds=1)
+        for symbol in ("SPY", "QQQ"):
+            day.consume(quote(received, symbol), received)
+            if i != skip:
+                day.consume(bar(day.opening, i, symbol), received)
+
+
+@pytest.mark.parametrize(
+    "method,url,key",
+    [
+        ("POST", "https://paper-api.alpaca.markets/v2/orders", "PK1234567890"),
+        (
+            "DELETE",
+            "https://paper-api.alpaca.markets/v2/orders/11111111-1111-1111-1111-111111111111",
+            "PK1234567890",
+        ),
+        ("PATCH", "https://paper-api.alpaca.markets/v2/account/configurations", "PK1234567890"),
+        ("GET", "https://api.alpaca.markets/v2/account", "PK1234567890"),
+        ("GET", "https://paper-api.alpaca.markets/v2/account", "AK1234567890"),
+        ("GET", "https://data.alpaca.markets/v2/stocks/bars?feed=iex", "PK1234567890"),
+        ("GET", "https://paper-api.alpaca.markets.evil/v2/account", "PK1234567890"),
+    ],
+)
+def test_readonly_boundary_rejects_writes_live_and_history(method, url, key):
+    request = Request(method, url, headers={"APCA-API-KEY-ID": key}).prepare()
+    with pytest.raises(AcceptanceError):
+        readonly.Session().send(request)
+    assert not hasattr(readonly.Session(), "authorize")
+
+
+def test_readonly_get_and_redirect_boundary(monkeypatch):
+    response = Response()
+    response.status_code = 200
+    send = Mock(return_value=response)
+    monkeypatch.setattr(readonly.RequestsSession, "send", send)
+    request = Request(
+        "GET",
+        "https://paper-api.alpaca.markets/v2/account/activities",
+        headers={"APCA-API-KEY-ID": "PK1234567890"},
+main
+
+exec
+/bin/zsh -lc "sed -n '400,570p' src/aquant/forward.py && sed -n '1,140p' src/aquant/journal.py && sed -n '900,980p' src/aquant/forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+            and received <= processing <= end + pd.Timedelta(seconds=90)
+        )
+        nums = [D(str(b[k])) for k in ("o", "h", "l", "c", "v", "vw")]
+        valid = (
+            valid
+            and all(x.is_finite() and x > 0 for x in nums)
+            and nums[2] <= min(nums[0], nums[3]) <= max(nums[0], nums[3]) <= nums[1]
+        )
+        if not valid or (bars and t <= pd.Timestamp(bars[-1]["t"])):
+            self.anomaly("stale_invalid_or_revised_bar", received)
+            return
+        bars.append(b)
+        frame = pd.DataFrame(bars)
+        frame["t"] = pd.to_datetime(frame.t, utc=True)
+        features = strategy.signals(
+            frame, {self.s["day"]: (self.opening, self.closing)}, self.config
+        )
+        signal_value = bool(features.iloc[-1].signal)
+        decision_time = self.clock() if self.clock else received
+        q = self.s["quotes"].get(symbol)
+        gate = available(
+            now=decision_time,
+            bars=bars,
+            quote=q,
+            opening=self.opening,
+            closing=self.closing,
+            signal_feed="iex",
+            expected_feed="iex",
+            symbol=symbol,
+        )
+        if self.s["compromised"] or self.s["prior_unresolved"] or self.s["halted"]:
+            gate["allowed"] = False
+            gate["reasons"].append("session_interrupted_or_prior_unresolved")
+        decision = {
+            "symbol": symbol,
+            "bar_time": str(t),
+            "decided_at": stamp(decision_time),
+            "signal": signal_value,
+            "signal_evaluable": len(bars) == int((t - self.opening).total_seconds() / 60) + 1,
+            "availability": gate,
+            "quote": q,
+            "bar": b,
+            "observed_prefix_count": len(bars),
+            "config_hash": self.p["config_hash"],
+            "result": "NO_TRADE"
+            if not gate["allowed"]
+            else "SIGNAL"
+            if signal_value
+            else "NO_SIGNAL",
+            "reason": gate["reasons"]
+            or ([] if signal_value else ["frozen_entry_conditions_not_met"]),
+        }
+        self.s["decisions"].append(decision)
+        if signal_value and gate["allowed"]:
+            for book in self.s["books"].values():
+                if symbol not in book["attempted"] and symbol not in book["positions"]:
+                    book["pending"][symbol] = stamp(decision_time)
+                    book["attempted"].append(symbol)
+
+    def advance(self, symbol, q, instant):
+        """Hypothetical only; quotes after a decision, never historical next-bar opens.
+
+        The production collector labels quotes IEX, so the frozen NBBO rule blocks
+        all fills until a separately reviewed executable-data capability exists.
+        """
+        if q.get("scope") != "nbbo":
+            return
+        for cost in frozen_costs(self.p):
+            book = self.s["books"][cost.name]
+            qty = book["positions"].get(symbol, {}).get("qty", "0")
+            closing_gate = available(
+                now=instant,
+                bars=self.s["bars"][symbol],
+                quote=q,
+                opening=self.opening,
+                closing=self.closing + pd.Timedelta(minutes=5),
+                signal_feed="iex",
+                expected_feed="iex",
+                quantity=qty,
+                symbol=symbol,
+            )
+            if not closing_gate["allowed"]:
+                continue
+            bid, ask = D(str(q["bid"])), D(str(q["ask"]))
+            mid = (bid + ask) / 2
+            half = (ask - bid) / 2 / mid * 10000
+            priced = replace(cost, half_spread_bps=str(max(half, D(cost.half_spread_bps))))
+            position = book["positions"].get(symbol)
+            if position:
+                entry = D(position["price"])
+                reason = (
+                    "scheduled_exit"
+                    if instant >= self.closing - pd.Timedelta(minutes=5)
+                    else "stop"
+                    if bid <= entry * (1 - D(self.config.stop))
+                    else "target"
+                    if bid >= entry * (1 + D(self.config.target))
+                    else None
+                )
+                if reason:
+                    price = priced.price(mid, "sell")
+                    amount = price * D(position["qty"])
+                    fee = priced.fee(amount)
+                    pnl = amount - fee - D(position["debit"])
+                    book["cash"] = str(D(book["cash"]) + amount - fee)
+                    book["trades"].append(
+                        {
+                            **position,
+                            "symbol": symbol,
+                            "exit_time": stamp(instant),
+                            "exit_price": str(price),
+                            "net_pnl": str(pnl),
+                            "exit_fee": str(fee),
+                            "reason": reason,
+                            "kind": "hypothetical",
+                            "exit_quote": dict(q),
+                        }
+                    )
+                    del book["positions"][symbol]
+            pending = book["pending"].get(symbol)
+            if (
+                pending
+                and instant > pd.Timestamp(pending)
+                and pd.Timestamp(q["t"]) >= pd.Timestamp(pending)
+            ):
+                book["pending"].pop(symbol)
+                if (
+                    self.s["compromised"]
+                    or self.s["prior_unresolved"]
+                    or self.s["halted"]
+                    or instant >= self.closing - pd.Timedelta(minutes=5)
+                    or (instant - pd.Timestamp(pending)).total_seconds() > 10
+                ):
+                    book["events"].append(
+                        {
+                            "time": stamp(instant),
+                            "symbol": symbol,
+                            "reason": "expired_or_unsafe_pending_signal",
+                        }
+                    )
+                    continue
+                price = priced.price(mid, "buy")
+                budget = min(D(book["cash"]), D(self.p["allocation"]))
+                qty = (budget / (price * (1 + D(cost.fee_bps) / 10000))).quantize(
+                    D(".000000001"), rounding=ROUND_DOWN
+                )
+                if qty <= 0 or qty > min(D(q["bid_size"]), D(q["ask_size"])):
+                    book["events"].append(
+                        {
+                            "time": stamp(instant),
+                            "symbol": symbol,
+                            "reason": "cash_or_displayed_size_insufficient",
+                        }
+                    )
+                    continue
+                amount, fee = qty * price, priced.fee(qty * price)
+                book["positions"][symbol] = {
+                    "qty": str(qty),
+                    "price": str(price),
+                    "debit": str(amount + fee),
+                    "entry_fee": str(fee),
+                    "entry_time": stamp(instant),
+                    "signal_time": pending,
+                    "entry_quote": dict(q),
+                }
+                book["cash"] = str(D(book["cash"]) - amount - fee)
+            equity = D(book["cash"])
+            for s, pos in book["positions"].items():
+                quote = self.s["quotes"].get(s)
+                if quote is None or (instant - pd.Timestamp(quote["t"])).total_seconds() > 2:
+                    break
+"""Durable local order intents and observations; no credentials or raw responses."""
+
+import fcntl
+import json
+import sqlite3
+from datetime import UTC, datetime
+from pathlib import Path
+
+from aquant.alpaca import AcceptanceError
+from aquant.risk import TERMINAL
+
+
+class Journal:
+    """One process holds the lock across checks, confirmation, persistence and send.
+
+    SQLite FULL commits the intent before any HTTP write. A crash in that gap leaves
+    an unresolved intent, never an instruction to retry. The lock is per checkout;
+    external dashboards/processes must not trade this account concurrently.
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.connection = None
+        self.lock = None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.lock = self.path.with_suffix(".lock").open("a")
+        try:
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.lock.close()
+            raise AcceptanceError("已有 Paper 命令占用本地日志锁，请等待其结束。") from None
+        try:
+            self.connection = sqlite3.connect(self.path)
+            self.connection.execute("PRAGMA synchronous=FULL")
+            self.connection.executescript("""
+                CREATE TABLE IF NOT EXISTS account (id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS intents (
+                    client_id TEXT PRIMARY KEY, payload TEXT NOT NULL,
+                    state TEXT NOT NULL, observation TEXT
+                );
+                CREATE TABLE IF NOT EXISTS events (
+                    sequence INTEGER PRIMARY KEY, time_utc TEXT NOT NULL,
+                    client_id TEXT, kind TEXT NOT NULL, detail TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS records (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+            """)
+            return self
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+
+    def __exit__(self, *_):
+        if self.connection is not None:
+            self.connection.close()
+        if self.lock is not None:
+            self.lock.close()
+
+    def bind(self, account_id: str):
+        rows = self.connection.execute("SELECT id FROM account").fetchall()
+        if rows and rows != [(account_id,)]:
+            raise AcceptanceError("日志账户不匹配：禁止将另一 Paper 账户的状态混用。")
+        with self.connection:
+            self.connection.execute("INSERT OR IGNORE INTO account VALUES (?)", (account_id,))
+
+    def _event(self, client_id, kind, detail):
+        self.connection.execute(
+            "INSERT INTO events(time_utc,client_id,kind,detail) VALUES (?,?,?,?)",
+            (
+                datetime.now(UTC).isoformat(),
+                client_id,
+                kind,
+                json.dumps(detail, ensure_ascii=False),
+            ),
+        )
+
+    def event(self, client_id, kind, detail):
+        with self.connection:
+            self._event(client_id, kind, detail)
+
+    def prepare(self, payload: dict):
+        client_id = payload["client_order_id"]
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO intents VALUES (?,?,'prepared',NULL)",
+                (client_id, json.dumps(payload)),
+            )
+            self._event(client_id, "intent", payload)
+
+    def observe(self, client_id: str, observation: dict):
+        with self.connection:
+            self.connection.execute(
+                "UPDATE intents SET state=?, observation=? WHERE client_id=?",
+                (observation["status"], json.dumps(observation), client_id),
+            )
+            self._event(client_id, "observation", observation)
+
+    def unfinished(self) -> list[dict]:
+        return [
+            {"payload": json.loads(payload), "state": state}
+            for payload, state in self.connection.execute("SELECT payload,state FROM intents")
+            if state not in TERMINAL
+        ]
+
+    def payload(self, client_id: str) -> dict | None:
+        row = self.connection.execute(
+            "SELECT payload FROM intents WHERE client_id=?",
+            (client_id,),
+        ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def get(self, name: str):
+        row = self.connection.execute("SELECT value FROM records WHERE name=?", (name,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def put(self, name: str, value: dict, *, create: bool = False):
+        with self.connection:
+            sql = "INSERT" if create else "INSERT OR REPLACE"
+            self.connection.execute(f"{sql} INTO records VALUES (?,?)", (name, json.dumps(value)))
+
+    def runs(self) -> list[dict]:
+        return [
+            json.loads(row[0])
+            for row in self.connection.execute(
+                "SELECT value FROM records WHERE name LIKE 'smoke:%' ORDER BY name"
+            )
+        ]
+        (root / "STOP").touch()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        for label in (LABEL, RECON_LABEL):
+            path = folder / (label + ".plist")
+            path.write_bytes(plistlib.dumps(definition(label)))
+            launch("bootout", f"gui/{os.getuid()}/{label}", required=False)
+            launch("bootstrap", f"gui/{os.getuid()}", str(path))
+            launch("print", f"gui/{os.getuid()}/{label}")
+    except Exception:
+        for label in (LABEL, RECON_LABEL):
+            launch("bootout", f"gui/{os.getuid()}/{label}", required=False)
+        raise
+    (DIRECTORY / "STOP").unlink(missing_ok=True)
+    (reconciliation.DIRECTORY / "STOP").unlink(missing_ok=True)
+
+
+def launch_status(label):
+    result = launch("print", f"gui/{os.getuid()}/{label}", required=False)
+    fields = {"loaded": result.returncode == 0}
+    for line in result.stdout.splitlines():
+        if not line.startswith("\t") or line.startswith("\t\t"):
+            continue  # nested coalition state is not the job's process state
+        key, _, value = line.strip().partition(" = ")
+        if key in {"state", "pid", "last exit code", "runs"}:
+            fields[key] = value
+    return fields
+
+
+def status():
+    p = policy()
+    cached = (
+        history.read(DIRECTORY / "calendar.json")
+        if (DIRECTORY / "calendar.json").exists()
+        else {"rows": []}
+    )
+    future = [
+        o - pd.Timedelta(minutes=10)
+        for d, (o, _) in history.sessions(cached["rows"]).items()
+        if d >= p["protocol"]["not_before"] and o - pd.Timedelta(minutes=10) > readonly.now()
+    ]
+    jobs = {label: launch_status(label) for label in (LABEL, RECON_LABEL)}
+    latest = []
+    for d in records()[-3:]:
+        age = (
+            (readonly.now() - pd.Timestamp(d["heartbeat"])).total_seconds()
+            if d["heartbeat"]
+            else None
+        )
+        latest.append(
+            {
+                **{
+                    k: d.get(k)
+                    for k in ("day", "heartbeat", "connected", "complete", "compromised")
+                },
+                "heartbeat_age_seconds": age,
+                "online_now": bool(
+                    d["connected"]
+                    and age is not None
+                    and 0 <= age <= 45
+                    and jobs[LABEL].get("state") == "running"
+                ),
+            }
+        )
+    return {
+        "orders_authorized": False,
+        "stopped": (DIRECTORY / "STOP").exists(),
+        "next_start_utc": str(min(future)) if future else None,
+        "next_start_et": str(min(future).tz_convert(NY)) if future else None,
+        "launchd": jobs,
+        "latest": latest,
+        "database_bytes": (DIRECTORY / "state.sqlite3").stat().st_size
+        if (DIRECTORY / "state.sqlite3").exists()
+        else 0,
+        "database_limit_bytes": 5 * 1024**3,
+        "free_disk_bytes": shutil.disk_usage(DIRECTORY).free,
+        "reconciliation": reconciliation.status(),
+        "log": str(DIRECTORY / "monitor.log"),
+    }
+
+
+
+codex
+审计命令会核对三层证据：原始 WebSocket 记录、已采用的 K 线与决策、已发布日报。它只读取 SQLite，不调用 Broker，也不重写监控记录；没有前向样本时会明确返回 WAITING，而不是 PASS。
+
+为避免审计长时间占用数据库读锁，我会按已有的追加式事件记录分页读取，并记录核查边界。
+exec
+/bin/zsh -lc "mkdir -p outputs/overnight/round-3/before && cp docs/overnight/STATE.md outputs/overnight/round-3/before/STATE.md && cp docs/overnight/PENDING.md outputs/overnight/round-3/before/PENDING.md && cat > scripts/research/audit_forward.py <<'PY'
+\"\"\"Read-only integrity audit of frozen IEX observations; never collects or trades.\"\"\"
+
+import argparse
+import hashlib
+import json
+import sqlite3
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+from uuid import uuid4
+
+import pandas as pd
+
+from aquant import forward, history, strategy
+from aquant.alpaca import ROOT
+from aquant.data.availability import check
+from aquant.evaluation.intraday import save_json
+from aquant.evaluation.research import digest
+
+
+def instant(value):
+    time = pd.Timestamp(value)
+    if time.tzinfo is None or pd.isna(time):
+        raise ValueError(\"A timezone-aware timestamp is required\")
+    return time.tz_convert(\"UTC\")
+
+
+def connect(path):
+    connection = sqlite3.connect(path.resolve().as_uri() + \"?mode=ro\", uri=True, timeout=1)
+    connection.execute(\"PRAGMA query_only=ON\")
+    return connection
+
+
+def snapshot(connection, limit):
+    \"\"\"Brief consistent state/watermark read; never hold a lock during Python audit.
+
+    Event pages below rely on the production append-only contract. This is not
+    cryptographic attestation against a party able to rewrite the whole database.
+    \"\"\"
+    connection.execute(\"BEGIN\")
+    try:
+        rows = connection.execute(
+            \"SELECT name,value FROM records WHERE name LIKE 'forward:%' ORDER BY name DESC LIMIT ?\",
+            (limit,),
+        ).fetchall()
+        tables = {r[0] for r in connection.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")}
+        watermark = connection.execute(\"SELECT coalesce(max(rowid),0) FROM observations\").fetchone()[0] if \"observations\" in tables else 0
+        previous = None
+        if rows:
+            row = connection.execute(
+                \"SELECT value FROM records WHERE name LIKE 'forward:%' AND name < ? ORDER BY name DESC LIMIT 1\",
+                (rows[-1][0],),
+            ).fetchone()
+            previous = json.loads(row[0]) if row else None
+        return [(name, json.loads(value)) for name, value in reversed(rows)], watermark, previous
+    finally:
+        connection.commit()
+
+
+def events(connection, day, watermark):
+    last = 0
+    while True:
+        # Each SELECT finishes before parsing; writers are not blocked for the whole audit.
+        page = connection.execute(
+            \"SELECT rowid,id,received,kind,payload FROM observations \"
+            \"WHERE day=? AND rowid>? AND rowid<=? ORDER BY rowid LIMIT 1000\",
+            (day, last, watermark),
+        ).fetchall()
+        if not page:
+            return
+        yield from page
+        last = page[-1][0]
+
+
+def inspect_day(state, p, rows, now, previous=None):
+    errors, warnings, raw_bars = [], [], {}
+    counts = {\"b\": 0, \"q\": 0, \"u\": 0}
+    fingerprint = hashlib.sha256()
+
+    def require(condition, reason):
+        if not condition:
+            errors.append(reason)
+
+    opening, closing = instant(state[\"open\"]), instant(state[\"close\"])
+    day = state[\"day\"]
+    require(state[\"kind\"] == \"forward_simulated\", \"mixed_evidence_kind\")
+    require(state[\"feed\"] == p[\"feed\"] == \"iex\", \"feed_mismatch\")
+    require(state[\"config_hash\"] == p[\"config_hash\"], \"strategy_hash_mismatch\")
+    require(state[\"orders_authorized\"] is False, \"unexpected_order_authorization\")
+    require(day >= p[\"protocol\"][\"not_before\"], \"session_before_frozen_cutoff\")
+    require(instant(p[\"activated_at\"]) <= instant(state[\"started_at\"]) <= now, \"invalid_session_start\")
+    require(opening < closing and opening.tz_convert(\"America/New_York\").date().isoformat() == day, \"invalid_session\")
+    require(0 <= state[\"online_seconds\"] <= max(0, (min(now, closing) - opening).total_seconds()), \"impossible_online_duration\")
+    if state[\"complete\"]:
+        require(closing <= instant(state[\"ended_at\"]) <= now, \"invalid_session_end\")
+    else:
+        warnings.append(\"session_in_progress_or_interrupted\")
+    for rowid, identity, received, kind, payload in rows:
+        fingerprint.update(json.dumps([rowid, identity, received, kind, payload]).encode())
+        try:
+            value = json.loads(payload)
+            event = value[\"event\"]
+            arrival = instant(received)
+            require(identity == digest(event), \"raw_event_digest_mismatch\")
+            require(value[\"source\"] == \"iex_websocket\" and value[\"feed\"] == \"iex\", \"nonlive_raw_source\")
+            require(instant(value[\"received_at\"]) == arrival, \"raw_receipt_mismatch\")
+            require(instant(p[\"activated_at\"]) <= arrival <= now, \"invalid_raw_receipt\")
+            require(value[\"regular_session_receipt\"] == (opening <= arrival < closing), \"raw_session_flag_mismatch\")
+            require(kind == event[\"T\"] and kind in counts, \"raw_kind_mismatch\")
+            if kind in counts:
+                counts[kind] += 1
+            if kind == \"b\":
+                # Malformed raw events are legitimate rejected evidence; only admitted bars must match.
+                try:
+                    key = (event[\"S\"], instant(event[\"t\"]))
+                    raw_bars.setdefault(key, []).append((event, arrival))
+                except (KeyError, ValueError, TypeError):
+                    pass
+        except (KeyError, ValueError, TypeError):
+            errors.append(\"malformed_raw_record\")
+    require(set(state[\"bars\"]) == {\"SPY\", \"QQQ\"}, \"unexpected_symbols\")
+    decisions = {}
+    for d in state[\"decisions\"]:
+        key = (d[\"symbol\"], instant(d[\"bar_time\"]))
+        require(key not in decisions, \"duplicate_decision\")
+        decisions[key] = d
+    total, signal_count = 0, 0
+    for symbol, bars in state[\"bars\"].items():
+        times = [instant(b[\"t\"]) for b in bars]
+        require(times == sorted(set(times)), \"duplicate_or_unordered_admitted_bars\")
+        if not bars:
+            continue
+        frame = pd.DataFrame(bars)
+        frame[\"t\"] = pd.to_datetime(frame.t, utc=True)
+        recomputed = strategy.signals(frame, {day: (opening, closing)}, strategy.Strategy(**p[\"strategy\"]))
+        expected_signals = {instant(r.t): bool(r.signal) for r in recomputed.itertuples()}
+        for index, b in enumerate(bars):
+            total += 1
+            when, arrival = instant(b[\"t\"]), instant(b[\"received_at\"])
+            end = when + pd.Timedelta(minutes=1)
+            require(b[\"symbol\"] == symbol and b[\"day\"] == day, \"admitted_bar_identity\")
+            require(opening <= when < closing and when == when.floor(\"min\"), \"admitted_bar_outside_session\")
+            require(end <= arrival <= min(end + pd.Timedelta(seconds=90), now), \"admitted_bar_not_fresh\")
+            candidates = raw_bars.get((symbol, when), [])
+            matched = any(
+                at == arrival and all(Decimal(str(event.get(k))) == Decimal(str(b[k]))
+                                      for k in (\"o\", \"h\", \"l\", \"c\", \"v\", \"vw\", \"n\"))
+                for event, at in candidates
+            )
+            require(matched, \"admitted_bar_without_raw_evidence\")
+            d = decisions.pop((symbol, when), None)
+            require(d is not None, \"admitted_bar_without_decision\")
+            if d is None:
+                continue
+            decided = instant(d[\"decided_at\"])
+            require(arrival <= decided <= now, \"decision_precedes_available_data\")
+            require(d[\"bar\"] == b and d[\"config_hash\"] == p[\"config_hash\"], \"decision_snapshot_mismatch\")
+            require(d[\"signal\"] is expected_signals[when], \"signal_does_not_reproduce\")
+            signal_count += int(d[\"signal\"])
+            require(d[\"observed_prefix_count\"] == index + 1, \"prefix_count_mismatch\")
+            require(d[\"signal_evaluable\"] == (index + 1 == int((when - opening).total_seconds() / 60) + 1), \"prefix_evaluability_mismatch\")
+            quote = d[\"quote\"]
+            require(quote is None or quote.get(\"scope\") == \"iex\", \"unexpected_execution_quote_scope\")
+            gate = check(now=decided, bars=bars[:index + 1], quote=quote, opening=opening,
+                         closing=closing, signal_feed=\"iex\", expected_feed=\"iex\", symbol=symbol)
+            actual = d[\"availability\"]
+            require(actual[\"allowed\"] is False and actual[\"orders_authorized\"] is False, \"iex_gate_bypassed\")
+            require(set(gate[\"reasons\"]).issubset(actual[\"reasons\"]), \"missing_rejection_reason\")
+            require(set(actual[\"reasons\"]) <= set(gate[\"reasons\"]) | {\"session_interrupted_or_prior_unresolved\"}, \"unexplained_rejection_reason\")
+            require(d[\"result\"] == \"NO_TRADE\" and d[\"reason\"] == actual[\"reasons\"], \"decision_result_mismatch\")
+    require(not decisions, \"decision_without_admitted_bar\")
+    for name, book in state[\"books\"].items():
+        require(name in {c[\"name\"] for c in p[\"costs\"]}, \"unregistered_cost\")
+        start = previous[\"books\"][name][\"cash\"] if previous else p[\"capital\"]
+        require(Decimal(book[\"starting_cash\"]) == Decimal(start), \"cash_continuity_mismatch\")
+        require(not book[\"trades\"] and not book[\"positions\"] and not book[\"pending\"], \"unexpected_execution_under_iex_only_policy\")
+        require(Decimal(book[\"cash\"]) == Decimal(start), \"unexplained_simulated_cash_change\")
+    require(set(state[\"books\"]) == {c[\"name\"] for c in p[\"costs\"]}, \"missing_cost_book\")
+    return {\"day\": day, \"errors\": sorted(set(errors)), \"warnings\": warnings,
+            \"admitted_bars\": total, \"decisions\": len(state[\"decisions\"]), \"signals\": signal_count,
+            \"raw_counts\": counts, \"raw_sha256\": fingerprint.hexdigest(),
+            \"state_sha256\": digest(state), \"complete\": state[\"complete\"]}
+
+
+def audit(root, *, limit=10, now=None):
+    if not 1 <= limit <= 126:
+        raise ValueError(\"Audit 1 to 126 most recent stored sessions\")
+    now = instant(now if now is not None else datetime.now(UTC))
+    report = {\"kind\": \"forward_integrity_audit\", \"checked_at\": str(now), \"root\": str(root),
+              \"orders_authorized\": False, \"read_only\": True, \"strategy_profitability_verified\": False,
+              \"execution_evidence\": False, \"days\": [], \"errors\": [], \"warnings\": [],
+              \"limitations\": [\"append-only event pages, bounded by one state/rowid snapshot\",
+                              \"not cryptographic proof of actual exchange receipt\",
+                              \"quote sampling prevents exact quote-stream completeness reconstruction\",
+                              \"IEX is not NBBO; no executable forward PnL under frozen policy\"]}
+    try:
+        p = forward.policy(root)
+        if not p[\"code_hashes\"]:
+            raise ValueError(\"Unbound implementation\")
+        report[\"policy_sha256\"] = digest(p)
+        calendar = history.sessions(history.read(root / \"calendar.json\")[\"rows\"])
+        with connect(root / \"state.sqlite3\") as connection:
+            states, watermark, previous = snapshot(connection, limit)
+            report[\"event_rowid_watermark\"] = watermark
+            for name, state in states:
+                if name "'!= "forward:" + state["day"]:
+                    raise ValueError("State key mismatch")
+                result = inspect_day(state, p, events(connection, state["day"], watermark) if watermark else [], now, previous)
+                official = calendar.get(state["day"])
+                if not official or tuple(map(instant, official)) != (instant(state["open"]), instant(state["close"])):
+                    result["errors"].append("calendar_session_mismatch")
+                path = root / state["day"] / "report.json"
+                if state["complete"]:
+                    if not path.exists():
+                        result["warnings"].append("completed_report_not_published")
+                    else:
+                        published = history.read(path)
+                        expected = forward.summarize_days([state], p)
+                        if any(published.get(k) != expected[k] for k in expected):
+                            result["errors"].append("published_summary_mismatch")
+                        if published.get("decisions") != state["decisions"] or published.get("hypothetical_books") != state["books"]:
+                            result["errors"].append("published_evidence_mismatch")
+                report["days"].append(result)
+                previous = state
+        report["status"] = (
+            "FAIL" if any(x["errors"] for x in report["days"]) else
+            "WAITING" if not states else
+            "INCOMPLETE" if any(x["warnings"] for x in report["days"]) else "PASS"
+        )
+        report["status_scope"] = "record integrity only; never a profitability or execution PASS"
+    except (KeyError, ValueError, TypeError, ArithmeticError, OSError, sqlite3.Error) as error:
+        report["status"] = "FAIL"
+        report["errors"].append("audit_failed_" + type(error).__name__)
+    return report
+
+
+def markdown(report):
+    lines = ["# 只读前向证据完整性审计", "", f"状态：{report['"'status']}；时间：{report['checked_at']}\",
+             \"\", \"PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。\",
+             \"没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。\", \"\",
+             \"|日期|采用bar|决策|信号|错误|提醒|\", \"|---|---:|---:|---:|---|---|\"]
+    for day in report[\"days\"]:
+        lines.append(f\"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|\"
+                     f\"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|\")
+    lines += [\"\", \"顶层错误：\" + (\", \".join(report[\"errors\"]) or \"无\"), \"\",
+              \"不调用Broker，不改SQLite、日报、策略、调度或STOP状态。原始报价为抽样，不能证明逐报价完整性。\",
+              \"审计依赖原事件只追加的存储约定；无可信外部签名，不能证明持有写权限者从未改写整套记录。\"]
+    return \"\\n\".join(lines) + \"\\n\"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(\"--root\", type=Path, default=forward.DIRECTORY)
+    parser.add_argument(\"--days\", type=int, default=10)
+    parser.add_argument(\"--output\", type=Path)
+    args = parser.parse_args()
+    output = args.output or ROOT / \"outputs/research\" / (
+        datetime.now(UTC).strftime(\"%Y%m%dT%H%M%SZ\") + \"-forward-audit-\" + uuid4().hex[:8])
+    if output.resolve().is_relative_to(args.root.resolve()) or output.exists():
+        parser.error(\"Use a new output directory outside the monitor evidence directory\")
+    result = audit(args.root, limit=args.days)
+    save_json(output / \"report.json\", result)
+    (output / \"report.md\").write_text(markdown(result))
+    print(json.dumps({\"status\": result[\"status\"], \"report\": str(output / \"report.md\")}))
+    return 2 if result[\"status\"] == \"FAIL\" else 0
+
+
+if __name__ == \"__main__\":
+    raise SystemExit(main())
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py
+.venv/bin/ruff check scripts/research/audit_forward.py" in /Users/prts/Projects/aquant
+ exited 1 in 0ms:
+1 file reformatted
+E501 Line too long (112 > 100)
+  --> scripts/research/audit_forward.py:57:101
+   |
+55 |         if rows:
+56 |             row = connection.execute(
+57 |                 "SELECT value FROM records WHERE name LIKE 'forward:%' AND name < ? ORDER BY name DESC LIMIT 1",
+   |                                                                                                     ^^^^^^^^^^^^
+58 |                 (rows[-1][0],),
+59 |             ).fetchone()
+   |
+
+E501 Line too long (103 > 100)
+   --> scripts/research/audit_forward.py:132:101
+    |
+130 |                 counts[kind] += 1
+131 |             if kind == "b":
+132 |                 # Malformed raw events are legitimate rejected evidence; only admitted bars must match.
+    |                                                                                                     ^^^
+133 |                 try:
+134 |                     key = (event["S"], instant(event["t"]))
+    |
+
+Found 2 errors.
+
+exec
+/bin/zsh -lc "rg -n 'class AcceptanceError' src/aquant/alpaca.py && python3 - <<'PY'
+p='scripts/research/audit_forward.py'
+s=open(p).read().replace('from aquant.alpaca import ROOT','from aquant.alpaca import ROOT, AcceptanceError').replace('\"SELECT value FROM records WHERE name LIKE \\'forward:%\\' AND name < ? ORDER BY name DESC LIMIT 1\",','\"SELECT value FROM records WHERE name LIKE \\'forward:%\\' AND name < ? \"\\n                \"ORDER BY name DESC LIMIT 1\",').replace('# Malformed raw events are legitimate rejected evidence; only admitted bars must match.','# Rejected malformed raw events may exist; admitted bars must match.').replace('except (KeyError, ValueError, TypeError, ArithmeticError, OSError, sqlite3.Error) as error:','except (KeyError, ValueError, TypeError, ArithmeticError, OSError, sqlite3.Error, AcceptanceError) as error:')
+open(p,'w').write(s)
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py
+.venv/bin/ruff check scripts/research/audit_forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+56:class AcceptanceError(Exception):
+1 file reformatted
+All checks passed!
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+p='scripts/research/audit_forward.py'
+s=open(p).read().replace('import sqlite3\\n','import sqlite3\\nfrom contextlib import closing\\n')
+s=s.replace('    total, signal_count = 0, 0\\n','    total, signal_count = 0, 0\\n    expected_minutes = int((closing - opening).total_seconds() / 60)\\n    if state[\"compromised\"] or any(len(b) "'!= expected_minutes for b in state["bars"].values()):'"\\n        warnings.append(\"incomplete_or_interrupted_market_observation\")\\n')
+s=s.replace('        with connect(root / \"state.sqlite3\") as connection:\\n','        with closing(connect(root / \"state.sqlite3\")) as connection:\\n')
+s=s.replace('            report[\"event_rowid_watermark\"] = watermark\\n','            report[\"event_rowid_watermark\"] = watermark\\n            report[\"calendar_rows\"] = history.read(root / \"calendar.json\")[\"rows\"]\\n            if previous and (previous[\"kind\"] "'!= "forward_simulated" or previous["config_hash"] != p["config_hash"]):'"\\n                raise ValueError(\"Predecessor evidence mismatch\")\\n')
+# adapt formatted block by exact text preview later
+old='''                if not official or tuple(map(instant, official)) "'!= (
+                    instant(state["open"]),
+                    instant(state["close"]),
+                ):
+                    result["errors"].append("calendar_session_mismatch")'"'''
+new='''                if not official:
+                    result[\"warnings\"].append(\"official_calendar_not_retained\")
+                elif tuple(map(instant, official)) "'!= (
+                    instant(state["open"]),
+                    instant(state["close"]),
+                ):
+                    result["errors"].append("calendar_session_mismatch")'"'''
+assert old in s
+s=s.replace(old,new)
+open(p,'w').write(s)
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py
+.venv/bin/ruff check scripts/research/audit_forward.py
+.venv/bin/python -m scripts.research.audit_forward --output outputs/research/overnight-20261019-forward-audit-initial" in /Users/prts/Projects/aquant
+ succeeded in 258ms:
+{"status": "WAITING", "report": "outputs/research/overnight-20261019-forward-audit-initial/report.md"}
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+p='scripts/research/audit_forward.py'
+s=open(p).read().replace('            require(kind == event[\"T\"] and kind in counts, \"raw_kind_mismatch\")','            require(kind == event[\"T\"] and kind in counts, \"raw_kind_mismatch\")\\n            require(event.get(\"S\") in {\"SPY\", \"QQQ\"}, \"raw_symbol_mismatch\")')
+s=s.replace('            actual = d[\"availability\"]\\n','            actual = d[\"availability\"]\\n            require(actual[\"signal_feed\"] == gate[\"signal_feed\"] and actual[\"execution_source\"] == gate[\"execution_source\"], \"gate_source_mismatch\")\\n')
+s=s.replace('not book[\"trades\"] and not book[\"positions\"] and not book[\"pending\"],','not any(book[k] for k in (\"trades\", \"positions\", \"pending\", \"attempted\", \"marks\", \"events\")),')
+s=s.replace('        require(\\n            Decimal(book[\"cash\"]) == Decimal(start), \"unexplained_simulated_cash_change\"\\n        )','        require(\\n            Decimal(book[\"cash\"]) == Decimal(start), \"unexplained_simulated_cash_change\"\\n        )\\n        require(Decimal(book[\"peak\"]) == Decimal(start), \"unexplained_simulated_peak_change\")')
+s=s.replace('        calendar = history.sessions(history.read(root / \"calendar.json\")[\"rows\"])','        calendar_rows = history.read(root / \"calendar.json\")[\"rows\"]\\n        calendar = history.sessions(calendar_rows)')
+s=s.replace('report[\"calendar_rows\"] = history.read(root / \"calendar.json\")[\"rows\"]','report[\"calendar_rows\"] = calendar_rows')
+open(p,'w').write(s)
+PY
+cat > tests/test_forward_audit.py <<'PY'
+\"\"\"Auditing reads a consistent watermark and cannot mutate the monitor or call APIs.\"\"\"
+
+import hashlib
+import json
+import sqlite3
+from dataclasses import asdict
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from aquant import backtest, forward, history, readonly, strategy
+from aquant.journal import Journal
+from scripts.research import audit_forward as audit
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    from requests.adapters import HTTPAdapter
+
+    def deny(*args, **kwargs):
+        pytest.fail(\"Forward audit cannot call any API or construct a trading client\")
+
+    monkeypatch.setattr(HTTPAdapter, \"send\", deny)
+    monkeypatch.setattr(readonly, \"Client\", deny)
+    monkeypatch.setattr(readonly, \"Stream\", deny)
+
+
+def fixture(root, *, complete=True, count=3, minutes=3, day=\"2026-10-20\"):
+    root.mkdir(parents=True, exist_ok=True)
+    s = strategy.BASELINES[1]
+    opening = pd.Timestamp(day + \"T09:30:00\", tz=\"America/New_York\").tz_convert(\"UTC\")
+    closing = opening + pd.Timedelta(minutes=minutes)
+    p = {\"strategy\": asdict(s), \"config_hash\": s.hash,
+         \"protocol\": strategy.specification()[\"forward\"], \"costs\": [asdict(c) for c in backtest.COSTS],
+         \"capital\": \"2000\", \"allocation\": \"1000\", \"feed\": \"iex\",
+         \"activated_at\": \"2026-10-19T18:00:00Z\", \"orders_authorized\": False,
+         \"code_hashes\": {str(Path(strategy.__file__)): hashlib.sha256(Path(strategy.__file__).read_bytes()).hexdigest()}}
+    history.immutable(root / \"policy.json\", p)
+    history.immutable(root / \"calendar.json\", {\"rows\": [{\"date\": day, \"open\": \"09:30\", \"close\": closing.tz_convert(\"America/New_York\").strftime(\"%H:%M\")}]})
+    with Journal(root / \"state.sqlite3\") as journal:
+        d = forward.Day(journal, p, day, opening, closing, opening)
+        for i in range(count):
+            at = opening + pd.Timedelta(minutes=i)
+            received = at + pd.Timedelta(minutes=1, milliseconds=10)
+            for symbol in (\"SPY\", \"QQQ\"):
+                d.consume({\"T\": \"b\", \"S\": symbol, \"t\": at, \"o\": 100, \"h\": 101,
+                           \"l\": 99, \"c\": 100, \"v\": 100, \"vw\": 100, \"n\": 5}, received)
+        if complete:
+            d.finish(closing + pd.Timedelta(minutes=2))
+    if complete:
+        forward.publish(root)
+    return closing + pd.Timedelta(minutes=3)
+
+
+def change_state(root, transform):
+    with sqlite3.connect(root / \"state.sqlite3\") as connection:
+        name, raw = connection.execute(\"SELECT name,value FROM records WHERE name LIKE 'forward:%'\").fetchone()
+        state = json.loads(raw)
+        transform(state)
+        connection.execute(\"UPDATE records SET value=? WHERE name=?\", (json.dumps(state), name))
+
+
+def errors(report):
+    return report[\"errors\"] + [e for d in report[\"days\"] for e in d[\"errors\"]]
+
+
+def test_valid_records_pass_integrity_without_claiming_execution(tmp_path):
+    now = fixture(tmp_path)
+    before = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in tmp_path.iterdir() if p.is_file()}
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"status\"] == \"PASS\", result
+    assert result[\"days\"][0][\"admitted_bars\"] == 6 and result[\"days\"][0][\"raw_counts\"][\"b\"] == 6
+    assert not result[\"execution_evidence\"] and not result[\"strategy_profitability_verified\"]
+    assert before == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in tmp_path.iterdir() if p.is_file()}
+    assert not (tmp_path / \"STOP\").exists()
+
+
+def test_ro_connection_refuses_writes(tmp_path):
+    fixture(tmp_path)
+    connection = audit.connect(tmp_path / \"state.sqlite3\")
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            connection.execute(\"DELETE FROM records\")
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize(\"problem,reason\", [
+    (\"source\", \"nonlive_raw_source\"), (\"digest\", \"raw_event_digest_mismatch\"),
+    (\"bar\", \"admitted_bar_without_raw_evidence\"), (\"signal\", \"signal_does_not_reproduce\"),
+    (\"future\", \"decision_precedes_available_data\"), (\"gate\", \"iex_gate_bypassed\"),
+    (\"nbbo\", \"unexpected_execution_quote_scope\"), (\"pnl\", \"unexpected_execution_under_iex_only_policy\"),
+    (\"cash\", \"unexplained_simulated_cash_change\"), (\"kind\", \"mixed_evidence_kind\"),
+    (\"orphan\", \"admitted_bar_without_decision\"), (\"duplicate\", \"duplicate_decision\"),
+    (\"report\", \"published_summary_mismatch\"), (\"calendar\", \"calendar_session_mismatch\"),
+])
+def test_corruption_never_passes(tmp_path, problem, reason):
+    now = fixture(tmp_path)
+    if problem in {\"source\", \"digest\"}:
+        with sqlite3.connect(tmp_path / \"state.sqlite3\") as connection:
+            rowid, raw = connection.execute(\"SELECT rowid,payload FROM observations LIMIT 1\").fetchone()
+            payload = json.loads(raw)
+            if problem == \"source\":
+                payload[\"source\"] = \"history_rest\"
+            else:
+                payload[\"event\"][\"v\"] = 999
+            connection.execute(\"UPDATE observations SET payload=? WHERE rowid=?\", (json.dumps(payload), rowid))
+    elif problem in {\"report\", \"calendar\"}:
+        path = tmp_path / (\"2026-10-20/report.json\" if problem == \"report\" else \"calendar.json\")
+        value = json.loads(path.read_text())
+        if problem == \"report\":
+            value[\"days\"][0][\"net_pnl\"] = \"1000\"
+        else:
+            value[\"rows\"][0][\"close\"] = \"13:00\"
+        path.write_text(json.dumps(value))
+    else:
+        def mutate(s):
+            d = s[\"decisions\"][0]
+            if problem == \"bar\": s[\"bars\"][\"SPY\"][0][\"v\"] = 999
+            elif problem == \"signal\": d[\"signal\"] = True
+            elif problem == \"future\": d[\"decided_at\"] = s[\"open\"]
+            elif problem == \"gate\": d[\"availability\"][\"allowed\"] = True
+            elif problem == \"nbbo\": d[\"quote\"] = {\"scope\": \"nbbo\"}
+            elif problem == \"pnl\": s[\"books\"][\"base\"][\"trades\"].append({\"net_pnl\": \"10\"})
+            elif problem == \"cash\": s[\"books\"][\"base\"][\"cash\"] = \"2010\"
+            elif problem == \"kind\": s[\"kind\"] = \"historical_backtest\"
+            elif problem == \"orphan\": s[\"decisions\"].pop(0)
+            else: s[\"decisions\"].append(s[\"decisions\"][0])
+        change_state(tmp_path, mutate)
+    report = audit.audit(tmp_path, now=now)
+    assert report[\"status\"] == \"FAIL\"
+    assert reason in errors(report), report
+
+
+def test_no_records_waiting_not_pass(tmp_path):
+    now = fixture(tmp_path)
+    with sqlite3.connect(tmp_path / \"state.sqlite3\") as connection:
+        connection.execute(\"DELETE FROM records\")
+        connection.execute(\"DELETE FROM observations\")
+    assert audit.audit(tmp_path, now=now)[\"status\"] == \"WAITING\"
+
+
+@pytest.mark.parametrize(\"problem\", [\"running\", \"missing_bars\", \"missing_report\", \"old_calendar\"])
+def test_incomplete_evidence_is_explicit(tmp_path, problem):
+    now = fixture(tmp_path, complete=problem "'!= "running", count=2 if problem == "missing_bars" else 3)
+    if problem == "missing_report": (tmp_path / "2026-10-20/report.json").unlink()
+    if problem == "old_calendar": (tmp_path / "calendar.json").write_text('"'{\"rows\": []}')
+    r = audit.audit(tmp_path, now=now)
+    assert r[\"status\"] == \"INCOMPLETE\", r
+    assert r[\"days\"][0][\"warnings\"]
+
+
+def test_snapshot_watermark_excludes_concurrent_appends(tmp_path):
+    fixture(tmp_path)
+    connection = audit.connect(tmp_path / \"state.sqlite3\")
+    try:
+        states, watermark, _ = audit.snapshot(connection, 10)
+        assert not connection.in_transaction
+        with sqlite3.connect(tmp_path / \"state.sqlite3\") as writer:
+            writer.execute(\"INSERT INTO observations VALUES (?,?,?,?,?)\", (\"later\", \"2026-10-20\", \"bad\", \"b\", \"bad\"))
+        rows = list(audit.events(connection, states[0][1][\"day\"], watermark))
+        assert len(rows) == 6 and all(row[0] <= watermark for row in rows)
+    finally:
+        connection.close()
+
+
+def test_policy_hash_failure_does_not_stop_service_or_mutate_policy(tmp_path):
+    now = fixture(tmp_path)
+    path = tmp_path / \"policy.json\"
+    p = json.loads(path.read_text())
+    p[\"code_hashes\"] = {str(Path(strategy.__file__)): \"wrong\"}
+    path.write_text(json.dumps(p))
+    before = path.read_bytes()
+    assert audit.audit(tmp_path, now=now)[\"status\"] == \"FAIL\"
+    assert path.read_bytes() == before and not (tmp_path / \"STOP\").exists()
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/ruff check scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/python -m pytest -q tests/test_forward_audit.py" in /Users/prts/Projects/aquant
+ exited 1 in 1490ms:
+...........F...........                                                  [100%]
+=================================== FAILURES ===================================
+____________ test_corruption_never_passes[kind-mixed_evidence_kind] ____________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-44/test_corruption_never_passes_k0')
+problem = 'kind', reason = 'mixed_evidence_kind'
+
+    @pytest.mark.parametrize(
+        "problem,reason",
+        [
+            ("source", "nonlive_raw_source"),
+            ("digest", "raw_event_digest_mismatch"),
+            ("bar", "admitted_bar_without_raw_evidence"),
+            ("signal", "signal_does_not_reproduce"),
+            ("future", "decision_precedes_available_data"),
+            ("gate", "iex_gate_bypassed"),
+            ("nbbo", "unexpected_execution_quote_scope"),
+            ("pnl", "unexpected_execution_under_iex_only_policy"),
+            ("cash", "unexplained_simulated_cash_change"),
+            ("kind", "mixed_evidence_kind"),
+            ("orphan", "admitted_bar_without_decision"),
+            ("duplicate", "duplicate_decision"),
+            ("report", "published_summary_mismatch"),
+            ("calendar", "calendar_session_mismatch"),
+        ],
+    )
+    def test_corruption_never_passes(tmp_path, problem, reason):
+        now = fixture(tmp_path)
+        if problem in {"source", "digest"}:
+            with sqlite3.connect(tmp_path / "state.sqlite3") as connection:
+                rowid, raw = connection.execute(
+                    "SELECT rowid,payload FROM observations LIMIT 1"
+                ).fetchone()
+                payload = json.loads(raw)
+                if problem == "source":
+                    payload["source"] = "history_rest"
+                else:
+                    payload["event"]["v"] = 999
+                connection.execute(
+                    "UPDATE observations SET payload=? WHERE rowid=?", (json.dumps(payload), rowid)
+                )
+        elif problem in {"report", "calendar"}:
+            path = tmp_path / ("2026-10-20/report.json" if problem == "report" else "calendar.json")
+            value = json.loads(path.read_text())
+            if problem == "report":
+                value["days"][0]["net_pnl"] = "1000"
+            else:
+                value["rows"][0]["close"] = "13:00"
+            path.write_text(json.dumps(value))
+        else:
+    
+            def mutate(s):
+                d = s["decisions"][0]
+                if problem == "bar":
+                    s["bars"]["SPY"][0]["v"] = 999
+                elif problem == "signal":
+                    d["signal"] = True
+                elif problem == "future":
+                    d["decided_at"] = s["open"]
+                elif problem == "gate":
+                    d["availability"]["allowed"] = True
+                elif problem == "nbbo":
+                    d["quote"] = {"scope": "nbbo"}
+                elif problem == "pnl":
+                    s["books"]["base"]["trades"].append({"net_pnl": "10"})
+                elif problem == "cash":
+                    s["books"]["base"]["cash"] = "2010"
+                elif problem == "kind":
+                    s["kind"] = "historical_backtest"
+                elif problem == "orphan":
+                    s["decisions"].pop(0)
+                else:
+                    s["decisions"].append(s["decisions"][0])
+    
+            change_state(tmp_path, mutate)
+        report = audit.audit(tmp_path, now=now)
+        assert report["status"] == "FAIL"
+>       assert reason in errors(report), report
+E       AssertionError: {'kind': 'forward_integrity_audit', 'checked_at': '2026-10-20 13:36:00+00:00', 'root': '/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-44/test_corruption_never_passes_k0', 'orders_authorized': False, ...}
+E       assert 'mixed_evidence_kind' in ['audit_failed_AcceptanceError']
+E        +  where ['audit_failed_AcceptanceError'] = errors({'kind': 'forward_integrity_audit', 'checked_at': '2026-10-20 13:36:00+00:00', 'root': '/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-44/test_corruption_never_passes_k0', 'orders_authorized': False, ...})
+
+tests/test_forward_audit.py:204: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_forward_audit.py::test_corruption_never_passes[kind-mixed_evidence_kind]
+1 failed, 22 passed, 1 warning in 0.78s
+
+exec
+/bin/zsh -lc "rg -n 'peak|calendar_rows|report\\[\"days\"\\].append|result = inspect' scripts/research/audit_forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+291:        calendar_rows = history.read(root / "calendar.json")["rows"]
+292:        calendar = history.sessions(calendar_rows)
+296:            report["calendar_rows"] = calendar_rows
+305:                result = inspect_day(
+334:                report["days"].append(result)
+
+codex
+发现一个需要保留为限制的问题：监控会更新同一份交易日历缓存，较早日期可能不再保留在缓存里。审计遇到这种情况会标记“官方日历证据未保留”，不会把它当作已核实，也不会推断提前收盘时间。
+
+这项改进涉及冻结运行代码，本轮先写入 PENDING；新增审计报告会保存本次读取的日历副本，现有监控保持不变。
+exec
+/bin/zsh -lc "python3 - <<'PY'
+p='scripts/research/audit_forward.py'
+s=open(p).read()
+s=s.replace('''def events(connection, day, watermark):
+    last = 0
+    while True:''','''def events(connection, day, watermark):
+    first, upper = connection.execute(
+        \"SELECT min(rowid),max(rowid) FROM observations WHERE day=? AND rowid<=?\",
+        (day, watermark),
+    ).fetchone()
+    if first is None:
+        return
+    last = first - 1
+    while True:''')
+s=s.replace('\"SELECT rowid,id,received,kind,payload FROM observations \"','\"SELECT rowid,id,received,kind,payload FROM observations NOT INDEXED \"').replace('(day, last, watermark),','(day, last, upper),')
+s=s.replace('''                official = calendar.get(state[\"day\"])''','''                report[\"days\"].append(result)
+                official = calendar.get(state[\"day\"])''')
+s=s.replace('''                report[\"days\"].append(result)
+                previous = state''','''                previous = state''')
+s=s.replace('''        require(Decimal(book[\"cash\"]) == Decimal(start), \"unexplained_simulated_cash_change\")''','''        require(Decimal(book[\"cash\"]) == Decimal(start), \"unexplained_simulated_cash_change\")
+        require(Decimal(book[\"peak\"]) == Decimal(start), \"unexplained_simulated_peak_change\")''')
+open(p,'w').write(s)
+p='tests/test_forward_audit.py'
+s=open(p).read().replace('complete=True, count=3, minutes=3, day=\"2026-10-20\"','complete=True, count=3, minutes=3, day=\"2026-10-20\", trend=False')
+s=s.replace('''            for symbol in (\"SPY\", \"QQQ\"):
+                d.consume(''','''            price = 100 + .5 * min(i, 59) / 59 if trend and i < 65 else 100.7 if trend else 100
+            for symbol in (\"SPY\", \"QQQ\"):
+                d.consume(''')
+s=s.replace('\"o\": 100,','\"o\": price,').replace('\"h\": 101,','\"h\": price + .02,').replace('\"l\": 99,','\"l\": price - .02,').replace('\"c\": 100,','\"c\": price,').replace('\"vw\": 100,','\"vw\": price,')
+open(p,'w').write(s)
+PY
+cat >> tests/test_forward_audit.py <<'PY'
+
+
+def test_real_frozen_signal_reproduces_but_remains_rejected(tmp_path):
+    now = fixture(tmp_path, minutes=80, count=66, trend=True)
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"status\"] == \"INCOMPLETE\", result
+    assert result[\"days\"][0][\"signals\"] == 2
+    assert not errors(result)
+
+
+def test_event_pages_cross_page_boundary_and_remain_bounded(tmp_path):
+    fixture(tmp_path)
+    with sqlite3.connect(tmp_path / \"state.sqlite3\") as writer:
+        writer.executemany(\"INSERT INTO observations VALUES (?,?,?,?,?)\", [
+            (f\"q-{i}\", \"2026-10-20\", \"2026-10-20T13:31:00Z\", \"q\", \"{}\") for i in range(2005)])
+    connection = audit.connect(tmp_path / \"state.sqlite3\")
+    try:
+        _, watermark, _ = audit.snapshot(connection, 10)
+        rows = list(audit.events(connection, \"2026-10-20\", watermark))
+        assert len(rows) == 2011
+        assert len({r[0] for r in rows}) == 2011
+        assert not connection.in_transaction
+    finally:
+        connection.close()
+
+
+def test_missing_raw_record_detected_even_when_summary_is_unchanged(tmp_path):
+    now = fixture(tmp_path)
+    with sqlite3.connect(tmp_path / \"state.sqlite3\") as connection:
+        connection.execute(\"DELETE FROM observations WHERE rowid=(SELECT min(rowid) FROM observations)\")
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"status\"] == \"FAIL\"
+    assert \"admitted_bar_without_raw_evidence\" in errors(result)
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/ruff check scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/python -m pytest -q tests/test_forward_audit.py" in /Users/prts/Projects/aquant
+ succeeded in 2185ms:
+..........................                                               [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+26 passed, 1 warning in 1.49s
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+p='scripts/research/audit_forward.py'
+s=open(p).read().replace('    require(not decisions, \"decision_without_admitted_bar\")','    require(not decisions, \"decision_without_admitted_bar\")\\n    if total and state[\"online_seconds\"] <= 0:\\n        warnings.append(\"online_duration_unverified\")')
+open(p,'w').write(s)
+p='tests/test_forward_audit.py'
+s=open(p).read().replace('        d = forward.Day(journal, p, day, opening, closing, opening)\\n','        d = forward.Day(journal, p, day, opening, closing, opening)\\n        d.connection(True, opening)\\n')
+s=s.replace('            received = at + pd.Timedelta(minutes=1, milliseconds=10)\\n','            received = at + pd.Timedelta(minutes=1, milliseconds=10)\\n            for seconds in (15, 30, 45, 60):\\n                d.heartbeat(at + pd.Timedelta(seconds=seconds))\\n')
+open(p,'w').write(s)
+PY
+cat >> tests/test_forward_audit.py <<'PY'
+
+
+def test_complete_regular_session_end_to_end_integrity(tmp_path):
+    now = fixture(tmp_path, minutes=390, count=390)
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"status\"] == \"PASS\", result
+    assert result[\"days\"][0][\"admitted_bars\"] == result[\"days\"][0][\"decisions\"] == 780
+    assert not result[\"execution_evidence\"]
+
+
+def test_full_bars_without_online_duration_are_not_complete_evidence(tmp_path):
+    now = fixture(tmp_path)
+    change_state(tmp_path, lambda s: s.update(online_seconds=0))
+    forward.publish(tmp_path)  # Completed reports are immutable and stay as originally written.
+    result = audit.audit(tmp_path, now=now)
+    assert \"online_duration_unverified\" in result[\"days\"][0][\"warnings\"]
+    assert result[\"status\"] == \"FAIL\"  # Published old uptime also conflicts with altered state.
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/ruff check scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/python -m pytest -q tests/test_forward_audit.py" in /Users/prts/Projects/aquant
+ succeeded in 11148ms:
+............................                                             [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+28 passed, 1 warning in 10.43s
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+p='scripts/research/audit_forward.py'
+s=open(p).read().replace('            report[\"event_rowid_watermark\"] = watermark\\n','            report[\"event_rowid_watermark\"] = watermark\\n            if not states and watermark:\\n                report[\"errors\"].append(\"raw_events_without_session_state\")\\n')
+s=s.replace('if any(x[\"errors\"] for x in report[\"days\"])','if report[\"errors\"] or any(x[\"errors\"] for x in report[\"days\"])')
+open(p,'w').write(s)
+PY
+cat >> tests/test_forward_audit.py <<'PY'
+
+
+def test_orphan_raw_events_cannot_be_reported_as_waiting(tmp_path):
+    now = fixture(tmp_path)
+    with sqlite3.connect(tmp_path / \"state.sqlite3\") as connection:
+        connection.execute(\"DELETE FROM records\")
+    report = audit.audit(tmp_path, now=now)
+    assert report[\"status\"] == \"FAIL\"
+    assert \"raw_events_without_session_state\" in report[\"errors\"]
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/ruff check .
+.venv/bin/ruff format --check src scripts tests
+.venv/bin/python -m pytest -q" in /Users/prts/Projects/aquant
+codex
+新增审计测试已覆盖原始记录缺失、历史来源混入、信号篡改、时间倒置、NBBO 门禁绕过、虚构收益及日报不一致；完整 390 分钟模拟交易日也已核查通过。
+
+实际生产目录目前返回 WAITING，符合尚未开始冻结前向交易日的状态。全量回归测试正在运行，审计没有创建 STOP 文件或修改原记录。
+exec
+/bin/zsh -lc "rg -n 'peak|snapshot|status_scope|raw_events_without|query_only' scripts/research/audit_forward.py && .venv/bin/python -m scripts.research.audit_forward --output outputs/research/overnight-20261019-forward-audit && .venv/bin/python - <<'PY'
+from pathlib import Path
+import hashlib,json
+from aquant import forward
+root=forward.DIRECTORY
+prior=json.loads(Path('docs/overnight/round-1-before.json').read_text())['hashes']
+assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==v for p,v in prior.items())
+r=json.loads(Path('outputs/research/overnight-20261019-forward-audit/report.json').read_text())
+assert r['status']=='WAITING' and not r['days'] and r['event_rowid_watermark']==0
+print(json.dumps({'audit':r['status'],'errors':r['errors'],'strategy_profitability_verified':r['strategy_profitability_verified'],'protected_hashes':len(prior),'monitor_stopped':(root/'STOP').exists()}))
+PY" in /Users/prts/Projects/aquant
+ succeeded in 658ms:
+{"status": "WAITING", "report": "outputs/research/overnight-20261019-forward-audit/report.md"}
+{"audit": "WAITING", "errors": [], "strategy_profitability_verified": false, "protected_hashes": 12, "monitor_stopped": false}
+
+ succeeded in 63835ms:
+..............................................................s......... [ 14%]
+........................................................................ [ 29%]
+........................................................................ [ 44%]
+........................................................................ [ 59%]
+........................................................................ [ 74%]
+........................................................................ [ 88%]
+......................................................                   [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/pipeline/test_community_reference_equivalence.py:35: BLOCKED: supplied source has Markdown escapes/fences and lost indentation; readable-logic reproduction tested separately, original never repaired
+485 passed, 1 skipped, 1 warning in 62.91s (0:01:02)
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+p='scripts/research/audit_forward.py'
+s=open(p).read().replace('            end = when + pd.Timedelta(minutes=1)\\n','''            end = when + pd.Timedelta(minutes=1)
+            values = [Decimal(str(b[k])) for k in (\"o\", \"h\", \"l\", \"c\", \"v\", \"vw\")]
+            require(
+                all(x.is_finite() and x > 0 for x in values)
+                and values[2] <= min(values[0], values[3]) <= max(values[0], values[3]) <= values[1],
+                \"invalid_admitted_ohlcv\",
+            )
+''')
+open(p,'w').write(s)
+p='tests/test_forward_audit.py'
+s=open(p).read().replace('        (\"bar\", \"admitted_bar_without_raw_evidence\"),','        (\"bar\", \"admitted_bar_without_raw_evidence\"),\\n        (\"ohlcv\", \"invalid_admitted_ohlcv\"),')
+s=s.replace('            elif problem == \"signal\":\\n','            elif problem == \"ohlcv\":\\n                s[\"bars\"][\"SPY\"][0][\"v\"] = -1\\n            elif problem == \"signal\":\\n')
+open(p,'w').write(s)
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/ruff check .
+.venv/bin/ruff format --check src scripts tests
+.venv/bin/python -m pytest -q" in /Users/prts/Projects/aquant
+exec
+/bin/zsh -lc ".venv/bin/python -m scripts.research.audit_forward --output outputs/research/overnight-20261019-forward-audit-final && .venv/bin/python - <<'PY'
+from pathlib import Path
+import hashlib,json
+from datetime import UTC,datetime
+from aquant import forward
+root=Path('outputs/research/overnight-20261019-forward-audit-final')
+source=Path('scripts/research/audit_forward.py')
+(root/source.name).write_bytes(source.read_bytes())
+protected=json.loads(Path('docs/overnight/round-1-before.json').read_text())['hashes']
+assert all(hashlib.sha256(Path(k).read_bytes()).hexdigest()==v for k,v in protected.items())
+value={'checked_at':datetime.now(UTC).isoformat(),'code_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+       'source':str(source),'protected_files_verified':len(protected),'protected_files_unchanged':True,
+       'status':forward.status(),'orders_sent':0,'launchd_modified':False,'env_modified':False}
+(root/'verification.json').write_text(json.dumps(value,indent=2)+'\\n')
+print(json.dumps({'protected':len(protected),'state':value['status']['launchd']}))
+PY" in /Users/prts/Projects/aquant
+ succeeded in 613ms:
+{"status": "WAITING", "report": "outputs/research/overnight-20261019-forward-audit-final/report.md"}
+{"protected": 12, "state": {"com.aquant.forward": {"loaded": true, "state": "not running", "runs": "38", "last exit code": "0"}, "com.aquant.paper-pnl": {"loaded": true, "state": "not running", "runs": "8", "last exit code": "0"}}}
+
+exec
+/bin/zsh -lc 'git diff --check && wc -l scripts/research/audit_forward.py tests/test_forward_audit.py && git branch --show-current' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+     426 scripts/research/audit_forward.py
+     324 tests/test_forward_audit.py
+     750 total
+main
+
+ succeeded in 63617ms:
+..............................................................s......... [ 14%]
+........................................................................ [ 29%]
+........................................................................ [ 44%]
+........................................................................ [ 59%]
+........................................................................ [ 73%]
+........................................................................ [ 88%]
+.......................................................                  [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/pipeline/test_community_reference_equivalence.py:35: BLOCKED: supplied source has Markdown escapes/fences and lost indentation; readable-logic reproduction tested separately, original never repaired
+486 passed, 1 skipped, 1 warning in 62.71s (0:01:02)
+
+context compacted
+exec
+/bin/zsh -lc 'tail -60 docs/overnight/STATE.md && tail -45 docs/overnight/PENDING.md' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+  探测单独保存，不计前向交易日。两个服务已加载、最近退出码0，未执行服务启停。
+- 首次冻结观察仍为2026-10-20 09:20 ET；Paper复核仍为10月20/22日16:15 ET，未提前消耗次数。
+  NBBO门禁不放宽；当前IEX仅支持信号及拒绝记录，尚无合格前向收益证据。
+
+### 产物
+
+- `docs/overnight/RESULTS-1.md`：结论、数字、限制和复现命令。
+- `docs/overnight/round-1-before.json`、`round-1-validation.json`：状态、保护Hash和验收结果。
+- `outputs/research/overnight-20261019-round1-final/report.json` / `.md`：完整159组分段及配对结果。
+- `outputs/research/overnight-20261019-coverage/report.json` / `.md`：逐日逐标的前缀/全天覆盖。
+- 最终两目录均保存计划、代码副本和Hash；初版报告保留，最终复跑数值完全一致。
+- `outputs/overnight/round-1/01-evidence.patch`、`02-records.patch`：代码测试/文档两个小步补丁，
+  用于Git权限恢复后的审查与提交；不能冒充当前已经commit。
+
+### 下一步
+
+1. 总控需在允许Git写入的环境创建指定分支并仅提交本轮文件，禁止main提交、禁止暂存全部旧工作。
+2. 保持只读监控等待冻结日期；不能为了今天补数据而更改起始日或伪造实时样本。
+3. 可继续离线审计IEX缺失的时期分布、前缀信号与全日样本差异；冻结参数不变，locked_test不用于调参。
+4. NBBO来源/评价协议与运行代码冻结隔离见PENDING，不能靠自动晋级掩盖证据缺口。
+
+## 第 2 轮 · 2026-10-19 纽约 14:34 起
+
+- 延续只读/离线范围，不发送订单，不改launchd/`.env`。Git仍为main；环境的`.git`只读限制
+  未解除，未尝试绕过限制，不能建分支或commit。交接见PENDING及增量补丁。
+- 新增 `scripts/research/replay_signals.py`，复用冻结趋势参数、`strategy.signals`、连续前缀门禁
+  与现有Decimal回放引擎；没有改动运行冻结代码，也没有另建交易系统。
+- 运行前固定18组矩阵：SIP信号、IEX连续前缀、旧全天完整筛选控制，各三档成本×两档延迟。
+  仅2024-10-01至2026-06-30的437日，未读取locked_test行情/收益用于计算。全部价格为SIP
+  分钟代理，明确不是NBBO/前向/真实成交；缺失IEX只映射为NO_SIGNAL，不补造OHLCV。
+- 完成18组、36分段、24配对统计；7个旧控制组合（14分段）净收益复现一致，所有现金/权益对账。
+  18组均无未平仓，结果/交易/权益/信号日志全部保留，未筛选最佳档位。
+- 437日基础成本d1：SIP33笔+$6.3941；IEX前缀22笔−$0.0963；旧IEX全日筛选1笔+$2.9628。
+  IEX前缀压力成本−$23.6385，最大分钟回撤1.593%；额外延迟1分钟基础成本+$3.2789。
+  后者不能被挑出来证明优势，仍是探索性成本/延迟敏感性。
+- IEX前缀基础成本开发期16笔/10活跃日−$7.5070，原验证期6笔/5活跃日+$7.4106；
+  单笔95%区间分别[−1.949,1.151]与[−0.801,4.627]，不支持可靠正期望或晋级。
+- 信号并集分钟不一致率开发69.12%、原验证34.62%；已区分IEX缺失前缀和完整前缀下信号差异。
+  覆盖2025年11月前273日完整1天/缺12,548分钟，之后164日完整88天/缺289分钟。
+  官方CTA/UTP报价显示变更只作为待核实线索，未认定其导致IEX bar变化、未改变单位换算。
+- 新增13项测试；全量 **456 passed、1 skipped**（52.13秒），Ruff、126文件格式与diff检查通过。
+- 冻结policy/运行模块、`.env`、所有既有aquant plist和Smoke原报告共12项Hash均一致。
+  两服务已加载、最近退出码0，采集及账务复核时间不变，未重启服务或提前消耗复核次数。
+
+### 第 2 轮产物
+
+- `docs/overnight/RESULTS-2.md`：实验方法、收益风险、数据机制限制、官方来源及复现命令。
+- `outputs/research/overnight-20261019-signals/`：plan、源代码副本、data、完整report、
+  三组signals与signal-union parquet、18组intent/result及全部orders/fills/trades/equity日志。
+- `outputs/overnight/round-2/reproduction.json`：旧组合复现、完整性和服务状态核对。
+- `docs/overnight/round-2-validation.json`：本轮验收汇总。
+- `outputs/overnight/round-2/01-replay.patch`、`02-records.patch`：相对第1轮的两份小步补丁，
+  保存代码/测试及文档追加，待可写Git环境处理；不冒充commit。
+
+### 第 2 轮之后
+
+1. 策略仍无可靠正期望证据；不能将+3.28的延迟档或只剩1笔的旧筛选组当作赢家。
+2. 只读监控按冻结计划等待10月20日，收集实际覆盖和拒绝原因，不回填今天的早盘。
+3. 报价资格与100笔前向样本时间预算见PENDING；不给策略下单权限，不自动减少证据要求。
+4. 可继续研究数据机制与执行价格代理误差；所有新试验须预先登记且与冻结运行隔离。
+保留全部既有未提交成果，不能用 reset/clean 清理。
+
+## 前向成交数据资格
+
+冻结门禁要求 NBBO，当前免费 IEX 单所报价不能满足。继续只读记录行情、信号和拒绝原因；
+不可静默放松门禁或把延迟 SIP 当作实时成交报价。报价授权/来源或新协议版本须单独判断；
+本轮不购买订阅、不改参数、不授予订单权限。
+
+## 第 1 轮交接：未提交的本轮文件
+
+只有 `scripts/research/audit_evidence.py`、`tests/test_evidence.py` 和 `docs/overnight/` 是本轮新增。
+全量测试 443 passed / 1 skipped，Ruff 与格式检查通过。旧改动未暂存、未覆盖。
+补丁位于 `outputs/overnight/round-1/`，分为代码/测试和文档记录两个小步。
+后续执行环境允许 Git 写入后，先创建 `overnight/phase5-2026-10-19`，
+再仅提交以上文件；不要 `git add .` 混入用户此前未提交的其他工作。
+文件已经存在于工作区时无需再应用新文件补丁；补丁用于独立核查或迁移到保留原工程成果的副本。
+不要把此次未提交误报为已完成 commit，也不要提交到 main。
+
+## 前向收益证据的结构性阻碍
+
+只读流连通性已核实，但 IEX 非 NBBO 意味着现有冻结门禁下不会有合格的假设成交。
+因此当前不能达到冻结评价方法要求的 100 笔成交；不能以行情天数或被拒绝信号代替。
+是否引入可合法取得的实时 NBBO 或单独冻结另一种仅信号研究协议需要明确决策。
+本轮保持现状，既不购买数据，也不降低门禁，不修改已授权的服务。
+
+## 后续研究修改应与运行冻结隔离
+
+本轮确认原 IEX 回测的全天完整条件排除了 21/22 个截至2026-06-30的前缀有效信号标的日。
+下一轮可进一步审计缺失分布和历史样本定义；不直接声称修正后会盈利。
+`backtest.py`、`strategy.py` 等均在监控策略的实现 Hash 中；直接改这些文件会触发只读监控停用。
+在解决运行版本隔离前，继续使用离线分析脚本，不默默重签冻结策略或修改部署授权。
+
+## 第 2 轮：数据机制与前向证据预算
+
+- IEX全日覆盖在2025年11月附近显著变化：之前273日仅1天双标的完整，之后164日有88天。
+  官方2025-11-03的CTA/UTP报价数量变更与此相近，但未证明IEX bar变化的原因；若需要用于
+  可执行性判断，后续应核对供应商的IEX聚合历史和报价单位，不能自行固定乘100或改变门禁。
+- 连续前缀对照纳入22笔历史代理交易，基础成本净−$0.0963、压力成本−$23.6385；未证明正期望。
+  该数量来自437个历史交易日。纯算术频率约每126日6.34个信号，不能期待6个月自动获得100笔。
+  冻结NBBO门禁当前更使合格前向成交为零；是否调整研究时间预算或另立评价协议需要明确决策，
+  本轮不降低门槛、不重签参数、不借历史代理结果补齐前向样本。
+- 第2轮仍处于main工作区，`.git`写入权限限制未解除，没有任何commit。
+  新增 `scripts/research/replay_signals.py`、`tests/test_signal_replay.py`、`RESULTS-2.md`及验收记录，
+  仅追加STATE/PENDING；代码/测试与文档两份增量补丁位于 `outputs/overnight/round-2/`。
+  Git可写后按第1轮指示创建指定分支，先处理第1轮再处理第2轮，保留其他既有未提交工作。
+
+codex
+全量回归已通过：486 passed、1 skipped，新增 30 项审计测试。实际前向目录仍为 WAITING，没有可报告的前向收益；本轮正在整理审计结果和交接补丁，未发送订单，也未修改 launchd、`.env` 或冻结策略。
+exec
+/bin/zsh -lc "cat outputs/research/overnight-20261019-forward-audit-final/verification.json; cat outputs/research/overnight-20261019-forward-audit-final/report.md; cat outputs/overnight/round-2/manifest.json; cat docs/overnight/round-2-validation.json; sed -n '1,90p' scripts/research/audit_forward.py; tail -55 scripts/research/audit_forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+{
+  "checked_at": "2026-10-19T18:57:18.251529+00:00",
+  "code_sha256": "9f2c96e870959652f6c3d37d1682cf7b678ec51d02e4f66cf34e5da90e97e033",
+  "source": "scripts/research/audit_forward.py",
+  "protected_files_verified": 12,
+  "protected_files_unchanged": true,
+  "status": {
+    "orders_authorized": false,
+    "stopped": false,
+    "next_start_utc": "2026-10-20 13:20:00+00:00",
+    "next_start_et": "2026-10-20 09:20:00-04:00",
+    "launchd": {
+      "com.aquant.forward": {
+        "loaded": true,
+        "state": "not running",
+        "runs": "38",
+        "last exit code": "0"
+      },
+      "com.aquant.paper-pnl": {
+        "loaded": true,
+        "state": "not running",
+        "runs": "8",
+        "last exit code": "0"
+      }
+    },
+    "latest": [],
+    "database_bytes": 32768,
+    "database_limit_bytes": 5368709120,
+    "free_disk_bytes": 219415511040,
+    "reconciliation": {
+      "configured": true,
+      "read_only": true,
+      "checks": [
+        {
+          "day": "2026-10-20",
+          "due": "2026-10-20T20:15:00Z",
+          "number": 1,
+          "report": "/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-1.json",
+          "completed": false
+        },
+        {
+          "day": "2026-10-22",
+          "due": "2026-10-22T20:15:00Z",
+          "number": 2,
+          "report": "/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-2.json",
+          "completed": false
+        }
+      ]
+    },
+    "log": "/Users/prts/Projects/aquant/outputs/research/forward_observations/monitor.log"
+  },
+  "orders_sent": 0,
+  "launchd_modified": false,
+  "env_modified": false
+}
+# 只读前向证据完整性审计
+
+状态：WAITING；时间：2026-10-19 18:57:17.887703+00:00
+
+PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。
+没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。
+
+|日期|采用bar|决策|信号|错误|提醒|
+|---|---:|---:|---:|---|---|
+
+顶层错误：无
+
+不调用Broker，不改SQLite、日报、策略、调度或STOP状态。原始报价为抽样，不能证明逐报价完整性。
+审计依赖原事件只追加的存储约定；无可信外部签名，不能证明持有写权限者从未改写整套记录。
+{
+  "committed": false,
+  "reason": ".git remains read-only",
+  "requires_round_1_first": true,
+  "patches": [
+    {
+      "path": "outputs/overnight/round-2/01-replay.patch",
+      "sha256": "ffa9aa4f9dd151fcf71a8b19ad18e52277b7b009356b679e990d04ab6bdf5f59",
+      "files": [
+        "scripts/research/replay_signals.py",
+        "tests/test_signal_replay.py"
+      ],
+      "applies_after_round_1_verified": true
+    },
+    {
+      "path": "outputs/overnight/round-2/02-records.patch",
+      "sha256": "f22115a8861b6219bcff7048ead06a79a01baf4a9ea75d995b6de7b7418c5ea0",
+      "files": [
+        "docs/overnight/RESULTS-2.md",
+        "docs/overnight/round-2-validation.json",
+        "docs/overnight/STATE.md",
+        "docs/overnight/PENDING.md"
+      ],
+      "applies_after_round_1_verified": true
+    }
+  ]
+}
+{
+  "at": "2026-10-19T18:45:14.287024+00:00",
+  "pytest": {
+    "passed": 456,
+    "skipped": 1,
+    "seconds": 52.13
+  },
+  "new_tests": 13,
+  "ruff": "PASS",
+  "format": "PASS,126 files",
+  "diff_check": "PASS",
+  "experiment_count": 18,
+  "periods": 36,
+  "contrasts": 24,
+  "prior_combinations_reproduced": 7,
+  "all_cash_reconciled": true,
+  "unclosed_positions": 0,
+  "protected_files_unchanged": true,
+  "protected_files_checked": 12,
+  "source_hashes_verified": true,
+  "report_sha256": "f6b5f2d731a195500b981a895e80fbd60dfb8e3511c08a63192eadd593670c01",
+  "orders_sent": 0,
+  "parameters_changed": false,
+  "launchd_modified": false,
+  "env_modified": false,
+  "cutoff": "2026-06-30",
+  "locked_test_used": false,
+  "status": {
+    "orders_authorized": false,
+    "stopped": false,
+    "next_start_utc": "2026-10-20 13:20:00+00:00",
+    "next_start_et": "2026-10-20 09:20:00-04:00",
+    "launchd": {
+      "com.aquant.forward": {
+        "loaded": true,
+        "state": "not running",
+        "runs": "26",
+        "last exit code": "0"
+      },
+      "com.aquant.paper-pnl": {
+        "loaded": true,
+        "state": "not running",
+        "runs": "6",
+        "last exit code": "0"
+      }
+    },
+    "latest": [],
+    "database_bytes": 32768,
+    "database_limit_bytes": 5368709120,
+    "free_disk_bytes": 219325718528,
+    "reconciliation": {
+      "configured": true,
+      "read_only": true,
+      "checks": [
+        {
+          "day": "2026-10-20",
+          "due": "2026-10-20T20:15:00Z",
+          "number": 1,
+          "report": "/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-1.json",
+          "completed": false
+        },
+        {
+          "day": "2026-10-22",
+          "due": "2026-10-22T20:15:00Z",
+          "number": 2,
+          "report": "/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-2.json",
+          "completed": false
+        }
+      ]
+    },
+    "log": "/Users/prts/Projects/aquant/outputs/research/forward_observations/monitor.log"
+  },
+  "dependency_hashes": {
+    "src/aquant/history.py": "92612c81361f08380ea0f60b4766adc4a5ab810fc40843fd70437795d8b3b078",
+    "src/aquant/data/availability.py": "308272895f868dd87e48c7558c601252f213b78705ce1d814c2e7442db58f83f",
+    "src/aquant/evaluation/uncertainty.py": "a0b03fc6c03194e2f7e318af8b1e011f91439cb8e2607275b6be83e2275f403d"
+  },
+  "git": {
+    "commits": 0,
+    "branch": "main",
+    "blocked": ".git read-only; no escalation allowed"
+  }
+}
+"""Read-only integrity audit of frozen IEX observations; never collects or trades."""
+
+import argparse
+import hashlib
+import json
+import sqlite3
+from contextlib import closing
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+from uuid import uuid4
+
+import pandas as pd
+
+from aquant import forward, history, strategy
+from aquant.alpaca import ROOT, AcceptanceError
+from aquant.data.availability import check
+from aquant.evaluation.intraday import save_json
+from aquant.evaluation.research import digest
+
+
+def instant(value):
+    time = pd.Timestamp(value)
+    if time.tzinfo is None or pd.isna(time):
+        raise ValueError("A timezone-aware timestamp is required")
+    return time.tz_convert("UTC")
+
+
+def connect(path):
+    connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1)
+    connection.execute("PRAGMA query_only=ON")
+    return connection
+
+
+def snapshot(connection, limit):
+    """Brief consistent state/watermark read; never hold a lock during Python audit.
+
+    Event pages below rely on the production append-only contract. This is not
+    cryptographic attestation against a party able to rewrite the whole database.
+    """
+    connection.execute("BEGIN")
+    try:
+        rows = connection.execute(
+            "SELECT name,value FROM records WHERE name LIKE 'forward:%' ORDER BY name DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        tables = {
+            r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        watermark = (
+            connection.execute("SELECT coalesce(max(rowid),0) FROM observations").fetchone()[0]
+            if "observations" in tables
+            else 0
+        )
+        previous = None
+        if rows:
+            row = connection.execute(
+                "SELECT value FROM records WHERE name LIKE 'forward:%' AND name < ? "
+                "ORDER BY name DESC LIMIT 1",
+                (rows[-1][0],),
+            ).fetchone()
+            previous = json.loads(row[0]) if row else None
+        return [(name, json.loads(value)) for name, value in reversed(rows)], watermark, previous
+    finally:
+        connection.commit()
+
+
+def events(connection, day, watermark):
+    first, upper = connection.execute(
+        "SELECT min(rowid),max(rowid) FROM observations WHERE day=? AND rowid<=?",
+        (day, watermark),
+    ).fetchone()
+    if first is None:
+        return
+    last = first - 1
+    while True:
+        # Each SELECT finishes before parsing; writers are not blocked for the whole audit.
+        page = connection.execute(
+            "SELECT rowid,id,received,kind,payload FROM observations NOT INDEXED "
+            "WHERE day=? AND rowid>? AND rowid<=? ORDER BY rowid LIMIT 1000",
+            (day, last, upper),
+        ).fetchall()
+        if not page:
+            return
+        yield from page
+        last = page[-1][0]
+
+
+def inspect_day(state, p, rows, now, previous=None):
+    errors, warnings, raw_bars = [], [], {}
+        sqlite3.Error,
+        AcceptanceError,
+    ) as error:
+        report["status"] = "FAIL"
+        report["errors"].append("audit_failed_" + type(error).__name__)
+    return report
+
+
+def markdown(report):
+    lines = [
+        "# 只读前向证据完整性审计",
+        "",
+        f"状态：{report['status']}；时间：{report['checked_at']}",
+        "",
+        "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+        "",
+        "|日期|采用bar|决策|信号|错误|提醒|",
+        "|---|---:|---:|---:|---|---|",
+    ]
+    for day in report["days"]:
+        lines.append(
+            f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+            f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+        )
+    lines += [
+        "",
+        "顶层错误：" + (", ".join(report["errors"]) or "无"),
+        "",
+        "不调用Broker，不改SQLite、日报、策略、调度或STOP状态。原始报价为抽样，不能证明逐报价完整性。",
+        "审计依赖原事件只追加的存储约定；无可信外部签名，不能证明持有写权限者从未改写整套记录。",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=forward.DIRECTORY)
+    parser.add_argument("--days", type=int, default=10)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    output = args.output or ROOT / "outputs/research" / (
+        datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-forward-audit-" + uuid4().hex[:8]
+    )
+    if output.resolve().is_relative_to(args.root.resolve()) or output.exists():
+        parser.error("Use a new output directory outside the monitor evidence directory")
+    result = audit(args.root, limit=args.days)
+    save_json(output / "report.json", result)
+    (output / "report.md").write_text(markdown(result))
+    print(json.dumps({"status": result["status"], "report": str(output / "report.md")}))
+    return 2 if result["status"] == "FAIL" else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+exec
+/bin/zsh -lc '.venv/bin/ruff check . && .venv/bin/ruff format --check . && git diff --check && git branch --show-current' in /Users/prts/Projects/aquant
+ exited 1 in 0ms:
+All checks passed!
+unformatted: File would be reformatted
+  --> docs/alpaca_backtest.md:40:72
+   |
+39 | ```python
+   - def replay(bars, calendar, strategy, *, initial_cash, costs) -> Result:
+   -     ...
+40 + def replay(bars, calendar, strategy, *, initial_cash, costs) -> Result: ...
+41 +
+42 |
+   |
+
+1 file would be reformatted, 178 files already formatted
+
+exec
+/bin/zsh -lc 'ls outputs/overnight/round-3/before && cat outputs/overnight/round-1/manifest.json' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+PENDING.md
+STATE.md
+{
+  "committed": false,
+  "reason": ".git is read-only in this execution environment",
+  "patches": [
+    {
+      "path": "outputs/overnight/round-1/01-evidence.patch",
+      "sha256": "89aae0d92f17b991cb8dc531d56257c55b6bfc8b39dc66383ddd6fd9ea8b3776",
+      "files": [
+        "scripts/research/audit_evidence.py",
+        "tests/test_evidence.py"
+      ],
+      "apply_in_empty_temp_verified": true
+    },
+    {
+      "path": "outputs/overnight/round-1/02-records.patch",
+      "sha256": "f82095b4fbb4bc12197b8710497eb4909b568e482c3a868db3774162cc8ada40",
+      "files": [
+        "docs/overnight/PENDING.md",
+        "docs/overnight/RESULTS-1.md",
+        "docs/overnight/STATE.md",
+        "docs/overnight/round-1-before.json",
+        "docs/overnight/round-1-validation.json"
+      ],
+      "apply_in_empty_temp_verified": true
+    }
+  ]
+}
+
+exec
+/bin/zsh -lc "sed -n '28,46p' docs/alpaca_backtest.md; cat pyproject.toml | tail -65; .venv/bin/ruff --version; git branch --show-current; git diff --check" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+Paper 模拟成交不等于真实路由、排队、冲击或实际可获得价格。Paper 往返成功仅验收连接和订单流程。
+
+VWAP 策略若要使用 IEX bar VWAP，下一轮应在采集时保存官方返回的 `vwap` 和 `trade_count`，
+同时保留原始 OHLCV。只用 `(H+L+C)/3 × V` 累计得到的是近似价格指标，不能称为精确 VWAP。
+所有数据保留 feed、adjustment、下载时间、UTC 时间和对应纽约交易日；使用 API 日历的实际开闭市。
+
+## 最小事件驱动接口（待实现）
+
+新增一个领域模块 `backtest` 即可，不建立 Broker/Agent 服务。复用现有 JSON 和 UTC 校验，
+入口拟为：
+
+```python
+def replay(bars, calendar, strategy, *, initial_cash, costs) -> Result:
+    ...
+
+# strategy.on_bar(bar, portfolio) -> list[Operation]
+# Operation: symbol, side, qty 或 notional（互斥）
+# Result: fills, trades, equity_curve, metrics, data_quality, assumptions
+```
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aquant"
+version = "0.1.0"
+description = "Portable, offline-first A-share alpha research"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26,<3", "pandas>=2.2,<3", "PyYAML>=6,<7", "torch>=2.6,<3", "pyarrow>=15,<24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+alpaca = ["alpaca-py==0.44.0", "python-dotenv>=1.2,<2"]
+
+[project.scripts]
+aquant-alpaca = "aquant.alpaca:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+markers = ["integration: optional local data read; skip explicitly when absent"]
+
+[tool.ruff]
+extend-exclude = ["references/bigquant/community/transformer_train_example.py"]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ruff 0.16.8
+main
+
+codex
+扩大到整个仓库的格式检查时，发现旧版回测文档中的一个 Python 示例不符合当前 Ruff 格式。我会仅格式化这个示例后重查；审计另发现历史交易日历缓存可能被后续刷新替换，已将长期保留日历的问题列入待办，暂不改动冻结运行代码。
+exec
+/bin/zsh -lc 'cp docs/alpaca_backtest.md outputs/overnight/round-3/before/alpaca_backtest.md && .venv/bin/ruff format docs/alpaca_backtest.md && .venv/bin/ruff check . && .venv/bin/ruff format --check . && git diff --check' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+1 file reformatted
+All checks passed!
+179 files already formatted
+
+exec
+/bin/zsh -lc "cat > docs/overnight/RESULTS-3.md <<'EOF'
+# 第3轮：只读前向证据完整性审计
+
+新增独立离线审计命令，复用既有 "'`forward`、`strategy`、`availability` 和日报计算。
+没有新增执行系统，没有变更冻结参数或运行代码，也没有运行新的策略优化。
+
+```sh
+.venv/bin/python -m scripts.research.audit_forward --days 10
+```
+
+默认在新的 `outputs/research/*-forward-audit-*/` 生成 JSON / Markdown。
+拒绝覆盖已有目录或写入监控证据目录。SQLite以 `mode=ro`、`query_only=ON` 打开，
+只在读取状态及事件水位时持有短事务，事件分批读取后释放查询，不在Python审计期间持有长事务。
+不连接API、不生成交易请求、不创建STOP、不改变监控或账务复核服务。
+
+## 核查内容
+
+- 数据类别、IEX WebSocket来源、冻结配置Hash、原始事件摘要和接收时间。
+- bar与原始事件一致性、完整分钟、新鲜度、OHLCV合法性、交易时段、重复及缺失。
+- 只用已收到的bar重算冻结信号，检查决策时间、连续前缀、信号与全部拒绝原因。
+- 按冻结门禁重算IEX报价资格；拒绝冒充NBBO、授权订单或混入历史收益。
+- 现金连续性、模拟账本、状态与已发布日报一致性，以及未归属状态的孤立事件。
+- 与缓存的官方日历核对开闭市，不能核对的旧日期明确标记不完整，不推测日历。
+
+本轮实际审计结果为 **WAITING**：生产库没有前向交易日记录或原始观察事件，事件水位为0。
+这与冻结观察起始时间2026-10-20 09:20 ET一致；没有把今天的探测或历史回放计入前向收益。
+
+|状态|含义|
+|---|---|
+|WAITING|没有观察记录，不代表验收成功|
+|INCOMPLETE|观察未完成、数据/报告/日历依据缺失，需要查看原因|
+|FAIL|记录、信号、时间、门禁或账本存在一致性错误；退出码2|
+|PASS|所审计的完整记录相互一致，仅是证据完整性通过|
+
+所有状态均不证明盈利、真实成交或NBBO可执行性。当前冻结策略要求NBBO，而免费IEX报价
+不满足，生产只允许信号和拒绝记录。原始报价为抽样，不能证明逐报价完整；事件分批读取依赖
+既有只追加约定，没有外部可信签名，不能证明拥有写权限者从未整体重写数据。
+
+## 测试与实际状态
+
+新增30项测试，包括完整390分钟/780条bar/780条决策的模拟交易日；另一个趋势场景确实
+产生2个冻结策略信号，均因报价门禁拒绝，没有假设成交。篡改、漏原始记录、未来时间、
+虚构收益、来源混用、重复、分页、水位、日报不一致和只读写入拒绝均有覆盖。
+
+全量 **486 passed、1 skipped**，62.71秒；旧社区参考源损坏造成的skip保持原状。
+Ruff检查及全仓格式检查通过（179个文件）。全仓格式检查额外发现旧文档
+`docs/alpaca_backtest.md` 的Python代码块格式，已仅按Ruff格式化，不改变说明含义。
+12项保护文件Hash全部一致：冻结policy及运行模块、`.env`、现有aquant plist、Smoke报告等。
+
+只读状态快照中两个服务已加载、等待中、最近退出码0；没有启停或修改服务。
+观察计划仍为10月20日09:20 ET；Paper收益复核仍为10月20/22日16:15 ET，均尚未执行。
+
+## 产物与剩余问题
+
+- `scripts/research/audit_forward.py`、`tests/test_forward_audit.py`。
+- `outputs/research/overnight-20261019-forward-audit-final/`：最终报告、代码副本、Hash及状态快照。
+- `docs/overnight/round-3-validation.json`：测试及边界核查。
+- `outputs/overnight/round-3/`：增量交接补丁及manifest，需依次处理前两轮。
+
+日历缓存可能被后续刷新替换，长期审计旧日期将返回INCOMPLETE；本审计保存当前日历副本，
+不据此默默修改冻结采集代码或重签实现Hash。日历长期归档及运行冻结隔离列入PENDING。
+`.git`仍只读、分支仍为main，无法创建指定分支或commit；没有提交到main，未绕过权限。
+旧工作完整保留，补丁仅供之后在可写Git环境审查和小步提交。
+EOF
+cat >> docs/overnight/PENDING.md <<'"'EOF'
+
+## 第 3 轮：历史日历审计依据与 Git 交接
+
+- 冻结采集器的日历缓存会被后续刷新替换，可能不再包含旧观察日期。新增审计遇到这种情况
+  返回INCOMPLETE / official_calendar_not_retained，并在独立报告保存当前calendar_rows；
+  不推测旧开闭市时间。长期按日归档官方日历需要解决冻结实现Hash与部署版本隔离后进行，
+  本轮不修改运行代码、不重签policy、不重启服务。不能因审计无错误就声称交易日历已全部核实。
+- Git权限仍未改变，main上没有任何本轮commit。第3轮代码/测试、文档记录以及旧回测文档的
+  代码块格式修正保存在 "'`outputs/overnight/round-3/` 两份增量补丁；需按第1/2/3轮顺序审查。
+  已存在的工作区文件不用重复应用补丁；不要把旧未提交成果一并暂存，不能提交到main。
+EOF
+cat >> docs/overnight/STATE.md <<'"'EOF'
+
+## 第 3 轮 · 2026-10-19 纽约 14:46 起
+
+- 新增 "'`scripts/research/audit_forward.py` 和 `tests/test_forward_audit.py`，复用既有领域名称
+  与冻结计算，不引入新的执行层。只读SQLite短事务/事件水位/分页，无API、订单或监控写入。
+- 审计实时来源、原始事件、完成/新鲜bar、OHLCV、前缀信号、IEX/NBBO门禁、模拟账本、
+  现金连续性、日历和日报；显式区分WAITING、INCOMPLETE、FAIL与仅完整性意义的PASS。
+- 新增30项测试，包含完整390分钟/780bar/780决策模拟日、2个真实计算但拒绝的趋势信号，
+  以及来源混用、缺失、伪造收益、篡改、未来时间、重复、分页与只读拒写等情况。
+- 全量 **486 passed、1 skipped**，62.71秒；Ruff与全仓格式检查通过（179文件）、diff检查通过。
+  旧回测文档的一个Python示例仅按Ruff格式化，无语义改动。
+- 实际生产审计 **WAITING**，事件水位0，没有前向收益；没有将探测或历史实验混入前向数据。
+  12项保护Hash一致，服务已加载/等待/最近退出0，未启停或修改任何服务。
+- 首次观察仍为2026-10-20 09:20 ET；Paper复核仍为10月20/22日16:15 ET。
+  没有订单、API写入、参数变化、locked_test调参、`.env`或launchd改动。
+- 发现旧日历缓存可能不保留历史日期；审计保守返回INCOMPLETE并记录缓存副本，见PENDING。
+  不修改冻结采集器、不重签代码Hash、不以无交易冒充盈利验证。
+- Git仍只读且当前main，无法创建指定分支/commit；没有绕过限制或提交main。
+
+### 第 3 轮产物及后续
+
+- `docs/overnight/RESULTS-3.md`、`round-3-validation.json`：使用方法、状态语义和测试记录。
+- `outputs/research/overnight-20261019-forward-audit-final/`：最终JSON/Markdown、源代码及状态核查。
+- `outputs/overnight/round-3/01-audit.patch`、`02-records.patch`：相对前两轮的代码/测试、文档补丁。
+- 下一步在实际冻结观察日运行审计，查看覆盖及拒绝原因；保持NBBO门禁、不补造实时信号。
+  按原计划等待两次只读现金复核，不提前消耗次数。Git交接和日历长期归档留待相应权限/版本方案。
+EOF
+.venv/bin/python - <<'"'PY'
+import hashlib,json
+from datetime import datetime,UTC
+from pathlib import Path
+base=json.loads(Path('docs/overnight/round-1-before.json').read_text())['hashes']
+assert len(base)==12
+assert all(hashlib.sha256(Path(k).read_bytes()).hexdigest()==v for k,v in base.items())
+out=Path('outputs/research/overnight-20261019-forward-audit-final')
+v=json.loads((out/'verification.json').read_text())
+assert Path('scripts/research/audit_forward.py').read_bytes()==(out/'audit_forward.py').read_bytes()
+assert hashlib.sha256((out/'audit_forward.py').read_bytes()).hexdigest()==v['code_sha256']
+report=json.loads((out/'report.json').read_text())
+assert report['status']=='WAITING'
+result={'at':datetime.now(UTC).isoformat(),'pytest':{'passed':486,'skipped':1,'seconds':62.71},'new_tests':30,'ruff':'PASS','format':'PASS,179 files','diff_check':'PASS','production_audit':'WAITING','source_hash_verified':True,'code_sha256':v['code_sha256'],'report_sha256':hashlib.sha256((out/'report.json').read_bytes()).hexdigest(),'protected_files_checked':12,'protected_files_unchanged':True,'orders_sent':0,'api_requests_sent':0,'parameters_changed':False,'locked_test_used':False,'launchd_modified':False,'env_modified':False,'monitor_stopped_by_audit':False,'status':v['status'],'git':{'commits':0,'branch':'main','blocked':'.git read-only; no escalation allowed'}}
+Path('docs/overnight/round-3-validation.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\\n')
+print('Verified protected files and final audit source/report; wrote validation')
+PY" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+Verified protected files and final audit source/report; wrote validation
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import difflib,hashlib,json,subprocess,tempfile
+from pathlib import Path
+root=Path.cwd(); out=root/'outputs/overnight/round-3'
+groups={'01-audit.patch':['scripts/research/audit_forward.py','tests/test_forward_audit.py'],'02-records.patch':['docs/overnight/RESULTS-3.md','docs/overnight/round-3-validation.json']}
+changes={'docs/overnight/STATE.md':'STATE.md','docs/overnight/PENDING.md':'PENDING.md','docs/alpaca_backtest.md':'alpaca_backtest.md'}
+for patch,files in groups.items():
+    parts=[]
+    for name in files:
+        p=subprocess.run(['git','diff','--no-index','--','/dev/null',name],capture_output=True,cwd=root)
+        assert p.returncode==1,p.stderr.decode()
+        parts.append(p.stdout)
+    if patch=='02-records.patch':
+        for name,before in changes.items():
+            parts.append(''.join(difflib.unified_diff((out/'before'/before).read_text().splitlines(True),(root/name).read_text().splitlines(True),fromfile='a/'+name,tofile='b/'+name)).encode())
+    (out/patch).write_bytes(b''.join(parts))
+all_files=set()
+with tempfile.TemporaryDirectory(prefix='aquant-round3-') as tmp:
+    target=Path(tmp)
+    (target/'docs').mkdir()
+    (target/'docs/alpaca_backtest.md').write_bytes((out/'before/alpaca_backtest.md').read_bytes())
+    for number in (1,2):
+        manifest=json.loads((root/f'outputs/overnight/round-{number}/manifest.json').read_text())
+        for item in manifest['patches']:
+            patch=root/item['path']
+            subprocess.run(['git','apply','--check',str(patch)],cwd=target,check=True,capture_output=True)
+            subprocess.run(['git','apply',str(patch)],cwd=target,check=True,capture_output=True)
+            all_files.update(item['files'])
+    for name,files in groups.items():
+        subprocess.run(['git','apply','--check',str(out/name)],cwd=target,check=True,capture_output=True)
+        subprocess.run(['git','apply',str(out/name)],cwd=target,check=True,capture_output=True)
+        all_files.update(files)
+    all_files.update(changes)
+    for name in all_files:
+        assert (root/name).read_bytes()==(target/name).read_bytes(),name
+manifest={'committed':False,'reason':'.git remains read-only','requires_rounds':[1,2],'patches':[],'verified_files':len(all_files)}
+for name,files in groups.items():
+    manifest['patches'].append({'path':str((out/name).relative_to(root)),'sha256':hashlib.sha256((out/name).read_bytes()).hexdigest(),'files':files+(list(changes) if name=='02-records.patch' else []),'applies_after_rounds_1_and_2_verified':True})
+(out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\\n')
+print(json.dumps(manifest,indent=2))
+PY
+.venv/bin/ruff check . && .venv/bin/ruff format --check . && git diff --check" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+{
+  "committed": false,
+  "reason": ".git remains read-only",
+  "requires_rounds": [
+    1,
+    2
+  ],
+  "patches": [
+    {
+      "path": "outputs/overnight/round-3/01-audit.patch",
+      "sha256": "ff4a86a35b064709424c4ff85d7a105ed1f4c21aef6307393550ec0efc849a96",
+      "files": [
+        "scripts/research/audit_forward.py",
+        "tests/test_forward_audit.py"
+      ],
+      "applies_after_rounds_1_and_2_verified": true
+    },
+    {
+      "path": "outputs/overnight/round-3/02-records.patch",
+      "sha256": "e5ca3ff87f7b985951e6a653791b32e05d0ed2dc6e8ca366d76d4720dfa9ce58",
+      "files": [
+        "docs/overnight/RESULTS-3.md",
+        "docs/overnight/round-3-validation.json",
+        "docs/overnight/STATE.md",
+        "docs/overnight/PENDING.md",
+        "docs/alpaca_backtest.md"
+      ],
+      "applies_after_rounds_1_and_2_verified": true
+    }
+  ],
+  "verified_files": 16
+}
+All checks passed!
+180 files already formatted
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+for name in ('RESULTS-3.md','STATE.md','round-3-validation.json'):
+    p=Path('docs/overnight')/name
+    p.write_text(p.read_text().replace('179个文件','180个文件').replace('179文件','180文件').replace('179 files','180 files'))
+PY
+.venv/bin/python - <<'PY'
+import difflib,hashlib,json,subprocess,tempfile
+from pathlib import Path
+root=Path.cwd(); out=root/'outputs/overnight/round-3'
+m=json.loads((out/'manifest.json').read_text()); item=m['patches'][1]; parts=[]
+for name in item['files'][:2]:
+    p=subprocess.run(['git','diff','--no-index','--','/dev/null',name],capture_output=True)
+    assert p.returncode==1
+    parts.append(p.stdout)
+for name in item['files'][2:]:
+    parts.append(''.join(difflib.unified_diff((out/'before'/Path(name).name).read_text().splitlines(True),(root/name).read_text().splitlines(True),fromfile='a/'+name,tofile='b/'+name)).encode())
+p=root/item['path'];p.write_bytes(b''.join(parts));item['sha256']=hashlib.sha256(p.read_bytes()).hexdigest()
+files=set()
+with tempfile.TemporaryDirectory(prefix='aquant-round3-final-') as tmp:
+    dest=Path(tmp);(dest/'docs').mkdir();(dest/'docs/alpaca_backtest.md').write_bytes((out/'before/alpaca_backtest.md').read_bytes())
+    for n in (1,2,3):
+        manifest=m if n==3 else json.loads((root/f'outputs/overnight/round-{n}/manifest.json').read_text())
+        for item in manifest['patches']:
+            for args in (['--check'],[]):
+                subprocess.run(['git','apply',*args,str(root/item['path'])],cwd=dest,check=True,capture_output=True)
+            files.update(item['files'])
+    assert all((dest/name).read_bytes()==(root/name).read_bytes() for name in files)
+(out/'manifest.json').write_text(json.dumps(m,ensure_ascii=False,indent=2)+'\\n')
+print(f'Incremental patches verified: {len(files)} files exactly reproduced')
+PY
+.venv/bin/ruff check . && .venv/bin/ruff format --check . && git diff --check" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+Incremental patches verified: 16 files exactly reproduced
+All checks passed!
+180 files already formatted
+
+codex
+第 3 轮完成：新增只读前向证据审计，核查数据来源、信号、门禁、账本和日报一致性。
+运行：`.venv/bin/python -m scripts.research.audit_forward --days 10`
+测试：486 passed、1 skipped；Ruff及全仓格式检查通过。
+实际状态为 WAITING，没有前向收益；未发送订单，未修改 launchd、`.env` 或冻结策略。
+历史日历保留问题已记入 PENDING；进度见 [STATE.md](/Users/prts/Projects/aquant/docs/overnight/STATE.md)。
+`.git` 只读，未能建分支或提交；两份增量补丁已验证，保存在 `outputs/overnight/round-3/`。
+tokens used
+1,203,181
+第 3 轮完成：新增只读前向证据审计，核查数据来源、信号、门禁、账本和日报一致性。
+运行：`.venv/bin/python -m scripts.research.audit_forward --days 10`
+测试：486 passed、1 skipped；Ruff及全仓格式检查通过。
+实际状态为 WAITING，没有前向收益；未发送订单，未修改 launchd、`.env` 或冻结策略。
+历史日历保留问题已记入 PENDING；进度见 [STATE.md](/Users/prts/Projects/aquant/docs/overnight/STATE.md)。
+`.git` 只读，未能建分支或提交；两份增量补丁已验证，保存在 `outputs/overnight/round-3/`。

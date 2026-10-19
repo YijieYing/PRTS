@@ -1,0 +1,4087 @@
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1532a-c005-7360-a2e8-859f9de0843a
+--------
+user
+[PRTS 总控夜间指令 · 第 8 轮 · 纽约 15:39，16:00 收盘]
+用户已经去睡觉。从现在起，本线程由 PRTS 总控（Claude）通过 `codex exec resume` 驱动，**不会有人类回复你**。
+
+规则：
+- 继续推进你手上的第五阶段：只读前向验证，以及策略研究与优化。目标是样本外、扣成本后的风险调整收益；不要拿 locked_test 调参。
+- **不发送任何订单，包括 Paper**；不改 launchd 和 `.env`。
+- 遇到需要人类判断的事，写进 `docs/overnight/PENDING.md`，然后改做不依赖这个判断的工作。
+- 第 1 轮先执行 `git switch -c overnight/phase5-2026-10-19`，保留当前未提交的改动。之后每轮结束前，把本轮改动用小步 commit 提交到这个分支，不要提交到 main。
+- 每轮控制在约 25 分钟。把进度追加到 `docs/overnight/STATE.md`，包括做了什么、结果数字、产物路径、下一步。
+- 结束时输出不超过 8 行的摘要。
+codex
+第 8 轮检查前向证据的时间完整性：重点查漏掉的交易日、整日离线和跨日恢复是否会被汇总遗漏。继续不下单、不改调度、`.env` 或冻结策略；需要部署决策的事项记入 PENDING。
+exec
+/bin/zsh -lc "sed -n '1,150p' scripts/research/audit_forward.py; sed -n '280,465p' scripts/research/audit_forward.py; cat outputs/research/forward_observations/calendar.json" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+"""Read-only integrity audit of frozen IEX observations; never collects or trades."""
+
+import argparse
+import hashlib
+import json
+import sqlite3
+from contextlib import closing
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+from uuid import uuid4
+
+import pandas as pd
+
+from aquant import forward, history, strategy
+from aquant.alpaca import ROOT, AcceptanceError
+from aquant.data.availability import check
+from aquant.evaluation.intraday import save_json
+from aquant.evaluation.research import digest
+
+
+def instant(value):
+    time = pd.Timestamp(value)
+    if time.tzinfo is None or pd.isna(time):
+        raise ValueError("A timezone-aware timestamp is required")
+    return time.tz_convert("UTC")
+
+
+def connect(path):
+    connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1)
+    connection.execute("PRAGMA query_only=ON")
+    return connection
+
+
+def snapshot(connection, limit):
+    """Brief consistent state/watermark read; never hold a lock during Python audit.
+
+    Event pages below rely on the production append-only contract. This is not
+    cryptographic attestation against a party able to rewrite the whole database.
+    """
+    connection.execute("BEGIN")
+    try:
+        rows = connection.execute(
+            "SELECT name,value FROM records WHERE name LIKE 'forward:%' ORDER BY name DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        tables = {
+            r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        watermark = (
+            connection.execute("SELECT coalesce(max(rowid),0) FROM observations").fetchone()[0]
+            if "observations" in tables
+            else 0
+        )
+        previous = None
+        if rows:
+            row = connection.execute(
+                "SELECT value FROM records WHERE name LIKE 'forward:%' AND name < ? "
+                "ORDER BY name DESC LIMIT 1",
+                (rows[-1][0],),
+            ).fetchone()
+            previous = json.loads(row[0]) if row else None
+        return [(name, json.loads(value)) for name, value in reversed(rows)], watermark, previous
+    finally:
+        connection.commit()
+
+
+def events(connection, day, watermark):
+    first, upper = connection.execute(
+        "SELECT min(rowid),max(rowid) FROM observations WHERE day=? AND rowid<=?",
+        (day, watermark),
+    ).fetchone()
+    if first is None:
+        return
+    last = first - 1
+    while True:
+        # Each SELECT finishes before parsing; writers are not blocked for the whole audit.
+        page = connection.execute(
+            "SELECT rowid,id,received,kind,payload FROM observations NOT INDEXED "
+            "WHERE day=? AND rowid>? AND rowid<=? ORDER BY rowid LIMIT 1000",
+            (day, last, upper),
+        ).fetchall()
+        if not page:
+            return
+        yield from page
+        last = page[-1][0]
+
+
+def inspect_day(state, p, rows, now, previous=None):
+    errors, warnings, raw_bars = [], [], {}
+    counts = {"b": 0, "q": 0, "u": 0}
+    fingerprint = hashlib.sha256()
+
+    def require(condition, reason):
+        if not condition:
+            errors.append(reason)
+
+    opening, closing = instant(state["open"]), instant(state["close"])
+    day = state["day"]
+    require(state["kind"] == "forward_simulated", "mixed_evidence_kind")
+    require(state["feed"] == p["feed"] == "iex", "feed_mismatch")
+    require(state["config_hash"] == p["config_hash"], "strategy_hash_mismatch")
+    require(state["orders_authorized"] is False, "unexpected_order_authorization")
+    require(day >= p["protocol"]["not_before"], "session_before_frozen_cutoff")
+    require(
+        instant(p["activated_at"]) <= instant(state["started_at"]) <= now, "invalid_session_start"
+    )
+    require(
+        opening < closing and opening.tz_convert("America/New_York").date().isoformat() == day,
+        "invalid_session",
+    )
+    require(
+        0 <= state["online_seconds"] <= max(0, (min(now, closing) - opening).total_seconds()),
+        "impossible_online_duration",
+    )
+    if state["complete"]:
+        require(closing <= instant(state["ended_at"]) <= now, "invalid_session_end")
+    else:
+        warnings.append("session_in_progress_or_interrupted")
+    for rowid, identity, received, kind, payload in rows:
+        fingerprint.update(json.dumps([rowid, identity, received, kind, payload]).encode())
+        try:
+            value = json.loads(payload)
+            event = value["event"]
+            arrival = instant(received)
+            require(identity == digest(event), "raw_event_digest_mismatch")
+            require(
+                value["source"] == "iex_websocket" and value["feed"] == "iex", "nonlive_raw_source"
+            )
+            require(instant(value["received_at"]) == arrival, "raw_receipt_mismatch")
+            require(instant(p["activated_at"]) <= arrival <= now, "invalid_raw_receipt")
+            require(
+                value["regular_session_receipt"] == (opening <= arrival < closing),
+                "raw_session_flag_mismatch",
+            )
+            require(kind == event["T"] and kind in counts, "raw_kind_mismatch")
+            require(event.get("S") in {"SPY", "QQQ"}, "raw_symbol_mismatch")
+            if kind in counts:
+                counts[kind] += 1
+            if kind == "b":
+                # Rejected malformed raw events may exist; admitted bars must match.
+                try:
+                    key = (event["S"], instant(event["t"]))
+                    raw_bars.setdefault(key, []).append((event, arrival))
+                except (KeyError, ValueError, TypeError):
+                    pass
+        except (KeyError, ValueError, TypeError):
+            errors.append("malformed_raw_record")
+    require(set(state["bars"]) == {"SPY", "QQQ"}, "unexpected_symbols")
+    decisions = {}
+        "raw_counts": counts,
+        "raw_sha256": fingerprint.hexdigest(),
+        "state_sha256": digest(state),
+        "complete": state["complete"],
+    }
+
+
+def audit(root, *, limit=10, now=None):
+    if not 1 <= limit <= 126:
+        raise ValueError("Audit 1 to 126 most recent stored sessions")
+    now = instant(now if now is not None else datetime.now(UTC))
+    report = {
+        "kind": "forward_integrity_audit",
+        "checked_at": str(now),
+        "root": str(root),
+        "orders_authorized": False,
+        "read_only": True,
+        "strategy_profitability_verified": False,
+        "execution_evidence": False,
+        "evidence_class": "unattested_forward_records",
+        "real_receipt_verified": False,
+        "cumulative_scope": "unverified",
+        "root_summary": "unverified",
+        "days": [],
+        "errors": [],
+        "warnings": [],
+        "limitations": [
+            "append-only event pages, bounded by one state/rowid snapshot",
+            "not cryptographic proof of actual exchange receipt",
+            "quote sampling prevents exact quote-stream completeness reconstruction",
+            "IEX is not NBBO; no executable forward PnL under frozen policy",
+        ],
+    }
+    try:
+        p = forward.policy(root)
+        if not p["code_hashes"]:
+            raise ValueError("Unbound implementation")
+        report["policy_sha256"] = digest(p)
+        calendar_document = history.read(root / "calendar.json")
+        calendar_rows = calendar_document["rows"]
+        if (root / "OFFLINE_FIXTURE.json").exists() or calendar_document.get("synthetic"):
+            report["evidence_class"] = "synthetic_fixture"
+            if root.resolve().is_relative_to(forward.DIRECTORY.resolve()):
+                report["errors"].append("synthetic_fixture_in_production")
+        calendar = history.sessions(calendar_rows)
+        with closing(connect(root / "state.sqlite3")) as connection:
+            states, watermark, previous = snapshot(connection, limit)
+            previous_snapshot = previous
+            full_prefix = previous is None
+            report["cumulative_scope"] = "all_stored_sessions" if full_prefix else "window_only"
+            if not full_prefix:
+                report["warnings"].append("cumulative_outside_audit_window")
+            report["event_rowid_watermark"] = watermark
+            if not states and watermark:
+                report["errors"].append("raw_events_without_session_state")
+            report["calendar_rows"] = calendar_rows
+            if previous and (
+                previous["kind"] != "forward_simulated"
+                or previous["config_hash"] != p["config_hash"]
+            ):
+                raise ValueError("Predecessor evidence mismatch")
+            prefix = []
+            for name, state in states:
+                prefix.append(state)
+                if name != "forward:" + state["day"]:
+                    raise ValueError("State key mismatch")
+                result = inspect_day(
+                    state,
+                    p,
+                    events(connection, state["day"], watermark) if watermark else [],
+                    now,
+                    previous,
+                )
+                report["days"].append(result)
+                official = calendar.get(state["day"])
+                if not official:
+                    result["warnings"].append("official_calendar_not_retained")
+                elif tuple(map(instant, official)) != (
+                    instant(state["open"]),
+                    instant(state["close"]),
+                ):
+                    result["errors"].append("calendar_session_mismatch")
+                path = root / state["day"] / "report.json"
+                if state["complete"]:
+                    if not path.exists():
+                        result["warnings"].append("completed_report_not_published")
+                    else:
+                        published = history.read(path)
+                        if not isinstance(published, dict):
+                            raise ValueError("Invalid daily report")
+                        expected = forward.summarize_days([state], p)
+                        if any(digest(published.get(k)) != digest(expected[k]) for k in expected):
+                            result["errors"].append("published_summary_mismatch")
+                        if set(published) != set(expected) | {
+                            "cumulative_costs",
+                            "decisions",
+                            "hypothetical_books",
+                        }:
+                            result["errors"].append("published_report_schema_mismatch")
+                        if (
+                            published.get("decisions") != state["decisions"]
+                            or published.get("hypothetical_books") != state["books"]
+                        ):
+                            result["errors"].append("published_evidence_mismatch")
+                        if full_prefix:
+                            expected_costs = forward.summarize_days(prefix, p)["costs"]
+                            if digest(published.get("cumulative_costs")) != digest(expected_costs):
+                                result["errors"].append("published_cumulative_mismatch")
+                previous = state
+            summary_path = root / "summary.json"
+            if summary_path.exists():
+                published = history.read(summary_path)
+                if not isinstance(published, dict):
+                    raise ValueError("Invalid root summary")
+                expected = forward.summarize_days([s for _, s in states], p)
+                headers = ("kind", "hypothetical", "feed", "config_hash", "orders_authorized")
+                if any(digest(published.get(k)) != digest(expected[k]) for k in headers):
+                    report["errors"].append("root_summary_evidence_mismatch")
+                if full_prefix:
+                    if digest(published) != digest(expected):
+                        # The root summary is replaceable and may lag the SQLite checkpoint.
+                        # A mismatch cannot distinguish corruption from publication lag.
+                        report["root_summary"] = "mismatch_or_publication_lag"
+                        report["warnings"].append("root_summary_not_reconciled")
+                    else:
+                        report["root_summary"] = "matched_snapshot"
+                else:
+                    report["root_summary"] = "outside_audit_window"
+            else:
+                report["root_summary"] = "absent"
+                if states:
+                    report["warnings"].append("root_summary_not_published")
+            latest, latest_watermark, latest_previous = snapshot(connection, limit)
+            if (
+                latest != states
+                or latest_watermark != watermark
+                or latest_previous != previous_snapshot
+            ):
+                report["warnings"].append("records_changed_during_audit")
+        report["status"] = (
+            "FAIL"
+            if report["errors"] or any(x["errors"] for x in report["days"])
+            else "INCOMPLETE"
+            if report["warnings"] or any(x["warnings"] for x in report["days"])
+            else "WAITING"
+            if not states
+            else "PASS"
+        )
+        report["status_scope"] = "record integrity only; never a profitability or execution PASS"
+    except (
+        KeyError,
+        ValueError,
+        TypeError,
+        ArithmeticError,
+        OSError,
+        sqlite3.Error,
+        AcceptanceError,
+    ) as error:
+        report["status"] = "FAIL"
+        report["errors"].append("audit_failed_" + type(error).__name__)
+    return report
+
+
+def markdown(report):
+    lines = [
+        "# 只读前向证据完整性审计",
+        "",
+        f"状态：{report['status']}；时间：{report['checked_at']}",
+        f"证据类别：{report['evidence_class']}；真实接收未获外部认证。",
+        f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+        "",
+        "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+        "",
+        "|日期|采用bar|决策|信号|错误|提醒|",
+        "|---|---:|---:|---:|---|---|",
+    ]
+    for day in report["days"]:
+        lines.append(
+            f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+            f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+        )
+    lines += [
+        "",
+        "顶层错误：" + (", ".join(report["errors"]) or "无"),
+        "顶层提醒：" + (", ".join(report["warnings"]) or "无"),
+{"checked_day": "2026-10-19", "received_at": "2026-10-19T17:57:37.945447Z", "rows": [{"close": "16:00", "date": "2026-10-05", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-06"}, {"close": "16:00", "date": "2026-10-06", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-07"}, {"close": "16:00", "date": "2026-10-07", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-08"}, {"close": "16:00", "date": "2026-10-08", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-09"}, {"close": "16:00", "date": "2026-10-09", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-13"}, {"close": "16:00", "date": "2026-10-12", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-13"}, {"close": "16:00", "date": "2026-10-13", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-14"}, {"close": "16:00", "date": "2026-10-14", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-15"}, {"close": "16:00", "date": "2026-10-15", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-16"}, {"close": "16:00", "date": "2026-10-16", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-19"}, {"close": "16:00", "date": "2026-10-19", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-20"}, {"close": "16:00", "date": "2026-10-20", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-21"}, {"close": "16:00", "date": "2026-10-21", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-22"}, {"close": "16:00", "date": "2026-10-22", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-23"}, {"close": "16:00", "date": "2026-10-23", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-26"}, {"close": "16:00", "date": "2026-10-26", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-27"}, {"close": "16:00", "date": "2026-10-27", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-28"}, {"close": "16:00", "date": "2026-10-28", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-29"}, {"close": "16:00", "date": "2026-10-29", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-10-30"}, {"close": "16:00", "date": "2026-10-30", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-11-02"}, {"close": "16:00", "date": "2026-11-02", "open": "09:30", "session_close": "2000", "session_open": "0400", "settlement_date": "2026-11-03"}]}
+exec
+/bin/zsh -lc "rg -n 'def sessions|def specification|not_before|activated_at' src/aquant/history.py src/aquant/strategy.py src/aquant/forward.py; sed -n '160,200p' src/aquant/history.py; sed -n '130,170p' src/aquant/strategy.py; sed -n '1,100p' docs/overnight/PENDING.md" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+src/aquant/forward.py:79:        "activated_at": stamp(readonly.now()),
+src/aquant/forward.py:143:        if day < p["protocol"]["not_before"]:
+src/aquant/forward.py:313:        if self.s["complete"] or received < pd.Timestamp(self.p["activated_at"]):
+src/aquant/forward.py:732:        start = previous[-1]["day"] if previous else policy(root)["protocol"]["not_before"]
+src/aquant/forward.py:834:            p["protocol"]["not_before"],
+src/aquant/forward.py:835:            pd.Timestamp(p["activated_at"]).tz_convert(NY).date().isoformat(),
+src/aquant/forward.py:939:        if d >= p["protocol"]["not_before"] and o - pd.Timedelta(minutes=10) > readonly.now()
+src/aquant/strategy.py:46:def specification():
+src/aquant/strategy.py:88:            "not_before": "2026-10-20",
+src/aquant/history.py:301:def sessions(raw):
+                raise AcceptanceError("历史缓存请求链不一致；拒绝覆盖。")
+        else:
+            body, retries = request(client, route, query)
+            record = {
+                "request": {"route": route, "params": query},
+                "response": body,
+                "fetched_at": stamp(datetime.now(UTC)),
+                "retries": retries,
+                "timezone": "UTC",
+                "session_timezone": str(NY),
+                "schema": 1,
+            }
+            try:
+                immutable(path, record)
+            except FileExistsError:
+                record = read(path)
+        yield record
+        token = record["response"].get("next_page_token")
+        if not token:
+            break
+        if token in seen:
+            raise AcceptanceError("API 分页 token 循环，采集不完整。")
+        seen.add(token)
+        index += 1
+
+
+def months(start, end):
+    cursor = start
+    while cursor <= end:
+        following = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+        stop = min(following, end + timedelta(days=1))
+        yield cursor, stop
+        cursor = stop
+
+
+def parameters(feed, start, stop):
+    return {
+        "symbols": "SPY,QQQ",
+        "timeframe": "1Min",
+        "feed": feed,
+        "adjustment": "raw",
+        opening, closing = calendar[day]
+        offset = group.offset
+        if not len(group) or group.iloc[0].t != opening:
+            continue
+        day_open = group.iloc[0].o
+        entry = pd.Series(False, index=group.index)
+        if strategy.id in {"opening_reversal", "intraday_trend"}:
+            length = 30 if strategy.id == "opening_reversal" else 60
+            first = group[offset < length]
+            if len(first) != length or not valid.loc[first.index].all():
+                continue
+            change = first.iloc[-1].c / day_open - 1
+            high, low = first.h.max(), first.l.min()
+            if strategy.id == "opening_reversal" and change <= -strategy.threshold:
+                midpoint = (high + low) / 2
+                entry = (
+                    (offset >= 30)
+                    & (offset < 89)
+                    & (group.c > midpoint)
+                    & (group.c.shift(1) <= midpoint)
+                    & (group.c > group.c.shift(1))
+                )
+            if strategy.id == "intraday_trend":
+                distance = first.c.diff().abs().sum() + abs(first.iloc[0].c - day_open)
+                efficiency = abs(first.iloc[-1].c - day_open) / distance if distance else 0
+                upper = high > low and (first.iloc[-1].c - low) / (high - low) >= 0.75
+                if change >= strategy.threshold and efficiency >= 0.3 and upper:
+                    entry = (
+                        (offset >= 60)
+                        & (offset < 119)
+                        & (group.c > high)
+                        & (group.c.shift(1) <= high)
+                        & (group.c > group.vwap)
+                    )
+        else:
+            prior = prior_closes.get((symbol, previous[day]))
+            if not actions_verified or (symbol, day) in blocked or prior is None:
+                continue
+            gap = day_open / prior - 1
+            if -0.02 <= gap <= -strategy.threshold:
+                entry = (
+# 待总控或人工处理
+
+## 第 1 轮：Git 写入权限阻碍
+
+已按指令首先执行 `git switch -c overnight/phase5-2026-10-19`，但返回：
+`cannot lock ref ... Operation not permitted`。当前环境明确将 `.git` 设为只读，且禁止申请提权。
+分支仍为 `main`；未创建分支、未暂存、未提交，不把命令尝试当作成功。
+本轮只编辑工作区并提供小步补丁；需在具有 Git 写权限的执行环境创建指定分支后再提交。
+保留全部既有未提交成果，不能用 reset/clean 清理。
+
+## 前向成交数据资格
+
+冻结门禁要求 NBBO，当前免费 IEX 单所报价不能满足。继续只读记录行情、信号和拒绝原因；
+不可静默放松门禁或把延迟 SIP 当作实时成交报价。报价授权/来源或新协议版本须单独判断；
+本轮不购买订阅、不改参数、不授予订单权限。
+
+## 第 1 轮交接：未提交的本轮文件
+
+只有 `scripts/research/audit_evidence.py`、`tests/test_evidence.py` 和 `docs/overnight/` 是本轮新增。
+全量测试 443 passed / 1 skipped，Ruff 与格式检查通过。旧改动未暂存、未覆盖。
+补丁位于 `outputs/overnight/round-1/`，分为代码/测试和文档记录两个小步。
+后续执行环境允许 Git 写入后，先创建 `overnight/phase5-2026-10-19`，
+再仅提交以上文件；不要 `git add .` 混入用户此前未提交的其他工作。
+文件已经存在于工作区时无需再应用新文件补丁；补丁用于独立核查或迁移到保留原工程成果的副本。
+不要把此次未提交误报为已完成 commit，也不要提交到 main。
+
+## 前向收益证据的结构性阻碍
+
+只读流连通性已核实，但 IEX 非 NBBO 意味着现有冻结门禁下不会有合格的假设成交。
+因此当前不能达到冻结评价方法要求的 100 笔成交；不能以行情天数或被拒绝信号代替。
+是否引入可合法取得的实时 NBBO 或单独冻结另一种仅信号研究协议需要明确决策。
+本轮保持现状，既不购买数据，也不降低门禁，不修改已授权的服务。
+
+## 后续研究修改应与运行冻结隔离
+
+本轮确认原 IEX 回测的全天完整条件排除了 21/22 个截至2026-06-30的前缀有效信号标的日。
+下一轮可进一步审计缺失分布和历史样本定义；不直接声称修正后会盈利。
+`backtest.py`、`strategy.py` 等均在监控策略的实现 Hash 中；直接改这些文件会触发只读监控停用。
+在解决运行版本隔离前，继续使用离线分析脚本，不默默重签冻结策略或修改部署授权。
+
+## 第 2 轮：数据机制与前向证据预算
+
+- IEX全日覆盖在2025年11月附近显著变化：之前273日仅1天双标的完整，之后164日有88天。
+  官方2025-11-03的CTA/UTP报价数量变更与此相近，但未证明IEX bar变化的原因；若需要用于
+  可执行性判断，后续应核对供应商的IEX聚合历史和报价单位，不能自行固定乘100或改变门禁。
+- 连续前缀对照纳入22笔历史代理交易，基础成本净−$0.0963、压力成本−$23.6385；未证明正期望。
+  该数量来自437个历史交易日。纯算术频率约每126日6.34个信号，不能期待6个月自动获得100笔。
+  冻结NBBO门禁当前更使合格前向成交为零；是否调整研究时间预算或另立评价协议需要明确决策，
+  本轮不降低门槛、不重签参数、不借历史代理结果补齐前向样本。
+- 第2轮仍处于main工作区，`.git`写入权限限制未解除，没有任何commit。
+  新增 `scripts/research/replay_signals.py`、`tests/test_signal_replay.py`、`RESULTS-2.md`及验收记录，
+  仅追加STATE/PENDING；代码/测试与文档两份增量补丁位于 `outputs/overnight/round-2/`。
+  Git可写后按第1轮指示创建指定分支，先处理第1轮再处理第2轮，保留其他既有未提交工作。
+
+## 第 3 轮：历史日历审计依据与 Git 交接
+
+- 冻结采集器的日历缓存会被后续刷新替换，可能不再包含旧观察日期。新增审计遇到这种情况
+  返回INCOMPLETE / official_calendar_not_retained，并在独立报告保存当前calendar_rows；
+  不推测旧开闭市时间。长期按日归档官方日历需要解决冻结实现Hash与部署版本隔离后进行，
+  本轮不修改运行代码、不重签policy、不重启服务。不能因审计无错误就声称交易日历已全部核实。
+- Git权限仍未改变，main上没有任何本轮commit。第3轮代码/测试、文档记录以及旧回测文档的
+  代码块格式修正保存在 `outputs/overnight/round-3/` 两份增量补丁；需按第1/2/3轮顺序审查。
+  已存在的工作区文件不用重复应用补丁；不要把旧未提交成果一并暂存，不能提交到main。
+
+## 第 4 轮：Paper现金差异继续未解
+
+- 10月19日15:05 ET的独立只读预检查：原两笔订单与活动逐单一致，毛收益
+  +0.000468637596 USD；Cash/Equity仍2000、无持仓或未完成订单、没有明确关联费用依据。
+  最终净收益仍UNRESOLVED，不能将差异归因于已证实的舍入或延迟。
+- 正式10月20/22日16:15 ET检查不变且未提前消费。若第二次仍未解，按既有规则停止重试，
+  需要人工查看Paper账户活动及询问供应商的记账精度/费用依据；不重置账户、不补单。
+- `reconciliation.py`改为逐订单核对，新的字段区分聚合相等和真实逐单一致；CFEE不归为股票
+  费用。该模块不在冻结策略Hash内，采集/策略代码及所有调度文件未改变。
+- Git仍只读，main上无commit。第4轮增量补丁在 `outputs/overnight/round-4/`，需在前3轮之后
+  审查；原reconciliation模块此前未提交，应保留其既有内容，仅合并本轮核对增量，禁止暂存全部。
+
+## 第 5 轮：集中度与稀疏样本
+
+- 第2轮历史组合的集中度诊断进一步显示：SIP基础收益+$6.39去掉最佳日后−$5.17，
+  IEX基础延迟2分钟+$3.28去掉最佳日后−$2.23；不能把这些观察变成事后过滤规则。
+  1/5/20日区块区间均不支持可靠正期望；没有新的独立样本外证据，不晋级策略。
+- 仅1个活跃日的重采样区间会退化为单点。本轮独立诊断将其推断区间设为N/A，保留原值作
+  明确非推断诊断。既有uncertainty模块属于保护范围，旧报告原样保留；以后若统一报告语义，
+  需保留旧版本和先处理冻结运行隔离，不能直接覆盖历史研究或重签冻结代码。
+- 第5轮Git仍只读，无commit；增量补丁在 `outputs/overnight/round-5/`，按前四轮后顺序核查。
+
+## 第 6 轮：报价计数崩溃原子性与运行环境限制
+
+- 离线故障注入确认：bar事务提交前崩溃时，原始报价样本已保存，而内存中的quotes_received
+  未必保存；80分钟场景出现160条样本/159次计数。bar及决策的事务回滚重放正常，且IEX门禁
+  始终拒绝执行，但接收计数不能证明报价流完整。独立审计已加INCOMPLETE提示，不修正原记录。
+  正常检查点保存前的短暂间隙也可能触发此提示；不能据单次提示就判断崩溃，
+  抽样数未超过计数也不能证明全部报价完整。
+- 修复采集器的报价计数持久化需要先处理forward.py的冻结实现Hash与部署版本隔离；本轮不改
+  受保护文件、不重签policy、不改调度或授权。旧数据缺失不能靠重算/历史行情补造实时观察。
+- 这次验收是Day状态机、Journal与审计的合成故障注入，不是实际合盖、断电、OS级kill或
+  launchd/网络传输实测；不能保证Mac睡眠时继续运行，也不绕过系统睡眠机制。
+- 所有合成结果在独立研究目录，并有OFFLINE_FIXTURE.json；严禁搬进生产forward_observations
+  或把内部测试日报混入真实前向收益。观察日期仍10月20日，今天未伪造任何前向交易日。
+- Git仍只读，无commit。第6轮补丁除新增脚本/测试外，增量修改第3轮audit_forward.py，
+
+exec
+/bin/zsh -lc "sed -n '301,326p' src/aquant/history.py; sed -n '809,891p' src/aquant/forward.py; sed -n '46,101p' src/aquant/strategy.py; sed -n '1,80p' tests/test_recovery.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+def sessions(raw):
+    import pandas as pd
+
+    return {
+        day["date"]: (
+            pd.Timestamp(day["date"] + " " + day["open"], tz=NY).tz_convert("UTC"),
+            pd.Timestamp(day["date"] + " " + day["close"], tz=NY).tz_convert("UTC"),
+        )
+        for day in raw
+    }
+
+
+def quality(frame, calendar_days):
+    """Never infer zero trading volume from the absence of a bar."""
+    import numpy as np
+    import pandas as pd
+
+    frame = frame.copy()
+    frame["day"] = frame.t.dt.tz_convert(NY).dt.strftime("%Y-%m-%d")
+    numeric = frame[["o", "h", "l", "c", "v", "vw", "n"]]
+    invalid = (
+        ~np.isfinite(numeric).all(axis=1)
+        | (numeric <= 0).any(axis=1)
+        | (frame.l > frame[["o", "c"]].min(axis=1))
+        | (frame.h < frame[["o", "c"]].max(axis=1))
+        | (frame.t.dt.second != 0)
+    finally:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(sig)
+
+
+def tick(root=DIRECTORY, client_factory=readonly.Client):
+    if (root / "STOP").exists():
+        return {"status": "stopped"}
+    try:
+        p = policy(root)
+    except Exception:
+        (root / "STOP").touch()
+        raise
+    try:
+        journal = Journal(root / "state.sqlite3").__enter__()
+    except AcceptanceError:
+        return {"status": "already_running"}
+    client = None
+    changed = False
+    try:
+        client = client_factory()
+        instant = readonly.now()
+        rows = calendar(client, root, instant)
+        sessions = history.sessions(rows)
+        first = max(
+            p["protocol"]["not_before"],
+            pd.Timestamp(p["activated_at"]).tz_convert(NY).date().isoformat(),
+        )
+        for date, (opening, closing) in sorted(sessions.items()):
+            if date < first or instant < opening - pd.Timedelta(minutes=10):
+                continue
+            old = journal.get("forward:" + date)
+            if old and old["complete"]:
+                continue
+            day = Day(journal, p, date, opening, closing, instant)
+            changed = True
+            if instant >= closing + pd.Timedelta(minutes=2):
+                day.finish(instant)  # missing day, never backfilled
+                continue
+            clock = client.get("/clock")
+            if abs((pd.Timestamp(clock["timestamp"]) - instant).total_seconds()) > 30:
+                raise AcceptanceError("Local and official clocks disagree")
+            asyncio.run(collect(day, root))
+            break
+    except readonly.PermissionError:
+        (root / "STOP").touch()
+        raise
+    finally:
+        if client:
+            client.close()
+        journal.__exit__(None, None, None)
+        if changed or not (root / "summary.json").exists():
+            publish(root)
+    return {"status": "session_finished_or_waiting"}
+
+
+def definition(label):
+    return {
+        "Label": label,
+        "ProgramArguments": [
+            str(ROOT / ".venv/bin/python"),
+            "-m",
+            "aquant.forward",
+            "tick" if label == LABEL else "reconcile-run",
+        ],
+        "WorkingDirectory": str(ROOT),
+        "RunAtLoad": True,
+        "StartInterval": 60 if label == LABEL else 300,
+        "ProcessType": "Background",
+        "ThrottleInterval": 30,
+        "ExitTimeOut": 30,
+        "StandardOutPath": "/dev/null",
+        "StandardErrorPath": "/dev/null",
+    }
+
+
+def launch(*args, required=True):
+    result = subprocess.run(["/bin/launchctl", *args], capture_output=True, text=True)
+    if required and result.returncode:
+        raise AcceptanceError("Read-only launchd operation failed")
+    return result
+
+
+def specification():
+    return {
+        "version": 1,
+        "training": None,
+        "exploration": [str(history.START), str(history.END)],
+        "previous_test_is_exploratory": True,
+        "trials": [{**asdict(s), "config_hash": s.hash} for s in TRIALS],
+        "hypotheses": {
+            "opening_reversal": (
+                "First-30-minute downside overreaction, then reclaim range midpoint"
+            ),
+            "intraday_trend": "Efficient first-hour upward repricing persists after range breakout",
+            "gap_reversion": (
+                "Moderate overnight downside gap without corporate action fades after recovery"
+            ),
+        },
+        "common": (
+            "long only; 2000 cash; 1000 all-in allocation; 0.3% stop/0.6% target; close-5min exit"
+        ),
+        "reversal": "first30 return <= -threshold; cross midpoint during offsets30..89",
+        "trend": (
+            "first60 return >= threshold; efficiency>=0.3; close in "
+            "upper25%; breakout60..119; aboveVWAP"
+        ),
+        "gap": (
+            "-2% <= gap <= -threshold; recover open on offsets4..29; exit on prior-close reclaim"
+        ),
+        "actions": (
+            "exclude effective/ex dates and unverified action coverage; retrospective evidence only"
+        ),
+        "signal_feed": ["sip", "iex"],
+        "execution_price": "explicit bar proxy, not executable quote",
+        "costs": [asdict(c) for c in backtest.COSTS],
+        "stability": "all 9 configurations reported; no best-parameter selection",
+        "uncertainty": {
+            "method": "5-session moving-block bootstrap; both symbols grouped by NY day",
+            "replicates": 5000,
+            "seed": 2041,
+            "interval": 0.95,
+        },
+        "rolling": "63 calendar trading sessions, step21; fixed rules, no fitting; exploratory",
+        "forward": {
+            "not_before": "2026-10-20",
+            "minimum_sessions": 126,
+            "minimum_trades": 100,
+            "review": "one predeclared review; minimums are not proof of profitability",
+            "evaluation": (
+                "day-block net expectation CI, costs, drawdown, source agreement, incidents"
+            ),
+            "promotion": "human evidence review required; never automatic from PnL threshold",
+            "quote_rule": "fresh NBBO<=2s, complete minute prefix, spread<=10bps, sufficient size",
+            "stop_review": (
+                "10% drawdown or unresolved execution/data incident; no parameter change"
+            ),
+            "orders_authorized": False,
+        },
+"""Synthetic state-machine recovery; never touch production observation paths."""
+
+import hashlib
+from dataclasses import asdict
+from pathlib import Path
+
+import pandas as pd
+import pytest
+from requests import Request
+from requests.adapters import HTTPAdapter
+
+from aquant import backtest, forward, readonly, strategy
+from scripts.research import check_recovery as recovery
+
+
+@pytest.fixture
+def policy():
+    s = next(s for s in strategy.BASELINES if s.id == "intraday_trend")
+    return {
+        "strategy": asdict(s),
+        "config_hash": s.hash,
+        "protocol": strategy.specification()["forward"],
+        "costs": [asdict(c) for c in backtest.COSTS],
+        "capital": "2000",
+        "allocation": "1000",
+        "feed": "iex",
+        "activated_at": "2026-10-19T18:00:00Z",
+        "orders_authorized": False,
+        "code_hashes": {
+            str(Path(strategy.__file__)): hashlib.sha256(
+                Path(strategy.__file__).read_bytes()
+            ).hexdigest()
+        },
+    }
+
+
+@pytest.mark.parametrize("case", recovery.CASES)
+def test_recovery_fault_matrix_is_safe_and_durable(tmp_path, policy, case):
+    with recovery.offline():
+        r = recovery.scenario(tmp_path / case, policy, case, minutes=80)
+    assert r["result"] == "PASS", r
+    assert r["real_forward_observations"] == 0 and not r["execution_evidence"]
+    assert all(r["checks"].values())
+    assert r["summary"]["hypothetical_trades"] == 0 and r["summary"]["net_pnl"] is None
+    if case in {"normal", "duplicate", "revision", "restart", "transaction_crash"}:
+        assert r["summary"]["signals"] == r["summary"]["rejected_signals"] == 2
+    assert (tmp_path / case / "OFFLINE_FIXTURE.json").exists()
+    if case in {"restart", "disconnect"}:
+        state = forward.records(tmp_path / case)[0]
+        kind = "process_restart" if case == "restart" else "disconnect"
+        fault = next(a for a in state["anomalies"] if a["kind"] == kind)
+        assert pd.Timestamp(fault["time"]) >= pd.Timestamp(state["bars"]["SPY"][59]["received_at"])
+    if case == "transaction_crash":
+        assert r["quotes_received_counter"] == 159 and r["sampled_quote_rows"] == 160
+        assert r["audit_status"] == "INCOMPLETE"
+        assert "quote_counter_below_persisted_samples" in r["integrity_day_warnings"][0]
+    else:
+        assert r["quotes_received_counter"] >= r["sampled_quote_rows"]
+
+
+@pytest.mark.parametrize("factory", [readonly.Client, readonly.Stream])
+def test_network_guard_blocks_clients(factory):
+    # Resolve the patched attribute, not an alias captured before entering the guard.
+    with recovery.offline(), pytest.raises(AssertionError, match="forbids"):
+        getattr(readonly, factory.__name__)()
+
+
+def test_network_guard_blocks_http_transport():
+    with recovery.offline(), pytest.raises(AssertionError, match="forbids"):
+        HTTPAdapter().send(Request("GET", "https://example.invalid").prepare())
+
+
+def test_fixture_cannot_write_into_production_directory(policy):
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.scenario(forward.DIRECTORY / "forbidden-test", policy, "normal", minutes=80)
+
+
+def test_fixture_does_not_overwrite_existing_data(tmp_path, policy):
+    folder = tmp_path / "existing"
+    folder.mkdir()
+
+exec
+/bin/zsh -lc "rg -n 'tick|missed|calendar|sleep|early|holiday' tests/test_forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+133:    monkeypatch.setattr("time.sleep", lambda _: None)
+213:def test_sleep_and_missing_day_have_no_fake_online_time_or_pnl(tmp_path):
+377:    calendar = [
+383:        if route == "/calendar":
+384:            return calendar
+428:def test_two_calendar_reviews_idempotent_late_checks_stop_after_second(tmp_path):
+516:    async def sleep(seconds):
+528:                sleeper=sleep,
+577:    sleeps = []
+578:    monkeypatch.setattr("time.sleep", sleeps.append)
+582:    assert sleeps == [5]
+590:def test_tick_holiday_and_overslept_sessions_are_reported_without_stream(tmp_path, monkeypatch):
+600:    monkeypatch.setattr(forward, "collect", lambda *a: pytest.fail("must not stream on holiday"))
+601:    forward.tick(tmp_path, lambda: client)
+607:    forward.tick(tmp_path, lambda: client)
+609:    # The calendar covers the entire missed interval, not only a trailing fixed window.
+
+exec
+/bin/zsh -lc "sed -n '570,625p' tests/test_forward.py; sed -n '125,180p' src/aquant/forward.py; sed -n '1,65p' tests/test_forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+        response = Response()
+        response.status_code = code
+        return APIError(
+            json.dumps({"code": code * 10000, "message": "controlled"}),
+            HTTPError(response=response),
+        )
+
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+    client = readonly.Client()
+    client._sdk.get = Mock(side_effect=[error(429), {"ok": True}])
+    assert client.get("/account") == {"ok": True}
+    assert sleeps == [5]
+    client._sdk.get = Mock(side_effect=error(403))
+    with pytest.raises(readonly.PermissionError):
+        client.get("/account")
+    assert client._sdk.get.call_count == 1
+    client.close()
+
+
+def test_tick_holiday_and_overslept_sessions_are_reported_without_stream(tmp_path, monkeypatch):
+    p = config()
+    history.immutable(tmp_path / "policy.json", p)
+    client = SimpleNamespace(get=Mock(), close=Mock())
+    rows = [
+        {"date": "2026-10-20", "open": "09:30", "close": "16:00"},
+        {"date": "2026-10-21", "open": "09:30", "close": "16:00"},
+    ]
+    client.get.return_value = rows
+    monkeypatch.setattr(readonly, "now", lambda: pd.Timestamp("2026-10-24T17:00:00Z"))
+    monkeypatch.setattr(forward, "collect", lambda *a: pytest.fail("must not stream on holiday"))
+    forward.tick(tmp_path, lambda: client)
+    days = forward.records(tmp_path)
+    assert len(days) == 2 and all(s["complete"] for s in days)
+    assert not any(s["bars"]["SPY"] for s in days)
+    assert (tmp_path / "2026-10-20/report.md").exists()
+    counts = len(days)
+    forward.tick(tmp_path, lambda: client)
+    assert len(forward.records(tmp_path)) == counts
+    # The calendar covers the entire missed interval, not only a trailing fixed window.
+    assert client.get.call_args.args[1]["start"] == p["protocol"]["not_before"]
+
+
+def test_install_failure_leaves_both_readonly_jobs_stopped(tmp_path, monkeypatch):
+    obs, recon = tmp_path / "obs", tmp_path / "recon"
+    obs.mkdir()
+    recon.mkdir()
+    history.immutable(recon / "plan.json", {})
+    monkeypatch.setattr(forward, "DIRECTORY", obs)
+    monkeypatch.setattr(reconciliation, "DIRECTORY", recon)
+    monkeypatch.setattr(forward, "policy", lambda: config())
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr("sys.platform", "darwin")
+    calls = []
+
+    def launch(*args, **kwargs):
+        return []
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+        return [
+            json.loads(r[0])
+            for r in connection.execute(
+                "SELECT value FROM records WHERE name LIKE 'forward:%' ORDER BY name"
+            )
+        ]
+
+
+def frozen_costs(p):
+    return [backtest.Cost(**c) for c in p["costs"]]
+
+
+class Day:
+    """Durable per-session state. Only newly received websocket events advance it."""
+
+    def __init__(self, journal, p, day, opening, closing, instant):
+        if day < p["protocol"]["not_before"]:
+            raise AcceptanceError("Session predates the frozen forward observation cutoff")
+        self.journal, self.p = journal, p
+        self.clock = None  # collect injects its real or simulated processing clock
+        self.config = strategy.Strategy(**p["strategy"])
+        self.opening, self.closing = pd.Timestamp(opening), pd.Timestamp(closing)
+        self.key = "forward:" + day
+        self.journal.connection.execute(
+            "CREATE TABLE IF NOT EXISTS observations (id TEXT PRIMARY KEY, day TEXT NOT NULL, "
+            "received TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL)"
+        )
+        self.journal.connection.execute(
+            "CREATE INDEX IF NOT EXISTS observation_day ON observations(day,kind)"
+        )
+        old = journal.get(self.key)
+        prior = [
+            json.loads(r[0])
+            for r in journal.connection.execute(
+                "SELECT value FROM records WHERE name LIKE 'forward:%' AND name < ? ORDER BY name",
+                (self.key,),
+            )
+        ]
+        previous = prior[-1] if prior else None
+        self.quote_saved = {}
+        self.s = old or {
+            "day": day,
+            "open": str(opening),
+            "close": str(closing),
+            "started_at": stamp(instant),
+            "config_hash": p["config_hash"],
+            "feed": "iex",
+            "kind": "forward_simulated",
+            "orders_authorized": False,
+            "bars": {s: [] for s in ("SPY", "QQQ")},
+            "quotes": {},
+            "decisions": [],
+            "anomalies": [],
+            "online_seconds": 0.0,
+import asyncio
+import copy
+import hashlib
+import json
+from dataclasses import asdict
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pandas as pd
+import pytest
+from requests import Request, Response
+from requests.exceptions import ConnectionError
+
+from aquant import backtest, forward, history, readonly, reconciliation, strategy
+from aquant.alpaca import AcceptanceError
+from aquant.journal import Journal
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    from requests.adapters import HTTPAdapter
+
+    def deny(*a, **kw):
+        pytest.fail("offline forward tests cannot access API")
+
+    monkeypatch.setattr(HTTPAdapter, "send", deny)
+    monkeypatch.setattr(readonly, "credentials", lambda: ("PK1234567890", "fake-secret"))
+
+
+def config():
+    s = strategy.BASELINES[1]
+    return {
+        "strategy": asdict(s),
+        "config_hash": s.hash,
+        "protocol": strategy.specification()["forward"],
+        "costs": [asdict(c) for c in backtest.COSTS],
+        "capital": "2000",
+        "allocation": "1000",
+        "activated_at": "2026-10-19T18:00:00Z",
+        "orders_authorized": False,
+        "code_hashes": {},
+    }
+
+
+def session(day="2026-10-20", close="16:00"):
+    return history.sessions([{"date": day, "open": "09:30", "close": close}])[day]
+
+
+def bar(opening, i, symbol="SPY"):
+    price = 100 + 0.5 * min(i, 59) / 59 if i < 65 else 100.7
+    return {
+        "T": "b",
+        "S": symbol,
+        "t": opening + pd.Timedelta(minutes=i),
+        "o": price,
+        "h": price + 0.02,
+        "l": price - 0.02,
+        "c": price,
+        "vw": price,
+        "v": 1000,
+        "n": 10,
+    }
+
+
+
+codex
+确认了一个遗漏：如果整天没有生成状态记录，现有审计可能只检查“已有记录”而忽略缺席的交易日。生产任务恢复时已有补记缺失日的逻辑；本轮在独立审计中再用留存日历查缺，并明确区分“已知缺失”和“日历依据不足”。
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+import shutil
+root=Path('outputs/overnight/round-8/before');root.mkdir(parents=True,exist_ok=False)
+for p in ['scripts/research/audit_forward.py','tests/test_forward_audit.py','docs/overnight/STATE.md','docs/overnight/PENDING.md']:
+ shutil.copy2(p,root/Path(p).name)
+PY" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+apply patch
+patch: completed
+/Users/prts/Projects/aquant/scripts/research/audit_forward.py
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a3354383e3819dcfd8978c78c4493b6e645fb6a9
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a3354383e3819dcfd8978c78c4493b6e645fb6a9
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant/scripts/research/audit_forward.py
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a33a6ab5cbc978544fffdf173f0af4b4210729f7
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +526,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +536,16 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围：" + str(scope.get("from_day", "N/A")) + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录："
++        + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant/tests/test_forward_audit.py
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a33a6ab5cbc978544fffdf173f0af4b4210729f7
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +526,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +536,16 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围：" + str(scope.get("from_day", "N/A")) + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录："
++        + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+exec
+/bin/zsh -lc "cat >> tests/test_forward_audit.py <<'PY'
+
+
+def calendar_scope(rows, now, *, states=(), previous=None, first=\"2026-10-20\"):
+    p = {\"protocol\": {\"not_before\": first}, \"activated_at\": first + \"T12:00:00Z\"}
+    return audit.coverage(p, rows, states, audit.instant(now), previous)
+
+
+def test_no_state_after_close_is_missing_evidence_not_waiting(tmp_path):
+    now = fixture(tmp_path)
+    with sqlite3.connect(tmp_path / \"state.sqlite3\") as c:
+        c.execute(\"DELETE FROM records\")
+        c.execute(\"DELETE FROM observations\")
+    forward.publish(tmp_path)  # Empty cumulative PnL does not erase a scheduled observation day.
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"status\"] == \"INCOMPLETE\"
+    scope = result[\"session_coverage\"]
+    assert scope[\"absent_closed_sessions\"] == [\"2026-10-20\"]
+    assert scope[\"missing_session_pnl\"] is None
+    assert \"expected_session_without_state\" in result[\"warnings\"]
+
+
+@pytest.mark.parametrize(\"now,missing,ended\", [
+    (\"2026-10-20T13:20:00Z\", [], []),
+    (\"2026-10-20T13:29:59Z\", [], []),
+    (\"2026-10-20T13:30:00Z\", [\"2026-10-20\"], []),
+    (\"2026-10-20T20:01:59Z\", [\"2026-10-20\"], []),
+    (\"2026-10-20T20:02:00Z\", [\"2026-10-20\"], [\"2026-10-20\"]),
+])
+def test_calendar_inventory_uses_open_and_finalization_grace(now, missing, ended):
+    scope = calendar_scope([{\"date\": \"2026-10-20\", \"open\": \"09:30\", \"close\": \"16:00\"}], now)
+    assert scope[\"absent_sessions\"] == missing
+    assert scope[\"absent_closed_sessions\"] == ended
+
+
+def test_calendar_holiday_and_early_close_without_weekday_guessing():
+    rows = [{\"date\": \"2026-11-25\", \"open\": \"09:30\", \"close\": \"16:00\"},
+            {\"date\": \"2026-11-27\", \"open\": \"09:30\", \"close\": \"13:00\"},
+            {\"date\": \"2026-11-30\", \"open\": \"09:30\", \"close\": \"16:00\"}]
+    scope = calendar_scope(rows, \"2026-11-26T20:00:00Z\", first=\"2026-11-25\")
+    assert scope[\"expected_opened_sessions\"] == [\"2026-11-25\"]
+    assert \"2026-11-26\" not in scope[\"absent_sessions\"]
+    scope = calendar_scope(rows, \"2026-11-27T18:02:00Z\", first=\"2026-11-25\")
+    assert scope[\"absent_closed_sessions\"] == [\"2026-11-25\", \"2026-11-27\"]
+    assert not any(\"calendar_\" in x for x in scope[\"warnings\"])
+
+
+@pytest.mark.parametrize(\"day,utc_before,utc_open\", [
+    (\"2026-10-30\", \"2026-10-30T13:29:59Z\", \"2026-10-30T13:30:00Z\"),
+    (\"2026-11-02\", \"2026-11-02T14:29:59Z\", \"2026-11-02T14:30:00Z\"),
+])
+def test_calendar_inventory_uses_new_york_dst(day, utc_before, utc_open):
+    rows = [{\"date\": day, \"open\": \"09:30\", \"close\": \"16:00\"}]
+    assert not calendar_scope(rows, utc_before, first=day)[\"expected_opened_sessions\"]
+    assert calendar_scope(rows, utc_open, first=day)[\"expected_opened_sessions\"] == [day]
+
+
+def test_calendar_bounds_unknown_does_not_invent_missing_sessions():
+    scope = calendar_scope([], \"2026-10-20T21:00:00Z\")
+    assert scope[\"calendar_bounds\"] is None and not scope[\"absent_sessions\"]
+    assert scope[\"warnings\"] == [\"calendar_start_not_retained\", \"calendar_horizon_not_retained\"]
+    scope = calendar_scope([{\"date\": \"2026-10-21\", \"open\": \"09:30\", \"close\": \"16:00\"}], \"2026-10-22T21:00:00Z\")
+    assert scope[\"absent_closed_sessions\"] == [\"2026-10-21\"]
+    assert \"calendar_start_not_retained\" in scope[\"warnings\"]
+    assert \"calendar_horizon_not_retained\" in scope[\"warnings\"]
+
+
+@pytest.mark.parametrize(\"rows\", [
+    [{\"date\": \"2026-10-20\", \"open\": \"09:30\", \"close\": \"16:00\"}] * 2,
+    [{\"date\": \"2026-10-20\", \"open\": \"16:00\", \"close\": \"09:30\"}],
+    [{\"date\": \"2026-10-20\", \"open\": \"09:30:01\", \"close\": \"16:00\"}],
+])
+def test_invalid_or_duplicate_calendar_fails_closed(rows):
+    with pytest.raises(ValueError):
+        calendar_scope(rows, \"2026-10-20T21:00:00Z\")
+
+
+def test_window_scope_does_not_label_older_existing_days_absent():
+    rows = [{\"date\": f\"2026-10-{d}\", \"open\": \"09:30\", \"close\": \"16:00\"} for d in (20, 21, 22)]
+    scope = calendar_scope(rows, \"2026-10-22T21:00:00Z\", states=[(\"forward:2026-10-22\", {\"day\": \"2026-10-22\", \"complete\": True})], previous={\"day\": \"2026-10-20\"})
+    assert scope[\"from_day\"] == \"2026-10-21\"
+    assert scope[\"absent_sessions\"] == [\"2026-10-21\"]
+
+
+def test_unfinalized_closed_session_is_separate_from_absent_state(tmp_path):
+    now = fixture(tmp_path, complete=False)
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"session_coverage\"][\"unfinalized_closed_sessions\"] == [\"2026-10-20\"]
+    assert not result[\"session_coverage\"][\"absent_sessions\"]
+    assert \"closed_session_not_finalized\" in result[\"warnings\"]
+
+
+def test_orphan_raw_day_is_detected_even_with_other_valid_states(tmp_path):
+    now = fixture(tmp_path)
+    with sqlite3.connect(tmp_path / \"state.sqlite3\") as c:
+        c.execute(\"INSERT INTO observations VALUES (?,?,?,?,?)\", (\"orphan\", \"2026-10-19\", \"invalid\", \"q\", \"{}\"))
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"status\"] == \"FAIL\"
+    assert result[\"orphan_event_days\"] == [{\"day\": \"2026-10-19\", \"events\": 1}]
+    assert \"raw_event_day_without_state\" in errors(result)
+
+
+def test_partial_audit_does_not_call_older_valid_raw_events_orphan(tmp_path):
+    root, now = two_days(tmp_path)
+    result = audit.audit(root, now=now, limit=1)
+    assert not result[\"orphan_event_days\"]
+    assert not result[\"session_coverage\"][\"absent_sessions\"]
+
+
+def test_absent_calendar_session_within_retained_bounds_is_not_accepted(tmp_path):
+    now = fixture(tmp_path)
+    (tmp_path / \"calendar.json\").write_text(json.dumps({\"rows\": [{\"date\": d, \"open\": \"09:30\", \"close\": \"16:00\"} for d in (\"2026-10-19\", \"2026-10-21\")]}))
+    result = audit.audit(tmp_path, now=now)
+    assert result[\"status\"] == \"FAIL\"
+    assert \"stored_session_absent_from_retained_calendar\" in errors(result)
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/pytest -q tests/test_forward_audit.py tests/test_recovery.py" in /Users/prts/Projects/aquant
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a33a6ab5cbc978544fffdf173f0af4b4210729f7
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +526,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +536,16 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围：" + str(scope.get("from_day", "N/A")) + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录："
++        + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a33a6ab5cbc978544fffdf173f0af4b4210729f7
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +526,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +536,16 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围：" + str(scope.get("from_day", "N/A")) + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录："
++        + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+ succeeded in 26025ms:
+........................................................................ [ 75%]
+.......................                                                  [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+95 passed, 1 warning in 25.33s
+
+codex
+已加入三类区分：已开市却没有状态、已收盘但尚未完成记录、日历留存范围不足。缺席日收益保持 N/A，不补行情或信号；另补了跨日原始事件找不到对应状态的检查，避免它们被现有日列表漏掉。
+exec
+/bin/zsh -lc "cat >> tests/test_forward_audit.py <<'PY'
+
+
+@pytest.mark.parametrize(\"activation,first\", [
+    (\"2026-10-21T00:30:00Z\", \"2026-10-20\"),
+    (\"2026-10-21T12:00:00Z\", \"2026-10-21\"),
+])
+def test_activation_day_uses_new_york_not_utc(activation, first):
+    rows = [{\"date\": f\"2026-10-{d}\", \"open\": \"09:30\", \"close\": \"16:00\"} for d in (20, 21)]
+    p = {\"protocol\": {\"not_before\": \"2026-10-20\"}, \"activated_at\": activation}
+    scope = audit.coverage(p, rows, [], audit.instant(\"2026-10-21T21:00:00Z\"))
+    assert scope[\"from_day\"] == first
+    assert scope[\"expected_opened_sessions\"][0] == first
+
+
+def test_recovered_tick_preserves_empty_missing_days_and_is_idempotent(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    fixture(tmp_path / \"source\")
+    root = tmp_path / \"recovered\"
+    root.mkdir()
+    history.immutable(root / \"policy.json\", history.read(tmp_path / \"source/policy.json\"))
+    rows = [{\"date\": \"2026-10-20\", \"open\": \"09:30\", \"close\": \"16:00\"},
+            {\"date\": \"2026-10-21\", \"open\": \"09:30\", \"close\": \"13:00\"},
+            {\"date\": \"2026-10-23\", \"open\": \"09:30\", \"close\": \"16:00\"}]
+    history.immutable(root / \"calendar.json\", {\"rows\": rows, \"synthetic\": True, \"checked_day\": \"2026-10-22\"})
+    now = audit.instant(\"2026-10-22T20:30:00Z\")
+    monkeypatch.setattr(readonly, \"now\", lambda: now)
+    monkeypatch.setattr(forward, \"collect\", lambda *a: pytest.fail(\"No stream for elapsed sessions\"))
+    client = SimpleNamespace(get=Mock(side_effect=AssertionError(\"No API needed for retained calendar\")), close=Mock())
+    forward.tick(root, lambda: client)
+    states = forward.records(root)
+    assert [s[\"day\"] for s in states] == [\"2026-10-20\", \"2026-10-21\"]
+    for s in states:
+        assert s[\"complete\"] and s[\"online_seconds\"] == 0
+        assert not s[\"decisions\"] and not any(s[\"bars\"].values())
+        assert all(not b[\"trades\"] and not b[\"positions\"] for b in s[\"books\"].values())
+    result = audit.audit(root, now=now)
+    assert result[\"status\"] == \"INCOMPLETE\", result
+    assert not errors(result) and not result[\"session_coverage\"][\"absent_sessions\"]
+    forward.tick(root, lambda: client)
+    assert forward.records(root) == states
+    assert client.get.call_count == 0
+PY
+.venv/bin/ruff format scripts/research/audit_forward.py tests/test_forward_audit.py
+.venv/bin/pytest -q tests/test_forward_audit.py" in /Users/prts/Projects/aquant
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a33a6ab5cbc978544fffdf173f0af4b4210729f7
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +526,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +536,16 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围：" + str(scope.get("from_day", "N/A")) + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录："
++        + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+ succeeded in 12229ms:
+........................................................................ [ 96%]
+...                                                                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+75 passed, 1 warning in 11.55s
+
+exec
+/bin/zsh -lc "cat > outputs/overnight/round-8/verify.py <<'PY'
+\"\"\"Synthetic clocks over a copied calendar; no live queries or production writes.\"\"\"
+import hashlib
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from aquant import forward, history, readonly
+from aquant.evaluation.intraday import save_json
+from aquant.journal import Journal
+from scripts.research import audit_forward
+from scripts.research.check_recovery import offline
+
+out=Path('outputs/research/overnight-20261019-session-coverage')
+out.mkdir(exist_ok=False)
+base=history.read(Path('outputs/research/overnight-20261019-reconciliation/verification.json'))
+protected=base['protected_hashes']
+assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==h for p,h in protected.items())
+assert hashlib.sha256(Path('src/aquant/reconciliation.py').read_bytes()).hexdigest()==base['source_sha256']
+policy=forward.policy()
+calendar=history.read(forward.DIRECTORY/'calendar.json')
+root=out/'fixture'
+history.immutable(root/'policy.json',policy)
+history.immutable(root/'calendar.json',{**calendar,'synthetic':True})
+history.immutable(root/'OFFLINE_FIXTURE.json',{'kind':'synthetic_calendar_fixture','real_forward_days':0,'orders_authorized':False})
+with Journal(root/'state.sqlite3'):
+    pass
+forward.publish(root)
+cases=[('before_cutoff','2026-10-19T19:45:00Z','WAITING',0),
+       ('preopen','2026-10-20T13:20:00Z','WAITING',0),
+       ('open_absent','2026-10-20T13:30:00Z','INCOMPLETE',1),
+       ('closed_absent','2026-10-20T20:02:00Z','INCOMPLETE',1),
+       ('multi_day_absent','2026-10-22T20:02:00Z','INCOMPLETE',3),
+       ('expired_calendar','2026-11-03T21:00:00Z','INCOMPLETE',10)]
+results=[]
+with offline():
+    for case,clock,status,count in cases:
+        result=audit_forward.audit(root,now=clock)
+        assert result['status']==status and len(result['session_coverage']['absent_sessions'])==count,result
+        assert result['evidence_class']=='synthetic_fixture'
+        assert result['session_coverage']['missing_session_pnl'] is None
+        save_json(out/case/'report.json',result)
+        (out/case/'report.md').write_text(audit_forward.markdown(result))
+        results.append({'case':case,'clock':clock,'status':status,'absent_sessions':count})
+    now=audit_forward.instant('2026-10-22T20:02:00Z')
+    def get(route,params=None):
+        assert route=='/calendar'
+        return calendar['rows']
+    client=SimpleNamespace(get=Mock(side_effect=get),close=Mock())
+    with patch.object(readonly,'now',return_value=now), patch.object(forward,'collect',side_effect=AssertionError('No stream for elapsed sessions')):
+        forward.tick(root,lambda:client)
+        states=forward.records(root)
+        forward.tick(root,lambda:client)
+        assert forward.records(root)==states
+    assert len(states)==3
+    assert all(s['complete'] and not any(s['bars'].values()) and not s['decisions'] and s['online_seconds']==0 for s in states)
+    result=audit_forward.audit(root,now=now)
+    assert result['status']=='INCOMPLETE' and not result['session_coverage']['absent_sessions'],result
+    assert not result['errors'] and not any(d['errors'] for d in result['days']),result
+    save_json(out/'recovered/report.json',result)
+    (out/'recovered/report.md').write_text(audit_forward.markdown(result))
+production=audit_forward.audit(forward.DIRECTORY)
+assert production['status']=='WAITING' and not production['days']
+save_json(out/'production/report.json',production)
+(out/'production/report.md').write_text(audit_forward.markdown(production))
+status=forward.status()
+save_json(Path('outputs/overnight/round-8/status.json'),status)
+assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==h for p,h in protected.items())
+verification={'checked_at':datetime.now(UTC).isoformat(),'kind':'synthetic_session_coverage_verification','synthetic_cases':results,'recovered_missing_sessions':len(states),'recovery_idempotent':True,'missing_session_pnl':None,'production_status':production['status'],'real_forward_days':0,'api_requests':0,'orders_sent':0,'protected_files_checked':len(protected),'protected_files_unchanged':True,'previous_reconciliation_code_unchanged':True,'source_sha256':hashlib.sha256(Path(audit_forward.__file__).read_bytes()).hexdigest()}
+save_json(out/'verification.json',verification)
+(out/'audit_forward.py').write_bytes(Path(audit_forward.__file__).read_bytes())
+print(json.dumps(verification,indent=2))
+PY
+PYTHONPATH=. .venv/bin/python outputs/overnight/round-8/verify.py" in /Users/prts/Projects/aquant
+ succeeded in 303ms:
+{
+  "checked_at": "2026-10-19T19:43:14.651359+00:00",
+  "kind": "synthetic_session_coverage_verification",
+  "synthetic_cases": [
+    {
+      "case": "before_cutoff",
+      "clock": "2026-10-19T19:45:00Z",
+      "status": "WAITING",
+      "absent_sessions": 0
+    },
+    {
+      "case": "preopen",
+      "clock": "2026-10-20T13:20:00Z",
+      "status": "WAITING",
+      "absent_sessions": 0
+    },
+    {
+      "case": "open_absent",
+      "clock": "2026-10-20T13:30:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 1
+    },
+    {
+      "case": "closed_absent",
+      "clock": "2026-10-20T20:02:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 1
+    },
+    {
+      "case": "multi_day_absent",
+      "clock": "2026-10-22T20:02:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 3
+    },
+    {
+      "case": "expired_calendar",
+      "clock": "2026-11-03T21:00:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 10
+    }
+  ],
+  "recovered_missing_sessions": 3,
+  "recovery_idempotent": true,
+  "missing_session_pnl": null,
+  "production_status": "WAITING",
+  "real_forward_days": 0,
+  "api_requests": 0,
+  "orders_sent": 0,
+  "protected_files_checked": 15,
+  "protected_files_unchanged": true,
+  "previous_reconciliation_code_unchanged": true,
+  "source_sha256": "14ea1704aa0b2aea9fb513b873884c5b624b0664b8065fa42e0eec29e4003d19"
+}
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a33a6ab5cbc978544fffdf173f0af4b4210729f7
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +526,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +536,16 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围：" + str(scope.get("from_day", "N/A")) + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录："
++        + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+exec
+/bin/zsh -lc '.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/pytest -q' in /Users/prts/Projects/aquant
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('outputs/overnight/round-8/verify.py')
+s=p.read_text().replace('import json\\n','import json\\nimport shutil\\n').replace(\"out=Path('outputs/research/overnight-20261019-session-coverage')\",\"out=Path('outputs/research/overnight-20261019-session-coverage-verified')\")
+s=s.replace(\"    now=audit_forward.instant('2026-10-22T20:02:00Z')\",\"    recovery_root=out/'recovery-fixture'\\n    shutil.copytree(root,recovery_root)\\n    now=audit_forward.instant('2026-10-22T20:02:00Z')\")
+s=s.replace('forward.tick(root,lambda:client)','forward.tick(recovery_root,lambda:client)').replace('states=forward.records(root)','states=forward.records(recovery_root)').replace('assert forward.records(root)==states','assert forward.records(recovery_root)==states').replace('result=audit_forward.audit(root,now=now)','result=audit_forward.audit(recovery_root,now=now)')
+p.write_text(s)
+PY
+PYTHONPATH=. .venv/bin/python outputs/overnight/round-8/verify.py" in /Users/prts/Projects/aquant
+ exited 1 in 331ms:
+Traceback (most recent call last):
+  File "/Users/prts/Projects/aquant/outputs/overnight/round-8/verify.py", line 71, in <module>
+    save_json(Path('outputs/overnight/round-8/status.json'),status)
+  File "/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py", line 28, in save_json
+    history.immutable(path, json.loads(json.dumps(value, default=serial, allow_nan=False)))
+  File "/Users/prts/Projects/aquant/src/aquant/history.py", line 46, in immutable
+    os.link(temp, path)
+FileExistsError: [Errno 17] File exists: 'outputs/overnight/round-8/status.json.ee3bbb45dc634aa8b79adf9f3c2dff6d.tmp' -> 'outputs/overnight/round-8/status.json'
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..a33a6ab5cbc978544fffdf173f0af4b4210729f7
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,64 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, closing) in calendar.items():
++        if (
++            not opening < closing
++            or opening != opening.floor("min")
++            or closing != closing.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day for day in expected
++        if day in stored and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +391,22 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127", (watermark,)
++                ).fetchall()
++                if watermark else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +428,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +526,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +536,16 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围：" + str(scope.get("from_day", "N/A")) + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录："
++        + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant/scripts/research/audit_forward.py
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('outputs/overnight/round-8/verify.py');s=p.read_text().replace('session-coverage-verified','session-coverage-final').replace(\"round-8/status.json\",\"round-8/status-final.json\");p.write_text(s)
+PY
+PYTHONPATH=. .venv/bin/python outputs/overnight/round-8/verify.py
+.venv/bin/ruff check .
+.venv/bin/ruff format --check ." in /Users/prts/Projects/aquant
+ succeeded in 327ms:
+{
+  "checked_at": "2026-10-19T19:43:43.877059+00:00",
+  "kind": "synthetic_session_coverage_verification",
+  "synthetic_cases": [
+    {
+      "case": "before_cutoff",
+      "clock": "2026-10-19T19:45:00Z",
+      "status": "WAITING",
+      "absent_sessions": 0
+    },
+    {
+      "case": "preopen",
+      "clock": "2026-10-20T13:20:00Z",
+      "status": "WAITING",
+      "absent_sessions": 0
+    },
+    {
+      "case": "open_absent",
+      "clock": "2026-10-20T13:30:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 1
+    },
+    {
+      "case": "closed_absent",
+      "clock": "2026-10-20T20:02:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 1
+    },
+    {
+      "case": "multi_day_absent",
+      "clock": "2026-10-22T20:02:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 3
+    },
+    {
+      "case": "expired_calendar",
+      "clock": "2026-11-03T21:00:00Z",
+      "status": "INCOMPLETE",
+      "absent_sessions": 10
+    }
+  ],
+  "recovered_missing_sessions": 3,
+  "recovery_idempotent": true,
+  "missing_session_pnl": null,
+  "production_status": "WAITING",
+  "real_forward_days": 0,
+  "api_requests": 0,
+  "orders_sent": 0,
+  "protected_files_checked": 15,
+  "protected_files_unchanged": true,
+  "previous_reconciliation_code_unchanged": true,
+  "source_sha256": "4497d79c9730d5093ab483d49fa0d667cc140867ebe74aca7547d816169cfeff"
+}
+All checks passed!
+189 files already formatted
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+codex
+六个模拟时钟场景已通过：开盘前不误报缺席，开盘后能识别漏日，日历过期时明确提示范围不足。还复用了现有 `tick` 验证连续漏掉三日后的恢复：只生成空的缺失记录，重复运行不重复创建，行情、信号和收益均未补造。
+exec
+/bin/zsh -lc "cat > docs/overnight/RESULTS-8.md <<'EOF'
+# 第8轮：整日缺席、交易日历及跨日恢复
+
+本轮补齐独立前向审计的时间范围检查，未修改任何冻结运行模块。
+发现的盲点是：只有已有记录被逐日审计时，完全未生成记录的交易日可能从统计中消失；
+相邻日期原始事件缺少状态记录时，也可能被已有日列表遗漏。
+
+## 实现与含义
+
+"'`scripts/research/audit_forward.py` 新增留存日历查缺，复用已有 `history.sessions` 的纽约时区转换。
+
+- 起始日期取冻结协议 `not_before` 与策略激活的美东日期中较晚者；局部审计从前一已存记录之后开始。
+- 只从留存日历中识别已开市日，不用周一至周五猜测交易日，不将休市日算作漏日。
+- 区分没有状态的已开市日、超过实际收盘2分钟仍缺席的日子，以及已有状态但未完成收盘的日子。
+  2分钟为现有采集器的收盘完成等待规则，未新设交易参数。
+- 缺席日收益为N/A，绝不作为零收益、现金基线或假设成交补入累计。
+- 日历前端或末端不能覆盖核查期间时提示INCOMPLETE；不会自动推断日历之外有哪些交易日。
+- 重复日期、倒置时段及非整分钟日历失败关闭；已存交易日在留存日历范围内却没有对应日历行时FAIL。
+- 对全部有原始事件的日期核对是否存在状态记录，包括当前选定窗口之外；输出有上限的异常日期列表，
+  不把窗口之外仍有合法状态的旧数据错报为孤儿事件。
+- 开始前的空记录仍为WAITING；本应已开始却没有记录时为INCOMPLETE，不再无条件WAITING。
+
+日历依据仍只是本地保存的API响应，没有第三方签名，也没有请求范围的完整归档。
+这些检查不能证明某个被删除的日历行从未存在，更不能将整日缺席归因于已证实的休眠或断网。
+
+## 实际执行的离线验证
+
+最终产物：`outputs/research/overnight-20261019-session-coverage-final/`。
+所有模拟时钟结果和恢复数据带OFFLINE_FIXTURE标记；真实前向日数始终为0。
+复制现有日历进行六个场景核查，没有发出日历或订单API请求。
+
+|场景|结果|已知缺席日数|
+|---|---|---:|
+|冻结开始日前|WAITING|0|
+|09:20 ET、尚未开盘|WAITING|0|
+|09:30 ET、未生成状态|INCOMPLETE|1|
+|实际收盘后2分钟、未生成状态|INCOMPLETE|1|
+|连续三日没有状态|INCOMPLETE|3|
+|超过缓存日历最后日期|INCOMPLETE|10（仅已知日历内，范围之外未知）|
+
+另以现有 `forward.tick` 处理独立复制的恢复目录：补记三个完整缺席日，全部0在线秒、0行情、
+0决策、0交易，收益N/A。再次运行得到相同状态，未生成重复记录；不调用WebSocket或真实API。
+原始空fixture和恢复后的fixture分别保留，模拟时钟审计可按原输入重新执行。
+
+生产目录仍为WAITING，下一观察时间为2026-10-20 09:20 ET。
+正式Paper收益复核仍为10月20/22日16:15 ET，未提前消费槽位。
+保护的15个文件与第4轮对账源码Hash均未变，没有订单、launchd、`.env` 或冻结参数修改。
+
+## 命令与后续
+
+```bash
+.venv/bin/python -m scripts.research.audit_forward --days 10
+```
+
+查看新报告中的 `session_coverage`、`orphan_event_days` 及顶层warnings。
+无法证明日历范围或整日缺席时应保留缺失，不以收盘后历史行情补造实时记录。
+新检查尚未加入冻结运行入口，仍需独立执行；部署版本隔离和日历留存问题见PENDING。
+测试结果见 `round-8-validation.json`。本轮没有新策略研究收益，也没有候选策略晋级。
+Git元数据仍只读，未commit；本轮增量补丁保存在 `outputs/overnight/round-8/`。
+初版与中间验证目录均保留，最终以带 `-final` 的目录为准。
+EOF
+cat >> docs/overnight/PENDING.md <<'"'EOF'
+
+## 第 8 轮：整日缺席与日历范围
+
+- 独立审计现能识别留存日历中的整日缺席与未完成收盘，不再将本应开始却没有记录的日子
+  简单称为WAITING。缺失收益为N/A，不能并入现金基线或累计零收益。
+- 本地日历缓存没有完整保留每次请求的start/end及不可变响应归档。已加入范围不足提醒，
+  不依据星期推测交易日；仍无法证明日历内部没有被删行。完整按日留存需部署版本隔离后处理。
+- 现有tick在模拟时钟下正确补记三日缺席且幂等，但这不证明Mac休眠时可以工作；
+  运行恢复的空记录只能说明缺失，不能替代实时观察。没有调用真实tick或修改调度。
+- Git仍只读，未commit；第8轮补丁在 "'`outputs/overnight/round-8/`，必须在前七轮之后核查。
+  不能将这些合成恢复产物放入真实前向目录，也不能重签冻结策略规避部署决策。
+EOF' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+ succeeded in 79863ms:
+..............................................................s......... [ 11%]
+........................................................................ [ 23%]
+........................................................................ [ 34%]
+........................................................................ [ 46%]
+........................................................................ [ 57%]
+........................................................................ [ 69%]
+........................................................................ [ 81%]
+........................................................................ [ 92%]
+.............................................                            [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/pipeline/test_community_reference_equivalence.py:35: BLOCKED: supplied source has Markdown escapes/fences and lost indentation; readable-logic reproduction tested separately, original never repaired
+620 passed, 1 skipped, 1 warning in 79.01s (0:01:19)
+
+exec
+/bin/zsh -lc '.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+git diff --check
+git branch --show-current' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+All checks passed!
+190 files already formatted
+main
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+codex
+全量测试通过：620 passed、1 skipped；Ruff 和 190 个文件格式检查通过。当前生产记录仍为 0 日、WAITING；这次新增的是漏日审计和离线恢复验证，没有新增前向收益证据。正在保存本轮记录及可顺序应用的补丁。
+exec
+/bin/zsh -lc '.venv/bin/pytest -q tests/test_forward_audit.py' in /Users/prts/Projects/aquant
+exec
+/bin/zsh -lc "cat >> docs/overnight/STATE.md <<'EOF'
+
+## 第 8 轮 · 2026-10-19 纽约 15:39 起
+
+- 独立审计新增留存日历查缺：以冻结开始日/美东激活日期为起点，识别已开市无状态、
+  收盘2分钟后仍缺席或未完成记录，日历两端不足明确提醒，缺席日收益保持N/A。
+- 不按星期猜交易日，测试DST、提前收盘与假日；拒绝重复/倒置/非整分钟日历。
+  全部原始事件日期与记录关联检查，发现孤儿日期FAIL，不误报审计窗口外合法旧状态。
+- 新增21项测试；全量 **620 passed、1 skipped**，79.01秒；Ruff及190文件格式检查通过。
+  skip仍为原始BigQuant源码问题；本轮验证详见round-8-validation.json。
+- 实际执行六个隔离模拟时钟场景：开始日前/开盘前WAITING；开盘缺席、收盘缺席、连续漏日、
+  日历过期均INCOMPLETE，缺席日数分别为0/0/1/1/3/10（最后仅指留存日历内已知日期）。
+- 复用冻结tick验证漏掉三日后的恢复与重复执行：三个已完成缺失记录、0在线秒、0行情、
+  0信号/交易、收益N/A，第二次无状态变化。原始空fixture与恢复fixture分开保留，均为合成。
+- 实际前向仍0日/WAITING；15项保护Hash及对账模块不变，无API调用/订单，不改launchd、
+  .env或冻结策略。观察仍10月20日09:20 ET；Paper复核仍10月20/22日16:15 ET，未消费槽位。
+- Git仍main且元数据只读，未commit；提供相对前七轮的两份增量补丁，不覆盖原有工作。
+
+### 第 8 轮产物及下一步
+
+- "'`docs/overnight/RESULTS-8.md`、`round-8-validation.json`：漏日边界、恢复与验收结果。
+- `outputs/research/overnight-20261019-session-coverage-final/`：六个时钟场景、两个隔离fixture、
+  恢复与生产审计、验证JSON及源码。前两个开发验收目录保留，以-final为最终结果。
+- `outputs/overnight/round-8/01-audit.patch`、`02-records.patch`：本轮代码/测试与记录；状态为status-final.json。
+- 继续等待正式前向开始与既定Paper现金复核，不因今日未观察而伪造记录。
+  后续日历归档、冻结部署隔离和实时报价资格仍需解决；本轮不宣称存在新样本外盈利证据。
+EOF
+python3 - <<'"'PY'
+import json
+from pathlib import Path
+from datetime import UTC,datetime
+v=json.loads(Path('outputs/research/overnight-20261019-session-coverage-final/verification.json').read_text())
+v.update(at=datetime.now(UTC).isoformat(),pytest={'passed':620,'skipped':1,'seconds':79.01},new_tests=21,ruff='PASS',format='PASS,190 files',diff_check='PASS',locked_test_used=False,parameters_changed=False,launchd_modified=False,env_modified=False,status=json.loads(Path('outputs/overnight/round-8/status-final.json').read_text()),git={'commits':0,'branch':'main','blocked':'.git read-only; no escalation allowed'})
+Path('docs/overnight/round-8-validation.json').write_text(json.dumps(v,indent=2)+'\\n')
+p=Path('outputs/overnight/round-8/package.py')
+s=Path('outputs/overnight/round-7/package.py').read_text().replace('round-7','round-8').replace('Round-seven','Round-eight').replace('RESULTS-7','RESULTS-8').replace('list(range(1,7))','list(range(1,8))').replace('rounds_1_to_6','rounds_1_to_7').replace('range(1,7)','range(1,8)').replace('aquant-round7','aquant-round8')
+p.write_text(s)
+PY
+python3 outputs/overnight/round-8/package.py" in /Users/prts/Projects/aquant
+ succeeded in 79ms:
+{
+  "committed": false,
+  "reason": ".git remains read-only",
+  "requires_rounds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "patches": [
+    {
+      "path": "outputs/overnight/round-8/01-audit.patch",
+      "sha256": "901e06e659add253800b2b7b27ce3fea5886e9d762cc40bf80a87c119a5ef177",
+      "files": [
+        "scripts/research/audit_forward.py",
+        "tests/test_forward_audit.py"
+      ],
+      "applies_after_rounds_1_to_7_verified": true
+    },
+    {
+      "path": "outputs/overnight/round-8/02-records.patch",
+      "sha256": "d7ee0ac0bda2a3042906d57f810d2e74a1200be397f3e909b2e6f46c6754499e",
+      "files": [
+        "docs/overnight/RESULTS-8.md",
+        "docs/overnight/round-8-validation.json",
+        "docs/overnight/STATE.md",
+        "docs/overnight/PENDING.md"
+      ],
+      "applies_after_rounds_1_to_7_verified": true
+    }
+  ],
+  "verified_files": 32
+}
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+import hashlib,json
+from pathlib import Path
+v=json.loads(Path('outputs/research/overnight-20261019-session-coverage-final/verification.json').read_text())
+assert hashlib.sha256(Path('scripts/research/audit_forward.py').read_bytes()).hexdigest()==v['source_sha256']
+base=json.loads(Path('outputs/research/overnight-20261019-reconciliation/verification.json').read_text())
+assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==h for p,h in base['protected_hashes'].items())
+print('Final source and 15 protected hashes verified; no production writes.')
+PY
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+git diff --check" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+Final source and 15 protected hashes verified; no production writes.
+All checks passed!
+190 files already formatted
+
+ succeeded in 12357ms:
+........................................................................ [ 96%]
+...                                                                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+75 passed, 1 warning in 11.67s
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path('docs/overnight/round-8-validation.json');v=json.loads(p.read_text());v['final_audit_tests']={'passed':75,'seconds':11.67};p.write_text(json.dumps(v,indent=2)+'\\n')
+PY
+python3 outputs/overnight/round-8/package.py" in /Users/prts/Projects/aquant
+ succeeded in 50ms:
+{
+  "committed": false,
+  "reason": ".git remains read-only",
+  "requires_rounds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "patches": [
+    {
+      "path": "outputs/overnight/round-8/01-audit.patch",
+      "sha256": "901e06e659add253800b2b7b27ce3fea5886e9d762cc40bf80a87c119a5ef177",
+      "files": [
+        "scripts/research/audit_forward.py",
+        "tests/test_forward_audit.py"
+      ],
+      "applies_after_rounds_1_to_7_verified": true
+    },
+    {
+      "path": "outputs/overnight/round-8/02-records.patch",
+      "sha256": "5145f40f274d2d1dfa3489f0244e2c912fa8462ea5c1d0990e03bb5296e1a4b4",
+      "files": [
+        "docs/overnight/RESULTS-8.md",
+        "docs/overnight/round-8-validation.json",
+        "docs/overnight/STATE.md",
+        "docs/overnight/PENDING.md"
+      ],
+      "applies_after_rounds_1_to_7_verified": true
+    }
+  ],
+  "verified_files": 32
+}
+
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+codex
+- 已补齐整日缺席、收盘未完成、日历范围不足及孤儿事件审计；缺席收益保持 N/A。
+- 六个模拟时钟场景通过；连续三日缺席恢复验证通过，重复运行幂等，无行情或信号补造。
+- 全量测试：620 passed、1 skipped；Ruff及格式检查通过。
+- 生产前向仍为 WAITING、0 个观察日；未下单，未修改 launchd、`.env` 或冻结策略。
+- 已更新 [RESULTS-8.md](/Users/prts/Projects/aquant/docs/overnight/RESULTS-8.md)、STATE/PENDING。
+- `.git` 仍只读，未提交；八轮增量补丁顺序应用及 32 个文件一致性验证通过。
+diff --git a/scripts/research/audit_forward.py b/scripts/research/audit_forward.py
+index 0b76f0177f083e7027deef3e60878b24b21d0b82..e3a0bf29afb8397b0e25aa39476953c593beff7b
+--- a/scripts/research/audit_forward.py
++++ b/scripts/research/audit_forward.py
+@@ -86,6 +86,66 @@
+         last = page[-1][0]
+ 
+ 
++def coverage(p, calendar_rows, states, now, previous=None):
++    """Inventory only retained calendar evidence; never infer holidays or fill bars."""
++    calendar = history.sessions(calendar_rows)
++    if len(calendar) != len(calendar_rows):
++        raise ValueError("Duplicate calendar dates")
++    for day, (opening, end) in calendar.items():
++        if (
++            not opening < end
++            or opening != opening.floor("min")
++            or end != end.floor("min")
++            or opening.tz_convert("America/New_York").date().isoformat() != day
++        ):
++            raise ValueError("Invalid calendar session")
++    first = max(
++        p["protocol"]["not_before"],
++        instant(p["activated_at"]).tz_convert("America/New_York").date().isoformat(),
++    )
++    if previous:
++        first = max(first, str(pd.Timestamp(previous["day"]).date() + pd.Timedelta(days=1)))
++    today = now.tz_convert("America/New_York").date().isoformat()
++    warnings = []
++    bounds = [min(calendar), max(calendar)] if calendar else None
++    if today >= first:
++        if not bounds or bounds[0] > first:
++            warnings.append("calendar_start_not_retained")
++        if not bounds or bounds[1] < today:
++            warnings.append("calendar_horizon_not_retained")
++    stored = {state["day"]: state for _, state in states}
++    expected = {
++        day: (opening, closing)
++        for day, (opening, closing) in sorted(calendar.items())
++        if day >= first and opening <= now
++    }
++    absent = [day for day in expected if day not in stored]
++    ended = [day for day in absent if now >= expected[day][1] + pd.Timedelta(minutes=2)]
++    if absent:
++        warnings.append("expected_session_without_state")
++    unfinished = [
++        day
++        for day in expected
++        if day in stored
++        and not stored[day]["complete"]
++        and now >= expected[day][1] + pd.Timedelta(minutes=2)
++    ]
++    if unfinished:
++        warnings.append("closed_session_not_finalized")
++    return {
++        "basis": "retained calendar rows; no independent calendar completeness attestation",
++        "from_day": first,
++        "through_day": today,
++        "calendar_bounds": bounds,
++        "expected_opened_sessions": list(expected),
++        "absent_sessions": absent,
++        "absent_closed_sessions": ended,
++        "unfinalized_closed_sessions": unfinished,
++        "missing_session_pnl": None,
++        "warnings": warnings,
++    }
++
++
+ def inspect_day(state, p, rows, now, previous=None):
+     errors, warnings, raw_bars = [], [], {}
+     counts = {"b": 0, "q": 0, "u": 0}
+@@ -333,6 +393,24 @@
+             if not states and watermark:
+                 report["errors"].append("raw_events_without_session_state")
+             report["calendar_rows"] = calendar_rows
++            report["session_coverage"] = coverage(p, calendar_rows, states, now, previous)
++            report["warnings"].extend(report["session_coverage"]["warnings"])
++            orphan_days = (
++                connection.execute(
++                    "SELECT o.day,count(*) FROM observations o LEFT JOIN records r "
++                    "ON r.name='forward:' || o.day WHERE o.rowid<=? AND r.name IS NULL "
++                    "GROUP BY o.day ORDER BY o.day LIMIT 127",
++                    (watermark,),
++                ).fetchall()
++                if watermark
++                else []
++            )
++            report["orphan_event_days"] = [
++                {"day": day, "events": count} for day, count in orphan_days
++            ]
++            report["orphan_event_days_may_be_truncated"] = len(orphan_days) == 127
++            if orphan_days:
++                report["errors"].append("raw_event_day_without_state")
+             if previous and (
+                 previous["kind"] != "forward_simulated"
+                 or previous["config_hash"] != p["config_hash"]
+@@ -354,6 +432,9 @@
+                 official = calendar.get(state["day"])
+                 if not official:
+                     result["warnings"].append("official_calendar_not_retained")
++                    bounds = report["session_coverage"]["calendar_bounds"]
++                    if bounds and bounds[0] <= state["day"] <= bounds[1]:
++                        result["errors"].append("stored_session_absent_from_retained_calendar")
+                 elif tuple(map(instant, official)) != (
+                     instant(state["open"]),
+                     instant(state["close"]),
+@@ -449,7 +530,7 @@
+         f"累计范围：{report['cumulative_scope']}；根汇总：{report['root_summary']}",
+         "",
+         "PASS仅代表已存记录相互一致，不代表盈利、NBBO可执行性或完整实时观察。",
+-        "没有记录为WAITING；运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
++        "尚无应观察交易日且无记录为WAITING；缺席/运行中/日报未发布为INCOMPLETE；一致性异常为FAIL。",
+         "",
+         "|日期|采用bar|决策|信号|错误|提醒|",
+         "|---|---:|---:|---:|---|---|",
+@@ -459,6 +540,17 @@
+             f"|{day['day']}|{day['admitted_bars']}|{day['decisions']}|{day['signals']}|"
+             f"{', '.join(day['errors']) or '无'}|{', '.join(day['warnings']) or '无'}|"
+         )
++    scope = report.get("session_coverage", {})
++    lines += [
++        "",
++        "日历查缺范围："
++        + str(scope.get("from_day", "N/A"))
++        + " 至 "
++        + str(scope.get("through_day", "N/A")),
++        "无状态记录的已开市日：" + (", ".join(scope.get("absent_sessions", [])) or "无"),
++        "已收盘但未完成记录：" + (", ".join(scope.get("unfinalized_closed_sessions", [])) or "无"),
++        "缺席日收益为N/A；仅依据留存日历，不以工作日推测假日，不补造行情或信号。",
++    ]
+     lines += [
+         "",
+         "顶层错误：" + (", ".join(report["errors"]) or "无"),
+diff --git a/tests/test_forward_audit.py b/tests/test_forward_audit.py
+index f5bc9eaf6bba67114532cafe0b9b910f91456b7d..2c73c4dd40d5dca2ddbdef9490cfac7db9ce7754
+--- a/tests/test_forward_audit.py
++++ b/tests/test_forward_audit.py
+@@ -217,7 +217,7 @@
+         connection.execute("DELETE FROM records")
+         connection.execute("DELETE FROM observations")
+     (tmp_path / "summary.json").unlink()
+-    assert audit.audit(tmp_path, now=now)["status"] == "WAITING"
++    assert audit.audit(tmp_path, now=now - pd.Timedelta(days=1))["status"] == "WAITING"
+ 
+ 
+ @pytest.mark.parametrize("problem", ["running", "missing_bars", "missing_report", "old_calendar"])
+
+tokens used
+1,546,638
+- 已补齐整日缺席、收盘未完成、日历范围不足及孤儿事件审计；缺席收益保持 N/A。
+- 六个模拟时钟场景通过；连续三日缺席恢复验证通过，重复运行幂等，无行情或信号补造。
+- 全量测试：620 passed、1 skipped；Ruff及格式检查通过。
+- 生产前向仍为 WAITING、0 个观察日；未下单，未修改 launchd、`.env` 或冻结策略。
+- 已更新 [RESULTS-8.md](/Users/prts/Projects/aquant/docs/overnight/RESULTS-8.md)、STATE/PENDING。
+- `.git` 仍只读，未提交；八轮增量补丁顺序应用及 32 个文件一致性验证通过。

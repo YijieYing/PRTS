@@ -19,7 +19,7 @@ sleep 5
 run() { # $1=name $2=prompt
   ( cd "$REPO" && codex exec resume "$THREAD" \
       -c sandbox_mode='"workspace-write"' -c sandbox_workspace_write.network_access=true \
-      -c approval_policy='"never"' -o "$LOG/$1.last.md" "$2" ) > "$LOG/$1.log" 2>&1 &
+      -c approval_policy='"never"' -c "sandbox_workspace_write.writable_roots=[\"$REPO/.git\"]" -o "$LOG/$1.last.md" "$2" ) > "$LOG/$1.log" 2>&1 &
   local pid=$! w=0
   while kill -0 $pid 2>/dev/null; do sleep 15; w=$((w+15)); [ $w -ge $ROUND_MAX ] && { kill $pid; ev "$1 TIMEOUT"; break; }; done
   wait $pid; local rc=$?; ev "$1 exit=$rc branch=$(git -C "$REPO" branch --show-current)"; return $rc
