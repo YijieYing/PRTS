@@ -34,3 +34,9 @@
   2. 新增 `supervisor-resume.sh`。它等 TUI 这一轮出现 `task_complete` 后，用 SIGTERM 结束 TUI，然后按轮执行 `codex exec resume 01a1532a…`，全程沿用同一个 thread 的上下文。
   3. worker 的改动提交到分支 `overnight/phase5-2026-10-19`。日报写在 `docs/overnight/REPORT-2026-10-19.md`。
 - 教训：派发新 worker 前，应该先查同一目录下有没有正在运行的 agent，以及它在做什么。这是“话题路由 / 总控登记表”要解决的问题。
+
+## 记账 MVP 验收（Claude 亲自运行）
+- Codex 在 `~/Projects/ledger` 提交了 4 次。Claude 复跑 `unittest`：25 项全部通过。
+- 端到端冒烟测试：同一份 fixture 导入两次，结果分别是 inserted 7 和 duplicates 7，确认幂等。`list` 中的字段完整：reason 为空、reimbursable 为未知、invoice_status 和 invoice_path 都在。
+- 隐私：`inbox/`、`invoices/`、`*.db`、`rules.toml` 都被 `.gitignore` 排除，真实账单不会进 git。
+- **还没验证**：真实微信导出文件的兼容性。需要你先导出一次，放进 `inbox/`。
