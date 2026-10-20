@@ -44,6 +44,7 @@ lain 上目前有：
 
 Mac 上目前有：
 - `~/Projects/`：octopus、codexbridge、aquant、AIInfra、DigitalFly、XinDong、ToiletGame、scala-starter，以及冻结的 Chronos/Tanngo/octopus_ModelTest。
+- `~/Projects/ledger`：记账工具（2026-10-20 确认留在这里，不搬进 PRTS）。账本在 `human/账本.xlsx`。
 - `~/CodexBridge`、`~/codexbridge-secretary`：微信侧轻量秘书。
 - `~/research/LearnCodex`、`~/research/Obsidian_Note`。
 - `~/school`、`~/outreach`。
