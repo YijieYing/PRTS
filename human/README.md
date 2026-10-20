@@ -4,7 +4,7 @@
 
 ## 现在
 - 总控台（Claude）负责：派发 Codex、抽查验收、记录。具体执行交给 Codex。
-- 已完成：aquant 积压改动整理提交并合并到 main；agent-tree supervisor 常驻运行。
+- 已完成：aquant 积压改动整理提交并合并到 main；AgentConsole supervisor 常驻运行。
 - 已完成：记账第一次真实导入，账本在 `~/Projects/ledger/human/账本.xlsx`；Codex 压缩算法源码调研。
 
 ## 报告
@@ -15,7 +15,7 @@
 
 ## 各项目的人类入口
 - aquant：`~/Projects/aquant/human/README.md`
-- 全机 agent 监视：http://127.0.0.1:7788（`~/Projects/agent-tree/human/README.md`，私有仓库 github.com/YijieYing/agent-tree）
+- 全机 agent 监视：http://127.0.0.1:7788（`~/Projects/AgentConsole/human/README.md`，私有仓库 github.com/YijieYing/AgentConsole）
 - 待你过目的事件：[inbox.md](inbox.md)
 - 记账：`~/Projects/ledger/human/README.md`，账本 `~/Projects/ledger/human/账本.xlsx`
 

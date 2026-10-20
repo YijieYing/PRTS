@@ -1,5 +1,5 @@
 #!/bin/bash
-# agent-tree event handler (PRTS policy). stdin: one JSON event.
+# AgentConsole event handler (PRTS policy). stdin: one JSON event.
 # L0: log only (default) | L1: list in ~/PRTS/human/inbox.md | L2: macOS notification + inbox.
 # LLM work is deferred: a finished headless job only gets flagged for the console to verify.
 ev=$(cat)
@@ -13,9 +13,9 @@ case "$kind" in
       line "派发任务结束，待总控验收：$title（$cwd）"          # L1
     fi ;;
   idle_long) line "空闲很久的进程，可以关掉：$title（pid $(get pid)）" ;;   # L1
-  stale) line "$(get host) 上有 $(get count) 个 session 超过 $(get days) 天没用，可以在 agent-tree 里归档" ;;  # L1, at most daily
+  stale) line "$(get host) 上有 $(get count) 个 session 超过 $(get days) 天没用，可以在 AgentConsole 里归档" ;;  # L1, at most daily
   host_down)                                                            # L2
     line "主机不可达：$(get host)"
-    osascript -e "display notification \"$(get host) 不可达\" with title \"Agent Tree\"" ;;
+    osascript -e "display notification \"$(get host) 不可达\" with title \"AgentConsole\"" ;;
 esac
 exit 0
