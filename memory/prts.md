@@ -44,6 +44,7 @@
 | 2026-10-19 | 两个 Codex 任务都已完成，Claude 抽查了 6 处源码引用，全部属实。要点：Codex 只在会话开始时读一次 AGENTS.md，之后用缓存（以环境选择和信任级别为键，不看文件 mtime/hash），所以已有会话看不到文件更新；自动压缩阈值约为窗口的 90%；子 agent 共享同一个目录，但没有文件锁，也没有文件变更广播；CodexBridge 不会按话题自动切换 thread，只能靠显式命令。**分工观测**：Codex 适合“有明确交付物、只读调研、需要写源码引用”的任务；Claude 负责派发、抽查和汇总。总控只读了产出笔记（约 190 行），没读源码。 |
 | 2026-10-20 | 第一次夜间实验，用“状态 vs 推理”的总控结构：`ops/aquant-overnight/supervisor.sh`（确定性的 shell 加 caffeinate），在 git worktree 中按轮运行 Codex 优化 aquant 的模拟策略，禁止任何下单；另派一个 Codex 做记账 MVP（`~/Projects/ledger`，用官方账单导出，不自动化操作微信）。报告见 `reports/2026-10-19-overnight.md`。 |
 | 2026-10-20 | 夜间实验完成。aquant：13 轮 + 收尾全部 exit 0；没有发现可信的盈利策略，也没有下单；Claude 抽查数字和测试，结果一致。记账 MVP 通过验收。总控只被唤醒 4 次。失误：resume 时沙箱的 `.git` 只读导致没能提交，改为由 Claude 创建快照分支作为备份。详见 `reports/2026-10-19-overnight.md`。 |
+| 2026-10-20 | (1) aquant 积压改动由 Codex 在 worktree 中整理成 8 个提交，加上 human 入口；验收确认与快照只差新增文档，用 reset --mixed 合入 main，没有碰文件。(2) 记账：354 条导入，234 条原因由 agent 推断，Excel 视图和写回均已验收。(3) agent-tree supervisor 用 launchd 常驻，扫描本机和 lain，内存 17MB。(4) 上下文分页报告与 Codex 压缩源码笔记。**事故**：codex exec 没关 stdin 导致空等 2 小时；sandbox 下 .git 只读。两者都已固化进 `ops/dispatch.sh`（关闭 stdin、给 .git 写权限、启动后 60 秒内验证真的在干活）。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
@@ -73,6 +74,9 @@
 4. **Agent 树状监视前端**：以工程目录树为骨架，显示每个目录下运行的 agent、子 agent 及其从属关系。现有 CC 和 Codex 的界面都是侧边栏列表。前端问题，不急，先记着。
 5. **"已尝试"与"已验证"要分开**：Codex 曾把"发出了操作指令"误当成"操作已经成功"（GUI 焦点问题，在 Enter 前没有确认输入框已获得焦点、路径已写入）；lain 修复时，人报告"跑完了"也早于真实完成。可以考虑把这条作为全局规则写进 `~/.codex/AGENTS.md`，但要先弄清它的加载机制（见 LearnCodex/notes/01）。
 
+
+## 研究线 E2：上下文压缩 = 页面置换
+见 `human/reports/2026-10-20-context-paging.md`。关键点：缺页可能是静默的，所以评价指标必须包括隐式缺页（因为缺信息而犯的错）。下一步是用本机 rollout 做离线重放。
 
 ## 实验设计草案 E1：总控台 vs 单 agent vs 子 agent（2026-10-20，未执行）
 

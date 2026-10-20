@@ -5,7 +5,7 @@
 ## 现在
 - 总控台（Claude）负责：派发 Codex、抽查验收、记录。具体执行交给 Codex。
 - 已完成：aquant 积压改动整理提交并合并到 main；agent-tree supervisor 常驻运行。
-- 进行中：记账的 Excel 视图与第一次真实导入；Codex 压缩算法源码调研（LearnCodex/notes/03）。
+- 已完成：记账第一次真实导入，账本在 `~/Projects/ledger/human/账本.xlsx`；Codex 压缩算法源码调研。
 
 ## 报告
 | 日期 | 报告 |
@@ -17,7 +17,7 @@
 - aquant：`~/Projects/aquant/human/README.md`
 - 全机 agent 监视：http://127.0.0.1:7788（`~/Projects/agent-tree/human/README.md`）
 - 待你过目的事件：[inbox.md](inbox.md)
-- 记账：`~/Projects/ledger/human/README.md`（建设中）
+- 记账：`~/Projects/ledger/human/README.md`，账本 `~/Projects/ledger/human/账本.xlsx`
 
 ## 给我留言
 写在 [notes.md](notes.md) 里。
