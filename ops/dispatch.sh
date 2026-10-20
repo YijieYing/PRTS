@@ -7,6 +7,8 @@ set -u
 name=$1; wd=$2; prompt=$3; shift 3
 OPS=$HOME/PRTS/ops; LOG=$OPS/jobs/$name; REG=$OPS/registry.jsonl
 mkdir -p "$LOG"
+# workspace-write keeps the repo's own .git read-only; grant it so workers can commit.
+gitdir=$(git -C "$wd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && set -- --add-dir "$gitdir" "$@"
 ( cd "$wd" && caffeinate -i codex exec -C "$wd" -s workspace-write "$@" \
     -o "$LOG/last.md" "$(cat "$prompt")" < /dev/null > "$LOG/run.log" 2>&1
   rc=$?
