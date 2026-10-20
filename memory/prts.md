@@ -46,6 +46,7 @@
 | 2026-10-20 | 夜间实验完成。aquant：13 轮 + 收尾全部 exit 0；没有发现可信的盈利策略，也没有下单；Claude 抽查数字和测试，结果一致。记账 MVP 通过验收。总控只被唤醒 4 次。失误：resume 时沙箱的 `.git` 只读导致没能提交，改为由 Claude 创建快照分支作为备份。详见 `reports/2026-10-19-overnight.md`。 |
 | 2026-10-20 | (1) aquant 积压改动由 Codex 在 worktree 中整理成 8 个提交，加上 human 入口；验收确认与快照只差新增文档，用 reset --mixed 合入 main，没有碰文件。(2) 记账：354 条导入，234 条原因由 agent 推断，Excel 视图和写回均已验收。(3) agent-tree supervisor 用 launchd 常驻，扫描本机和 lain，内存 17MB。(4) 上下文分页报告与 Codex 压缩源码笔记。**事故**：codex exec 没关 stdin 导致空等 2 小时；sandbox 下 .git 只读。两者都已固化进 `ops/dispatch.sh`（关闭 stdin、给 .git 写权限、启动后 60 秒内验证真的在干活）。 |
 | 2026-10-20 | agent-tree 推送到私有仓库 github.com/YijieYing/agent-tree。新增：每轮 recap（Claude 读 wrap_up，Codex 读 task_complete 或 thread_history）、自定义标题、dormant 置灰且可折叠、lain 历史 session 可查看。发现旁路 btw session 里也有用户的提问，总控应把它们视为输入来源（下一步可以加进 inbox）。 |
+| 2026-10-20 | agent-tree 新增：worktree 显示为挂在主仓库下的分支节点；打开 app 或 Terminal；归档（Codex 用 `codex archive`，Claude 移到回收站）；拖动合并（`codex queue` 或剪贴板）；每天提醒长期未用的 session；两栏分开滚动。合并和归档都在一次性测试 session 上验证过。决定：不做内嵌终端，改用“打开”按钮；总控 session 不作为母节点合并进子 session。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
