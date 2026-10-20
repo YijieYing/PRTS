@@ -1,2 +1,13 @@
 2026-10-21 03:09:18 JST | NY 14:09 | resume-supervisor start pid=39240; waiting for TUI turn to finish
 2026-10-21 03:19:13 JST | NY 14:19 | TUI turn complete -> terminated TUI pid 89211
+2026-10-21 03:34:34 JST | NY 14:34 | r1 exit=0 branch=research/intraday-20261020
+2026-10-21 03:43:34 JST | NY 14:43 | r2 exit=0 branch=research/intraday-20261020
+2026-10-21 03:54:05 JST | NY 14:54 | r3 exit=0 branch=research/intraday-20261020
+2026-10-21 04:17:36 JST | NY 15:17 | r4 exit=0 branch=research/intraday-20261020
+2026-10-21 04:26:36 JST | NY 15:26 | r5 exit=0 branch=research/intraday-20261020
+2026-10-21 04:51:38 JST | NY 15:51 | r6 exit=0 branch=research/intraday-20261020
+2026-10-21 05:24:09 JST | NY 16:24 | r7 exit=0 branch=research/intraday-20261020
+2026-10-21 05:42:55 JST | NY 16:42 | r8 exit=0 branch=research/intraday-20261020
+2026-10-21 05:42:55 JST | NY 16:42 | worker reports ALL DONE after r8
+2026-10-21 05:43:25 JST | NY 16:43 | rfinal exit=0 branch=research/intraday-20261020
+2026-10-21 05:43:25 JST | NY 16:43 | resume-supervisor done rounds=8
