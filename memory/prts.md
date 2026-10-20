@@ -45,6 +45,7 @@
 | 2026-10-20 | 第一次夜间实验，用“状态 vs 推理”的总控结构：`ops/aquant-overnight/supervisor.sh`（确定性的 shell 加 caffeinate），在 git worktree 中按轮运行 Codex 优化 aquant 的模拟策略，禁止任何下单；另派一个 Codex 做记账 MVP（`~/Projects/ledger`，用官方账单导出，不自动化操作微信）。报告见 `reports/2026-10-19-overnight.md`。 |
 | 2026-10-20 | 夜间实验完成。aquant：13 轮 + 收尾全部 exit 0；没有发现可信的盈利策略，也没有下单；Claude 抽查数字和测试，结果一致。记账 MVP 通过验收。总控只被唤醒 4 次。失误：resume 时沙箱的 `.git` 只读导致没能提交，改为由 Claude 创建快照分支作为备份。详见 `reports/2026-10-19-overnight.md`。 |
 | 2026-10-20 | (1) aquant 积压改动由 Codex 在 worktree 中整理成 8 个提交，加上 human 入口；验收确认与快照只差新增文档，用 reset --mixed 合入 main，没有碰文件。(2) 记账：354 条导入，234 条原因由 agent 推断，Excel 视图和写回均已验收。(3) agent-tree supervisor 用 launchd 常驻，扫描本机和 lain，内存 17MB。(4) 上下文分页报告与 Codex 压缩源码笔记。**事故**：codex exec 没关 stdin 导致空等 2 小时；sandbox 下 .git 只读。两者都已固化进 `ops/dispatch.sh`（关闭 stdin、给 .git 写权限、启动后 60 秒内验证真的在干活）。 |
+| 2026-10-20 | agent-tree 推送到私有仓库 github.com/YijieYing/agent-tree。新增：每轮 recap（Claude 读 wrap_up，Codex 读 task_complete 或 thread_history）、自定义标题、dormant 置灰且可折叠、lain 历史 session 可查看。发现旁路 btw session 里也有用户的提问，总控应把它们视为输入来源（下一步可以加进 inbox）。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。

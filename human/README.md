@@ -15,7 +15,7 @@
 
 ## 各项目的人类入口
 - aquant：`~/Projects/aquant/human/README.md`
-- 全机 agent 监视：http://127.0.0.1:7788（`~/Projects/agent-tree/human/README.md`）
+- 全机 agent 监视：http://127.0.0.1:7788（`~/Projects/agent-tree/human/README.md`，私有仓库 github.com/YijieYing/agent-tree）
 - 待你过目的事件：[inbox.md](inbox.md)
 - 记账：`~/Projects/ledger/human/README.md`，账本 `~/Projects/ledger/human/账本.xlsx`
 
