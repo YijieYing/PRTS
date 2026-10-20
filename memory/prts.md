@@ -54,6 +54,7 @@
 | 2026-10-21 | **话题交接**：Ear/GQH lifegraph 数据库的讨论（数据模型、LLM 只用在 Gateway 片段任务、Stack 判定数学、实验 C 链路、背景对话被误标为“食堂吃饭”的案例、A/B 与 C 公平比较的建议）已迁出总控台，写入 `~/.octopus/local/servicehub/geqh25/notes/2026-10-21-from-prts-console.md`，并用 `codex queue` 投递给 geqh25 的 Codex session `01a1595f`（“分析六个文件职责”）。以后这类问题路由到那里，总控不再展开。这是“话题路由”的第一次人工实践。 |
 | 2026-10-21 | lifegraph 话题完成交接，两边都已同步：交接文件新增第 7 节（给合作者看的报告 `report-for-collaborators.md` 及其与 `comparison.md` 的同步约定）和第 8 节（统计与图哪个是精髓；建议先做零 token 的平表对照）。已用 `codex queue` 投递给 Codex session `01a1595f`，并用 SendMessage 发给 geqh25 的 Claude session「Ear/Lifegraph 服务开发」。之后用户会回退总控台里这段对话，**以交接文件为准**。 |
 | 2026-10-21 | 第二次夜间接管 aquant：caffeinate 运行 12 小时（接着电源）。`supervisor-resume-1021.sh` 等 TUI（pid 89211）跑完 ML-03 当前轮后，用 exec resume 续跑，直到 19:00 ET，或者 worker 回报 ALL DONE。任务：完成 ML-03、测量参考 ETF 实时可用性、写 10-20 收盘报告和方向决策备忘，禁止开 ML-04。修复：resume 时 stdin 没关闭。评估报告：`human/reports/2026-10-21-aquant-ml-assessment.md`。 |
+| 2026-10-21 | CodexBridge 微信 14 小时收不到消息，已修复：它的服务环境变量里设了 Clash 代理（`NODE_USE_ENV_PROXY=1`），而访问微信的兜底路径是按解析出的 IP 发请求的，域名写进 NO_PROXY 也匹配不上，长轮询走代理被 RST。修法：CodexBridge 提交 5dce42a，给这条请求单独指定一个直连 agent（可以用 `CODEXBRIDGE_WEIXIN_USE_PROXY=1` 改回走代理）；`weixin.service.env` 的 NO_PROXY 加了微信域名（有备份）。验证：用户 03:13 和 03:21 的两条消息都被收到并回复。aquant 夜间接管：03:19 接管 TUI，第 1 轮确认在工作。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
