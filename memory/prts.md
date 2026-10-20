@@ -52,6 +52,7 @@
 | 2026-10-20 | 修订 DigitalFly 的 session：分页格式的 thread 不支持 `thread/rollback`，改用官方 `thread/fork`（`lastTurnId` 指定到第 1 轮，`modelProvider` 设为 jinchi）得到新 thread「组会 PPT 分析（10.15）」，只有 1 轮，不含 alpaca；原 thread 已归档（可用 `codex unarchive 01a1445b…` 恢复），rollout 备份在 `ops/backups/`。工具：`ops/codex_trim.py`。AgentConsole 新增“打开者”识别（Codex 用写锁，Claude 用 `~/.claude/sessions` 登记表）。 |
 | 2026-10-20 | **Reporter v0**（`~/PRTS/Reporter`）：确定性采集 → 一次 codex 成文 → 投递。第一期周报（10-14~10-20）已生成；邮件通过 Mail.app iCloud 发送，经确认已进入“已发送”和收件箱（第一次查询时还在发件箱，“已发送”说早了，deliver.py 已补上核实）。微信需由用户在 CodexBridge 建 `/auto` 任务读取 `outbox/latest-wechat.txt`，因为 CodexBridge 没有主动发消息的入口。评估了 aquant ML-01（`.worktrees/ml01`）：协议严谨，但 SPY/QQQ 分钟级只用价格特征、用 MSE 选模型偏向零预测、交易数太少，结论“无 alpha”可信；瓶颈在问题设定和执行数据（NBBO），不在模型。 |
 | 2026-10-21 | **话题交接**：Ear/GQH lifegraph 数据库的讨论（数据模型、LLM 只用在 Gateway 片段任务、Stack 判定数学、实验 C 链路、背景对话被误标为“食堂吃饭”的案例、A/B 与 C 公平比较的建议）已迁出总控台，写入 `~/.octopus/local/servicehub/geqh25/notes/2026-10-21-from-prts-console.md`，并用 `codex queue` 投递给 geqh25 的 Codex session `01a1595f`（“分析六个文件职责”）。以后这类问题路由到那里，总控不再展开。这是“话题路由”的第一次人工实践。 |
+| 2026-10-21 | lifegraph 话题完成交接，两边都已同步：交接文件新增第 7 节（给合作者看的报告 `report-for-collaborators.md` 及其与 `comparison.md` 的同步约定）和第 8 节（统计与图哪个是精髓；建议先做零 token 的平表对照）。已用 `codex queue` 投递给 Codex session `01a1595f`，并用 SendMessage 发给 geqh25 的 Claude session「Ear/Lifegraph 服务开发」。之后用户会回退总控台里这段对话，**以交接文件为准**。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
