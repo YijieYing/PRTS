@@ -14,6 +14,8 @@ import subprocess
 import time
 import tomllib
 
+from render import render
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CFG = tomllib.load(open(os.path.join(HERE, "config.toml"), "rb"))
 LOG = os.path.join(HERE, "out", "deliveries.jsonl")
@@ -38,7 +40,10 @@ def main():
     print(f"wechat: staged at {outbox}")
 
     if not a.no_email:
-        r = subprocess.run(["osascript", os.path.join(HERE, "send_mail.applescript"), title, a.weekly, CFG["email_to"]],
+        html_path = os.path.join(HERE, "out", os.path.basename(a.weekly).replace(".md", ".html"))
+        with open(html_path, "w", encoding="utf-8") as fh:
+            fh.write(render(open(a.weekly, encoding="utf-8").read()))
+        r = subprocess.run(["osascript", os.path.join(HERE, "send_mail.applescript"), title, a.weekly, CFG["email_to"], html_path],
                            capture_output=True, text=True, timeout=120)
         status = "failed"
         if r.returncode == 0:  # "send" only queues it; confirm it left the Outbox and reached Sent
