@@ -1,0 +1,79 @@
+# 项目登记表（你可以直接改）。Reporter 周报和以后的话题路由都用它。
+# path 是目录前缀（本机写 ~/...，lain 写 lain:/home/...），category 取：工程 / 学术 / 课程 / 总控 / 其他
+# 最长前缀优先匹配；exact = true 表示只匹配这个目录本身。
+
+[[project]]
+name = "aquant 交易 bot / BigQuant"
+path = "~/Projects/aquant"
+category = "工程"
+
+[[project]]
+name = "PRTS 总控台"
+path = "~/PRTS"
+category = "总控"
+
+[[project]]
+name = "PRTS 总控台（主 session）"
+path = "~"
+category = "总控"
+exact = true   # 只匹配家目录本身，不吞掉下面的子目录
+
+[[project]]
+name = "记账"
+path = "~/Projects/ledger"
+category = "工程"
+
+[[project]]
+name = "CodexBridge 微信秘书"
+path = "~/CodexBridge"
+category = "工程"
+
+[[project]]
+name = "CodexBridge 秘书"
+path = "~/codexbridge-secretary"
+category = "工程"
+
+[[project]]
+name = "AIInfra 中转站"
+path = "~/Projects/AIInfra"
+category = "工程"
+
+[[project]]
+name = "Codex 原理学习"
+path = "~/research/LearnCodex"
+category = "学术"
+
+[[project]]
+name = "果蝇脑 DigitalFly"
+path = "~/Projects/DigitalFly"
+category = "学术"
+
+[[project]]
+name = "SwarmBot 多机器人"
+path = "~/Projects/SwarmBot"
+category = "学术"
+
+[[project]]
+name = "NatureCalls（软工课 Unity）"
+path = "~/Projects/NatureCalls"
+category = "课程"
+
+[[project]]
+name = "XinDong 小车"
+path = "~/Projects/XinDong"
+category = "课程"
+
+[[project]]
+name = "课程作业"
+path = "~/school"
+category = "课程"
+
+[[project]]
+name = "OS 课（rCore）"
+path = "lain:/home/yijieying/Undergrad_3_Autumn"
+category = "课程"
+
+[[project]]
+name = "lain 上的项目"
+path = "lain:/home/yijieying/projects"
+category = "工程"
