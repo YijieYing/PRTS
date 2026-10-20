@@ -18,6 +18,7 @@
 - **Human_Work** 在 Apple 备忘录里，由你**手工维护**，用来记录七个方向的进展。Claude 需要时可以申请只读权限。这是我们划分 human/agent 工作边界的一次尝试。
 - 研究 Codex 时直接读开源的 Codex，不使用泄露的 Claude Code 代码。
 - **文档分两类**（2026-10-20 你提出）：给人看的放在 `human/`，必须可读，你可以直接修改；其余文档由 agent 自己打理。你会看着 agent 给的路径去找报告，所以每个项目都要有一个人类入口。
+- **放置规则**：属于 PRTS 总控台的组件（supervisor/AgentConsole、派发脚本、记忆）放在 `~/PRTS` 下；普通项目放在 `~/Projects`。
 - 你喜欢简洁易懂的报告，例如 overnight report 那种格式：先给结论，再列证据和待决定事项。
 - 你在意上下文/token 的消耗（2026-10-18 第一次会话同步完就用掉了 9% 上下文）。所以：
   - 不整篇重读大文件，按需读取局部。
@@ -44,7 +45,7 @@ lain 上目前有：
 
 Mac 上目前有：
 - `~/Projects/`：octopus、codexbridge、aquant、AIInfra、DigitalFly、XinDong、ToiletGame、scala-starter，以及冻结的 Chronos/Tanngo/octopus_ModelTest。
-- `~/Projects/ledger`：记账工具（2026-10-20 确认留在这里，不搬进 PRTS）。账本在 `human/账本.xlsx`。
+- `~/Projects/ledger`：记账工具，账本在 `human/账本.xlsx`。
 - `~/CodexBridge`、`~/codexbridge-secretary`：微信侧轻量秘书。
 - `~/research/LearnCodex`、`~/research/Obsidian_Note`。
 - `~/school`、`~/outreach`。
