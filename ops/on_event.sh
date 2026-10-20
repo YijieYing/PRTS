@@ -4,7 +4,7 @@
 # LLM work is deferred: a finished headless job only gets flagged for the console to verify.
 ev=$(cat)
 get() { python3 -c "import json,sys;print(json.loads(sys.argv[1]).get('$1',''))" "$ev"; }
-kind=$(get event); to=$(get to); title=$(get title | cut -c1-60); cwd=$(get cwd)
+kind=$(get event); to=$(get to); title=$(python3 -c "import json,sys;print(json.loads(sys.argv[1]).get('title','')[:60])" "$ev"); cwd=$(get cwd)
 inbox=$HOME/PRTS/human/inbox.md
 line() { echo "- $(date '+%m-%d %H:%M') $1" >> "$inbox"; }
 case "$kind" in

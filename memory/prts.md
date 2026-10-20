@@ -47,7 +47,8 @@
 | 2026-10-20 | (1) aquant 积压改动由 Codex 在 worktree 中整理成 8 个提交，加上 human 入口；验收确认与快照只差新增文档，用 reset --mixed 合入 main，没有碰文件。(2) 记账：354 条导入，234 条原因由 agent 推断，Excel 视图和写回均已验收。(3) AgentConsole supervisor 用 launchd 常驻，扫描本机和 lain，内存 17MB。(4) 上下文分页报告与 Codex 压缩源码笔记。**事故**：codex exec 没关 stdin 导致空等 2 小时；sandbox 下 .git 只读。两者都已固化进 `ops/dispatch.sh`（关闭 stdin、给 .git 写权限、启动后 60 秒内验证真的在干活）。 |
 | 2026-10-20 | AgentConsole 推送到私有仓库 github.com/YijieYing/AgentConsole。新增：每轮 recap（Claude 读 wrap_up，Codex 读 task_complete 或 thread_history）、自定义标题、dormant 置灰且可折叠、lain 历史 session 可查看。发现旁路 btw session 里也有用户的提问，总控应把它们视为输入来源（下一步可以加进 inbox）。 |
 | 2026-10-20 | AgentConsole 新增：worktree 显示为挂在主仓库下的分支节点；打开 app 或 Terminal；归档（Codex 用 `codex archive`，Claude 移到回收站）；拖动合并（`codex queue` 或剪贴板）；每天提醒长期未用的 session；两栏分开滚动。合并和归档都在一次性测试 session 上验证过。决定：不做内嵌终端，改用“打开”按钮；总控 session 不作为母节点合并进子 session。 |
-| 2026-10-20 | 项目改名为 **AgentConsole**（原名 agent-tree）：GitHub 私有仓库 YijieYing/AgentConsole、`~/Projects/AgentConsole`、Python 包 `agent_console`、状态目录 `~/.agentconsole`、launchd 标签 `com.yijieying.agentconsole`。端口仍是 7788。 |
+| 2026-10-20 | 项目改名为 **AgentConsole**（原名 agent-tree）：GitHub 私有仓库 YijieYing/AgentConsole、`~/PRTS/AgentConsole`、Python 包 `agent_console`、状态目录 `~/.agentconsole`、launchd 标签 `com.yijieying.agentconsole`。端口仍是 7788。 |
+| 2026-10-20 | AgentConsole 移到 `~/PRTS/AgentConsole`，作为总控台的 supervisor 部分（独立 git 仓库，已加入 PRTS 的 .gitignore）。修复：在 Terminal resume 时带上该 thread 的中转站 profile；idle 提醒持久化去重；inbox 中文乱码。复盘：DigitalFly/ppt/10.15 的 session（jinchi）第 2 轮误用来做 aquant 的 Paper Smoke 准备，通过绝对路径操作 aquant，没有下单，也没有在 DigitalFly 写文件。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
@@ -80,6 +81,15 @@
 
 ## 研究线 E2：上下文压缩 = 页面置换
 见 `human/reports/2026-10-20-context-paging.md`。关键点：缺页可能是静默的，所以评价指标必须包括隐式缺页（因为缺信息而犯的错）。下一步是用本机 rollout 做离线重放。
+
+## AgentConsole（supervisor）功能候选（2026-10-20，Claude 提案）
+1. **等待人类的检测**：Codex 的审批请求、Claude 的 blocked 提问 → L2 通知。这是最直接节省人类注意力的一项。
+2. **冲突检测**：同一个 git 根目录或分支上有 2 个以上 agent 同时处于 working → L1 警告。
+3. **卡死检测**：已登记的派发任务进程还活着，但 rollout 10 分钟没有增长 → L2。这正是 stdin 卡住那次事故的情况。
+4. **派发任务自动验收**：任务退出后自动起一个验收 agent。
+5. **额度和中转站路由**：统计每个 provider 的用量（5 小时限额）。
+6. **每日摘要**：用一条汇总代替多条零散提醒。
+7. **项目登记表**：session → 项目 → human 入口，作为话题路由的数据基础。
 
 ## 实验设计草案 E1：总控台 vs 单 agent vs 子 agent（2026-10-20，未执行）
 
