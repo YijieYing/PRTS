@@ -49,6 +49,7 @@
 | 2026-10-20 | AgentConsole 新增：worktree 显示为挂在主仓库下的分支节点；打开 app 或 Terminal；归档（Codex 用 `codex archive`，Claude 移到回收站）；拖动合并（`codex queue` 或剪贴板）；每天提醒长期未用的 session；两栏分开滚动。合并和归档都在一次性测试 session 上验证过。决定：不做内嵌终端，改用“打开”按钮；总控 session 不作为母节点合并进子 session。 |
 | 2026-10-20 | 项目改名为 **AgentConsole**（原名 agent-tree）：GitHub 私有仓库 YijieYing/AgentConsole、`~/PRTS/AgentConsole`、Python 包 `agent_console`、状态目录 `~/.agentconsole`、launchd 标签 `com.yijieying.agentconsole`。端口仍是 7788。 |
 | 2026-10-20 | AgentConsole 移到 `~/PRTS/AgentConsole`，作为总控台的 supervisor 部分（独立 git 仓库，已加入 PRTS 的 .gitignore）。修复：在 Terminal resume 时带上该 thread 的中转站 profile；idle 提醒持久化去重；inbox 中文乱码。复盘：DigitalFly/ppt/10.15 的 session（jinchi）第 2 轮误用来做 aquant 的 Paper Smoke 准备，通过绝对路径操作 aquant，没有下单，也没有在 DigitalFly 写文件。 |
+| 2026-10-20 | 修订 DigitalFly 的 session：分页格式的 thread 不支持 `thread/rollback`，改用官方 `thread/fork`（`lastTurnId` 指定到第 1 轮，`modelProvider` 设为 jinchi）得到新 thread「组会 PPT 分析（10.15）」，只有 1 轮，不含 alpaca；原 thread 已归档（可用 `codex unarchive 01a1445b…` 恢复），rollout 备份在 `ops/backups/`。工具：`ops/codex_trim.py`。AgentConsole 新增“打开者”识别（Codex 用写锁，Claude 用 `~/.claude/sessions` 登记表）。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
