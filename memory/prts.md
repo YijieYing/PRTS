@@ -50,6 +50,7 @@
 | 2026-10-20 | 项目改名为 **AgentConsole**（原名 agent-tree）：GitHub 私有仓库 YijieYing/AgentConsole、`~/PRTS/AgentConsole`、Python 包 `agent_console`、状态目录 `~/.agentconsole`、launchd 标签 `com.yijieying.agentconsole`。端口仍是 7788。 |
 | 2026-10-20 | AgentConsole 移到 `~/PRTS/AgentConsole`，作为总控台的 supervisor 部分（独立 git 仓库，已加入 PRTS 的 .gitignore）。修复：在 Terminal resume 时带上该 thread 的中转站 profile；idle 提醒持久化去重；inbox 中文乱码。复盘：DigitalFly/ppt/10.15 的 session（jinchi）第 2 轮误用来做 aquant 的 Paper Smoke 准备，通过绝对路径操作 aquant，没有下单，也没有在 DigitalFly 写文件。 |
 | 2026-10-20 | 修订 DigitalFly 的 session：分页格式的 thread 不支持 `thread/rollback`，改用官方 `thread/fork`（`lastTurnId` 指定到第 1 轮，`modelProvider` 设为 jinchi）得到新 thread「组会 PPT 分析（10.15）」，只有 1 轮，不含 alpaca；原 thread 已归档（可用 `codex unarchive 01a1445b…` 恢复），rollout 备份在 `ops/backups/`。工具：`ops/codex_trim.py`。AgentConsole 新增“打开者”识别（Codex 用写锁，Claude 用 `~/.claude/sessions` 登记表）。 |
+| 2026-10-20 | **Reporter v0**（`~/PRTS/Reporter`）：确定性采集 → 一次 codex 成文 → 投递。第一期周报（10-14~10-20）已生成；邮件通过 Mail.app iCloud 发送，经确认已进入“已发送”和收件箱（第一次查询时还在发件箱，“已发送”说早了，deliver.py 已补上核实）。微信需由用户在 CodexBridge 建 `/auto` 任务读取 `outbox/latest-wechat.txt`，因为 CodexBridge 没有主动发消息的入口。评估了 aquant ML-01（`.worktrees/ml01`）：协议严谨，但 SPY/QQQ 分钟级只用价格特征、用 MSE 选模型偏向零预测、交易数太少，结论“无 alpha”可信；瓶颈在问题设定和执行数据（NBBO），不在模型。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
