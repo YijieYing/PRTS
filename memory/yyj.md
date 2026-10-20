@@ -34,6 +34,7 @@
 | **Mac**（本机） | Apple M5，24GB 内存，macOS 26.4，用户名 `prts`。Claude Code / Codex 跑在这里。 |
 | **lain**（Dell，远程服务器） | `ssh lain` → `yijieying@lain-linux`。Ubuntu 22.04，16 核，15GB 内存，RTX 4050 Laptop GPU（6GB 显存），根分区 317G（已用 83%，剩约 53G）。24h 插电运行。 |
 | ⚠️ lain 注意 | 笔记本合盖运行，但 logind 的合盖挂起没有关掉，导致 auth.log 被刷屏；2026-10-18 已修复（logind 改为合盖忽略，配置在 /etc/systemd/logind.conf.d/90-lid-ignore.conf）。 |
+| ⚠️ lain 发热源（2026-10-20） | Clash Verge 的 GUI 内嵌网页进程（WebKitWebProcess，父进程 clash-verge）持续占用约 12% CPU，已累计 21 小时 CPU 时间。AgentConsole 在 lain 上每分钟只用约 0.05 秒。 |
 | 第三台服务器 | 还没搭好。 |
 | 云端 VM | prts.md 中提到过，具体情况未知。 |
 
