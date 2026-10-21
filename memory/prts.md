@@ -56,6 +56,7 @@
 | 2026-10-21 | 第二次夜间接管 aquant：caffeinate 运行 12 小时（接着电源）。`supervisor-resume-1021.sh` 等 TUI（pid 89211）跑完 ML-03 当前轮后，用 exec resume 续跑，直到 19:00 ET，或者 worker 回报 ALL DONE。任务：完成 ML-03、测量参考 ETF 实时可用性、写 10-20 收盘报告和方向决策备忘，禁止开 ML-04。修复：resume 时 stdin 没关闭。评估报告：`human/reports/2026-10-21-aquant-ml-assessment.md`。 |
 | 2026-10-21 | CodexBridge 微信 14 小时收不到消息，已修复：它的服务环境变量里设了 Clash 代理（`NODE_USE_ENV_PROXY=1`），而访问微信的兜底路径是按解析出的 IP 发请求的，域名写进 NO_PROXY 也匹配不上，长轮询走代理被 RST。修法：CodexBridge 提交 5dce42a，给这条请求单独指定一个直连 agent（可以用 `CODEXBRIDGE_WEIXIN_USE_PROXY=1` 改回走代理）；`weixin.service.env` 的 NO_PROXY 加了微信域名（有备份）。验证：用户 03:13 和 03:21 的两条消息都被收到并回复。aquant 夜间接管：03:19 接管 TUI，第 1 轮确认在工作。 |
 | 2026-10-21 | 第二夜验收：8 轮加收尾全部 exit 0，worker 主动报告 ALL DONE 后提前结束（ALL DONE 早停机制第一次生效）。ML-03 被拒绝；参考 ETF 的实时输入凑不齐（收盘前五个同时连续的窗口为 0）；ML-01 前向 0 个信号；没有下单。方向决策等用户来定。 |
+| 2026-10-21 | 用户决定 aquant 转向多日周期，评价原则是“钱放在决策层和评价层，不直接拿来训练”。已同步给 aquant：`human/direction-2026-10-21.md`、AGENTS.md 第 5 条、新增 CLAUDE.md（提交 9324907，分支 research/intraday-20261020）；通过跨 session 消息发给 Claude「自动交易机器人 aquant」；通过 `codex queue` 发给 Codex 线程 01a1532a（它当时开在终端里，能否自动读到排队消息还没验证）。这是第一次同时向 Claude 和 Codex 两种 agent 同步同一个决定。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
