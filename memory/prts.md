@@ -58,6 +58,7 @@
 | 2026-10-21 | 第二夜验收：8 轮加收尾全部 exit 0，worker 主动报告 ALL DONE 后提前结束（ALL DONE 早停机制第一次生效）。ML-03 被拒绝；参考 ETF 的实时输入凑不齐（收盘前五个同时连续的窗口为 0）；ML-01 前向 0 个信号；没有下单。方向决策等用户来定。 |
 | 2026-10-21 | 用户决定 aquant 转向多日周期，评价原则是“钱放在决策层和评价层，不直接拿来训练”。已同步给 aquant：`human/direction-2026-10-21.md`、AGENTS.md 第 5 条、新增 CLAUDE.md（提交 9324907，分支 research/intraday-20261020）；通过跨 session 消息发给 Claude「自动交易机器人 aquant」；通过 `codex queue` 发给 Codex 线程 01a1532a（它当时开在终端里，能否自动读到排队消息还没验证）。这是第一次同时向 Claude 和 Codex 两种 agent 同步同一个决定。 |
 | 2026-10-21 | 研究内容迁到 `~/research/PRTS`（独立 git）。状态：E1 等用户读完时钟中断章节；E2 设计 v0 完成（阶段 A 离线重放不需要 API；阶段 B 用 DeepSeek 探针测静默缺页，需要用户提供 key 并确认隐私）；E3 已调研（隐藏状态通信、自创语言、token 平价）；E4（传引用 vs 传值）从“只传指针”的讨论中形成。 |
+| 2026-10-21 | 归档了 PRTS 主对话的旧分支 `27b8fd88`（AgentConsole 归档，Claude 的 session 移到 `~/.agentconsole/trash/claude`，可以恢复）。原因：10-21 02:00 用户修订会话、剪掉 Ear/gqh 讨论时，app 从 23:03 处分出了新 session `92dde3e1`，旧的那份留在磁盘上。那段讨论在归档前已完整迁出：交接文件 `~/.octopus/local/servicehub/geqh25/notes/2026-10-21-from-prts-console.md`（8 节），并已送达 geqh25 的 Codex 和 Claude「Ear/Lifegraph 服务开发」。经核实送达，没有重复发送。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
