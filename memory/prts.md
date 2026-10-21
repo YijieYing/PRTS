@@ -75,6 +75,7 @@
 | 2026-10-21 | E2 阶段 B 准备完成（2b0d9c1：调用器、65 项离线测试、没有调用 API），但**选出的探针为 0/40**：文件切点不在白名单 session 里；约束类则因为隐私规则是按关键词整段拒绝（key、token、记账、aquant……），真实对话全部命中（token 在 LLM 讨论里无处不在）。Codex 没有凑数，如实报告。总控建议改为“按真实敏感内容逐处遮盖”：用正则识别 key 格式、个人信息（邮箱、手机号、学号）；记账和账户类页面替换为等长占位；aquant 的研究讨论保留；答案落在遮盖区的探针剔除。**等用户决定隐私策略。** |
 | 2026-10-22 | 用户确认隐私策略改为逐处遮盖（E2 设计 v0.4：C9 遮盖真实秘密、个人信息，记账和账户页用等长占位，aquant 研究讨论保留；新增 C9b：答案落在遮盖区的探针剔除）。用户问到 C7 和 C8，已解释“重读”（缺页下限）和“固定种子”（可复现）。已派发探针重选（e2-phaseB-probes，不调用 API）；白名单新增 E2、AgentConsole、Reporter 的派发任务 session。 |
 | 2026-10-22 | 探针重选任务两次因为 OpenAI 的 `Selected model is at capacity` 中断（工作区里的修改都在，测试通过）。新增 `ops/retry_resume.sh`：遇到容量不足就每 10 分钟用 `codex exec resume` 续跑同一个 thread，最多 6 次，并把事件记进 registry。没有擅自换模型，也没有改用用户的中转站。 |
+| 2026-10-22 | 查明 Codex 报错“Selected model is at capacity”的含义：服务端返回 HTTP 503，错误码为 `server_is_overloaded` 或 `slow_down`（见 codex-rs/codex-api/src/api_bridge.rs），也就是**这个模型的服务容量不足，不是用户额度问题**（额度错误走 rate_limit_exceeded 和 UsageLimitExceeded）。当时周额度已用 78%，没有触发任何限制，计划为 prolite，10-27 17:41 JST 重置；模型 gpt-6-astra。出错时间是美国东部下午高峰（15:20–15:45 ET），同一时间 aquant 也在派发 Codex 任务（同账号同模型并发）。社区报告并发会提高出错频率。Codex 对这种错误不会自动重试，所以由 `retry_resume.sh` 每 10 分钟重试（官方建议等约 15 分钟或换模型）。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
