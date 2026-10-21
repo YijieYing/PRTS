@@ -66,6 +66,7 @@
 | 2026-10-21 | 用户决定去掉每天自动推送 GitHub 的 hook。备份插件的 post_hook 改为 `ops/unpushed_reminder.sh`：只检查不推送，有已提交但超过 2 天未推送的内容就写一条到 inbox。总控开工流程（INDEX 第 2 步）也加了这项检查，用户要求总控适时提醒他“推 github”。E2 设计升到 v0.2：存根成为与置换策略正交的独立因子（RQ2d），全交叉 7×4×2，先跑试点。 |
 | 2026-10-21 | aquant 日报上游：在 lain 上生成（aquant-multiday.timer），Mac 上的 `com.aquant.daily-pull` 每 10 分钟 rsync 拉取（原子 rename）。Reporter 的触发加固为监视目录、监视文件，再加每 10 分钟轮询。**待验证**：第一份真实日报在 10/22 05:40–05:50 JST 到达；已挂后台检查，截止 07:20 JST，赶在用户 07:30 的 /auto 之前。 |
 | 2026-10-21 | **事故**：用户在编辑 `~/research/PRTS/.env` 时没有保存，编辑器留下的 `.env.save`（54 字节，开头是 `PRTS_RESEARCH_KEY=`，很可能含有真实的 DeepSeek key）没被 `.gitignore`（当时只写了 `.env`）覆盖，被总控用 `git add -A` 提交进 a146bf8，并随“推 github”推到了私有仓库 PRTS_research。处理：本地删除该文件；忽略规则扩大为 `.env`、`.env.*`、`*.env`；amend 成 b207ece（去掉该文件，其余不变），已强制推送（远端已确认没有 env 文件）。**用户确认 .env.save 是空的**（编辑器没有保存），没有真实泄露，所以不用作废 key。**教训**：提交前必须看暂存列表（`git status --short`），不要盲目 `git add -A`；忽略规则要覆盖密钥文件的各种变体。key 的变量名定为 `PRTS_RESEARCH_KEY`。 |
+| 2026-10-21 | **事故 2**：用户写入的 `~/research/PRTS/.env`（PRTS_RESEARCH_KEY）消失。排查结果：Codex 阶段 A 的执行记录里没有任何命令碰过 .env；最可能是总控自己的操作：19:14:51 `mv .env.save .env`（没有检查目标是否存在，可能覆盖了用户刚写入的文件），19:17:03 `rm -f .env .env.save`（顺手把 .env 也删了）。已请用户重新写入。**规则**：改名一律用 `mv -n`；删除前必须确认删的是什么、文件属于谁；用户的密钥文件，总控只读不写不删。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
