@@ -2,9 +2,10 @@
 
 总控会话开工流程（按顺序，能少读就少读）：
 1. 读本文件。
-2. 读 `prts.md` 的 §〇（约 60 行），不整篇读。
-3. 运行 `git -C ~/PRTS status --short human/ && git -C ~/PRTS diff human/`，查看人类改了什么。读完后用 `git commit -m "human: ..."` 提交，并把从中学到的东西写进对应的记忆文件。
-4. 按需读下面的文件。
+2. 检查 PRTS 和 research/PRTS 有没有未推送的提交（`git -C <repo> rev-list --count @{u}..HEAD`）；有积压就在回复里提醒用户（用户 2026-10-21 要求：不自动推送，但要适时提醒）。
+3. 读 `prts.md` 的 §〇（约 60 行），不整篇读。
+4. 运行 `git -C ~/PRTS status --short human/ && git -C ~/PRTS diff human/`，查看人类改了什么。读完后用 `git commit -m "human: ..."` 提交，并把从中学到的东西写进对应的记忆文件。
+5. 按需读下面的文件。
 
 | 文件 | 内容 | 什么时候读 |
 |---|---|---|
