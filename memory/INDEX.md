@@ -13,6 +13,7 @@
 | [~/research/PRTS/](../../research/PRTS/README.md) | 研究层：实验状态表（README）、E2 设计、E3/E4 笔记 | 讨论研究或实验时先读它的 README |
 | ../ops/ | 派发脚本、Codex 任务 prompt（jobs/）、运行日志 | 复用或排查派发 |
 | ../human/reports/ | 给人看的报告（也是事实记录） | 回顾某次运行 |
+| ../ops/backups/claude/ | Claude 对话备份（`ops/backup_claude.sh` 生成）；先看 INDEX.tsv 找会话，再读对应 jsonl | 需要追溯过去 Claude 总控的对话时 |
 
 规则：
 - 每个共享文件只有一个写者：memory/ 只由总控写；worker 写在各自的项目里。
