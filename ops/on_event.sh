@@ -2,6 +2,7 @@
 # AgentConsole event handler (PRTS policy). stdin: one JSON event.
 # L0: log only (default) | L1: list in ~/PRTS/human/inbox.md | L2: macOS notification + inbox.
 # LLM work is deferred: a finished headless job only gets flagged for the console to verify.
+export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONIOENCODING=utf-8  # launchd gives a C locale; keep CJK titles intact
 ev=$(cat)
 get() { python3 -c "import json,sys;print(json.loads(sys.argv[1]).get('$1',''))" "$ev"; }
 kind=$(get event); to=$(get to); title=$(python3 -c "import json,sys;print(json.loads(sys.argv[1]).get('title','')[:60])" "$ev"); cwd=$(get cwd)
