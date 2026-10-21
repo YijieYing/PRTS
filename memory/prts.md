@@ -77,6 +77,7 @@
 | 2026-10-22 | 探针重选任务两次因为 OpenAI 的 `Selected model is at capacity` 中断（工作区里的修改都在，测试通过）。新增 `ops/retry_resume.sh`：遇到容量不足就每 10 分钟用 `codex exec resume` 续跑同一个 thread，最多 6 次，并把事件记进 registry。没有擅自换模型，也没有改用用户的中转站。 |
 | 2026-10-22 | 查明 Codex 报错“Selected model is at capacity”的含义：服务端返回 HTTP 503，错误码为 `server_is_overloaded` 或 `slow_down`（见 codex-rs/codex-api/src/api_bridge.rs），也就是**这个模型的服务容量不足，不是用户额度问题**（额度错误走 rate_limit_exceeded 和 UsageLimitExceeded）。当时周额度已用 78%，没有触发任何限制，计划为 prolite，10-27 17:41 JST 重置；模型 gpt-6-astra。出错时间是美国东部下午高峰（15:20–15:45 ET），同一时间 aquant 也在派发 Codex 任务（同账号同模型并发）。社区报告并发会提高出错频率。Codex 对这种错误不会自动重试，所以由 `retry_resume.sh` 每 10 分钟重试（官方建议等约 15 分钟或换模型）。 |
 | 2026-10-22 | 检验 at capacity 是否真是服务端问题，结论是**基本可以确定**。证据：① 源码中这条报错对应 HTTP 503 加 `server_is_overloaded`/`slow_down`；② 失败的 thread 用的是官方 `openai` provider，不经过中转站（jinchi 的 hachimiapi.rimi.uk 是别的 session 在用）；③ 额度没有触发任何限制；④ 04:50 用同一个账号和模型发了一个极短的请求，11 秒内正常返回，说明容量恢复，是暂时性的；⑤ 社区近期有很多同样的报告，出错时正值美国东部下午高峰。OpenAI 状态页显示没有事故（容量饱和通常不发公告）。无法排除：本地日志没有保存原始错误码，所以分不清是 `slow_down`（账号级限速）还是模型过载；aquant 的并发任务可能也有影响。另外，gpt-6.1-sol 在 ChatGPT 账号下不可用（400），不能作为后备模型。 |
+| 2026-10-22 | 探针重选完成（aaa4a82，75 项测试）。后几轮续跑虽然报了容量不足，但每轮中断前都推进了一部分，最终完成；retry_resume.sh 把“日志里出现 at capacity”当作失败，判断有误，已由总控手动停止。结果：**约束类 20/20，文件类 0/20**（文件候选全部被剔除：重用距离不足 16k、各策略意见一致、实际范围无法核实等）。审查表经总控正则扫描，没有密钥或个人信息。dry-run：538 次请求，约 827 万输入 token（bytes/4）。**DeepSeek 可用模型只有 deepseek-flash 和 deepseek-v4-pro**，调用器默认值已从 deepseek-chat 改为 deepseek-flash，写进 C8。审查表已发给用户，等待确认后跑试点。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
