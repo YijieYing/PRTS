@@ -68,5 +68,10 @@ with open(os.path.join(dest, "INDEX.tsv"), "w") as out:
 print(f"indexed {len(rows)} desktop sessions")
 PY
 
+# 5. 把已提交的内容推到 GitHub（私有库）；不自动 commit，推送失败不影响本地备份
+for repo in "$HOME/PRTS" "$HOME/research/PRTS"; do
+  git -C "$repo" push -q origin HEAD 2>&1 && echo "pushed $repo" || echo "push failed: $repo"
+done
+
 date -u +%FT%TZ > "$DEST/.last-backup"
 du -sh "$DEST"
