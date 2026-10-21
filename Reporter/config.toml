@@ -1,3 +1,7 @@
 # Reporter 投递配置（只发给你自己）
 email_to = "herryying30@icloud.com"     # 用 Mail.app 里的 iCloud 账户发送
 wechat_outbox = "~/PRTS/Reporter/outbox/latest-wechat.txt"   # CodexBridge /auto 任务读取这个文件
+
+# aquant 每日渠道（2026-10-21 与 aquant session 约定）
+aquant_daily_dir = "~/Projects/aquant/outputs/daily"
+aquant_daily_email = false   # 默认只走微信；改成 true 会每天把全文发到邮箱

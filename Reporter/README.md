@@ -9,3 +9,9 @@ AgentConsole 负责看，Reporter 负责汇总、分级、投递。**只有 Repo
    - 微信：把短版放到 `outbox/latest-wechat.txt`，由用户在 CodexBridge 建的 `/auto` 任务读取后转发。原因是 CodexBridge 没有主动发消息的入口，回复必须带上用户最近一条消息里的 context token。
 
 配置：`config.toml`。投递记录：`out/deliveries.jsonl`。
+
+## aquant 每日渠道（`aquant_daily.py`）
+- 约定：aquant 每个交易日收盘后写 `~/Projects/aquant/outputs/daily/latest-wechat.txt`（首行“aquant 日报 YYYY-MM-DD”，不超过 900 字）和 `YYYY-MM-DD.md` 全文。
+- 触发：launchd `com.prts.reporter-aquant-daily` 用 WatchPaths 监视这个文件，一有变化就运行；每天 07:15 再兜底检查一次。和 ET 时区及夏令时无关。
+- 校验通过后，原子写入 `outbox/aquant-daily.txt`，由用户的 CodexBridge `/auto` 任务在 07:30 JST 转发到微信。不通过（缺日期、超长、含疑似 key）就不转发，并在 `~/PRTS/human/inbox.md` 里记一条。
+- 邮件默认关闭（`config.toml` 中的 `aquant_daily_email`）。

@@ -31,13 +31,15 @@ def main():
     ap.add_argument("--weekly", required=True)
     ap.add_argument("--wechat", required=True)
     ap.add_argument("--no-email", action="store_true")
+    ap.add_argument("--email-only", action="store_true", help="skip staging the WeChat outbox")
     a = ap.parse_args()
     title = open(a.weekly, encoding="utf-8").readline().lstrip("# ").strip() or "PRTS 周报"
 
-    outbox = os.path.expanduser(CFG["wechat_outbox"])
-    shutil.copyfile(a.wechat, outbox)
-    log(channel="wechat", status="staged", file=outbox)
-    print(f"wechat: staged at {outbox}")
+    if not a.email_only:
+        outbox = os.path.expanduser(CFG["wechat_outbox"])
+        shutil.copyfile(a.wechat, outbox)
+        log(channel="wechat", status="staged", file=outbox)
+        print(f"wechat: staged at {outbox}")
 
     if not a.no_email:
         html_path = os.path.join(HERE, "out", os.path.basename(a.weekly).replace(".md", ".html"))
