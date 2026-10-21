@@ -64,6 +64,7 @@
 | 2026-10-21 | 应 aquant session 的请求，Reporter 新增“aquant 每日渠道”：`Reporter/aquant_daily.py`，由 launchd `com.prts.reporter-aquant-daily` 通过 WatchPaths 监视 `~/Projects/aquant/outputs/daily/latest-wechat.txt` 触发，每天 07:15 兜底；校验后写入 `outbox/aquant-daily.txt`，用户的 `/auto` 在 07:30 JST 转发。邮件默认关闭。用临时目录测过 4 种校验情况；**端到端触发还没验证**（要等 aquant 第一次真正生成日报）。aquant 的 P1（趋势/动量）已由它通过 dispatch 派发（aquant-p1-trend，worktree `.worktrees/multiday`）。 |
 | 2026-10-21 | 备份工具通用化为 **AgentConsole `plugins/backup`**（已推送到私有仓库 f501516）：支持 Claude 和 Codex，只增不删，默认排除含密钥的文件，SQLite 用备份接口拷贝，生成跨工具的 INDEX.tsv。PRTS 迁移：配置 `~/.agentconsole/backup.json`（dest=`~/PRTS/ops/backups`，打开 settings 和桌面配置的备份）；launchd 由 `com.prts.backup-claude` 换成 `com.agentconsole.backup`（03:30）；删除旧的 `ops/backup_claude.sh`；git push 移到本地 hook `ops/backup_hook_push.sh`。修复：launchd 没有代理导致 push 连不上 GitHub，hook 改为读取系统代理，另加 60 秒超时、禁止交互提示。**用户澄清：推送的只是工具本身；备份数据从未上传**（已核实 GitHub 上 PRTS 仓库没有任何 `ops/backups` 下的文件）。 |
 | 2026-10-21 | 用户决定去掉每天自动推送 GitHub 的 hook。备份插件的 post_hook 改为 `ops/unpushed_reminder.sh`：只检查不推送，有已提交但超过 2 天未推送的内容就写一条到 inbox。总控开工流程（INDEX 第 2 步）也加了这项检查，用户要求总控适时提醒他“推 github”。E2 设计升到 v0.2：存根成为与置换策略正交的独立因子（RQ2d），全交叉 7×4×2，先跑试点。 |
+| 2026-10-21 | aquant 日报上游：在 lain 上生成（aquant-multiday.timer），Mac 上的 `com.aquant.daily-pull` 每 10 分钟 rsync 拉取（原子 rename）。Reporter 的触发加固为监视目录、监视文件，再加每 10 分钟轮询。**待验证**：第一份真实日报在 10/22 05:40–05:50 JST 到达；已挂后台检查，截止 07:20 JST，赶在用户 07:30 的 /auto 之前。 |
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。

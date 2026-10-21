@@ -12,6 +12,7 @@ AgentConsole 负责看，Reporter 负责汇总、分级、投递。**只有 Repo
 
 ## aquant 每日渠道（`aquant_daily.py`）
 - 约定：aquant 每个交易日收盘后写 `~/Projects/aquant/outputs/daily/latest-wechat.txt`（首行“aquant 日报 YYYY-MM-DD”，不超过 900 字）和 `YYYY-MM-DD.md` 全文。
-- 触发：launchd `com.prts.reporter-aquant-daily` 用 WatchPaths 监视这个文件，一有变化就运行；每天 07:15 再兜底检查一次。和 ET 时区及夏令时无关。
+- 触发：launchd `com.prts.reporter-aquant-daily` 用 WatchPaths 同时监视 `daily/` 目录和文件本身（rsync 用临时文件加 rename 的方式替换，单独监视文件可能在第一次替换后失效），并每 10 分钟兜底轮询一次。脚本幂等。和 ET 时区及夏令时无关。
+- 上游：日报在 lain 上生成（`aquant-multiday.timer`），由 Mac 上的 `com.aquant.daily-pull` 每 10 分钟用 rsync 拉过来。第一份预计在 10/22 05:40–05:50 JST 到达。
 - 校验通过后，原子写入 `outbox/aquant-daily.txt`，由用户的 CodexBridge `/auto` 任务在 07:30 JST 转发到微信。不通过（缺日期、超长、含疑似 key）就不转发，并在 `~/PRTS/human/inbox.md` 里记一条。
 - 邮件默认关闭（`config.toml` 中的 `aquant_daily_email`）。
