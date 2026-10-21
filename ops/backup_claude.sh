@@ -38,6 +38,28 @@ for f in glob.glob(os.path.join(dest, "desktop-sessions", "**", "local_*.json"),
         "archived" if d.get("isArchived") else "active",
         os.path.relpath(hits[0], dest) if hits else "(no transcript)",
     ))
+# 一个桌面会话可能跨多个 jsonl（续接时换了 CLI 会话 id），把没被直接引用的也列出来
+listed = {r[4] for r in rows}
+meta = {f: open(f).read() for f in glob.glob(os.path.join(dest, "desktop-sessions", "**", "local_*.json"), recursive=True)}
+for j in glob.glob(os.path.join(dest, "projects", "*", "*.jsonl")):
+    rel = os.path.relpath(j, dest)
+    if rel in listed:
+        continue
+    sid = os.path.basename(j)[:-6]
+    title = ""
+    try:
+        title = json.load(open(j[:-6] + "/custom-title.json")).get("customTitle", "")
+    except Exception:
+        pass
+    owner = next((json.loads(t).get("title", "") for f, t in meta.items() if sid in t), None)
+    first = ""
+    with open(j) as fh:
+        for line in fh:
+            if '"timestamp"' in line:
+                first = json.loads(line).get("timestamp", "")[:16].replace("T", " ")
+                break
+    state = f"earlier part of: {owner}" if owner is not None else "no desktop session"
+    rows.append((first, "", title, state, rel))
 rows.sort()
 with open(os.path.join(dest, "INDEX.tsv"), "w") as out:
     out.write("created\tcwd\ttitle\tstate\ttranscript\n")
