@@ -10,7 +10,7 @@
 |---|---|---|
 | prts.md | PRTS 背景、§〇 进度日志、设计问题池、实验设计 | 每次开工读 §〇；讨论设计时读相应章节 |
 | yyj.md | 用户画像：机器、目录、七个方向、合作约定、偏好 | 涉及用户环境或偏好时 |
-| ~/research/PRTS/ | 研究层：实验状态表（README）、E2 设计、E3/E4 笔记 | 讨论研究或实验时先读它的 README |
+| [~/research/PRTS/](../../research/PRTS/README.md) | 研究层：实验状态表（README）、E2 设计、E3/E4 笔记 | 讨论研究或实验时先读它的 README |
 | ../ops/ | 派发脚本、Codex 任务 prompt（jobs/）、运行日志 | 复用或排查派发 |
 | ../human/reports/ | 给人看的报告（也是事实记录） | 回顾某次运行 |
 

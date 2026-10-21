@@ -22,5 +22,8 @@
 - 待你过目的事件：[inbox.md](inbox.md)
 - 记账：`~/Projects/ledger/human/README.md`，账本 `~/Projects/ledger/human/账本.xlsx`
 
+## 研究
+- [PRTS 研究：实验状态表与设计](../../research/PRTS/README.md)（E1–E4）
+
 ## 给我留言
 写在 [notes.md](notes.md) 里。
