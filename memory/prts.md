@@ -109,6 +109,13 @@
 | 2026-10-24 | 用户批准 E3 下载。总控从官方 HF 仓库下载了 DeepSeek-V3 和 Qwen2.5 的 tokenizer.json，并在 `.venv-tok` 中装了 tiktoken 和 tokenizers（tokenizers/ 已加入 gitignore），已派发 e3-tokenizers。三项任务完成：(1) 真实 token 重算（f5e211f）：真实 token 与代理单位之比的中位数为 1.043，W=8k 约等于 8.6k 真实 token。(2) reference/（3c39a70）：最相关的已有工作是 Pichay、ReadAgent、Factory 的压缩评测；建议优先尝试“页内分段取回 + 可寻址摘要”，最小实验 12 个条件、864 个单元。(3) outreach/（7834234）：12 位教授，契合度 5/5 的有 Yongfeng Zhang、Joseph Gonzalez、Kai-Wei Chang、Graham Neubig、Mohit Bansal、James Zou；另附英文研究简介草稿。 |
 | 2026-10-24 | E3 分词器实测完成（5d45ee0）：以中文为 1，英文约 0.7–0.9，日文约 1.2，法文约 0.9–1.1；改成列表或 JSON 格式可省 25–29%。E2 全部运行完成：64k 重跑 ¥27（重跑后无截断），噪声重复 ¥42（被预算闸门停在 267/288，总控补跑完）。Codex 判分完成，人工队列 364 条（`main-review/终裁表.md`）。初步结果报告：`human/reports/2026-10-24-E2-main.md`。要点：存根把静默缺页几乎全部转成显式缺页，但 3179 次 recall 只有 289 次取到 p*；用户消息固定保留就几乎不丢；文件探针上 CODEX 明显不如 FIFO；OPT 不比 FIFO 更能保住所需信息；噪声翻转率 0–23%。E2 总花费约 ¥280，余额 ¥143 左右。**等用户审查 364 条终裁表。** |
 
+## 总控待办（2026-10-25 由「PRTS 研究」session 移交）
+- 等用户：Clash Verge 规则在 MATCH 前加 DOMAIN-SUFFIX qq.com / weixin.qq.com / wechat.com → DIRECT；改好后 CodexBridge /auto 自动补发 10/23 aquant 日报。之后确认补发成功。
+- 等用户确认：aquant 日报开启邮件兜底（Reporter/aquant_daily.py 已有邮件通道，默认关闭），确认后由总控改。
+- 提醒推送：~/PRTS、~/research/PRTS 大量未推送提交；~/research/alignment 没有配置远端。
+- ops/dispatch.sh 新增 CODEX_TOP 环境变量（传 --search 等顶层参数），尚未提交。
+- 研究进展此后以 ~/research/PRTS（README 状态表、results/phaseB）为准；本文件 E2 记录截至 10-24（主阶段完成，等人工终裁 364 条）。
+
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
 
