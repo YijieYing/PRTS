@@ -1,0 +1,19 @@
+You are Codex implementing aquant research P2 in /Users/prts/Projects/aquant/.worktrees/multiday (branch research/multiday-20261021). Claude is the decision layer and will independently audit your results.
+
+Read first: AGENTS.md, CLAUDE.md, human/direction-2026-10-21.md, docs/multiday.json, docs/p1_trend.json, docs/p2_daily.json, human/p2-daily-2026-10-21.md, and the existing src/aquant/multiday/ package.
+
+## Hard rules
+- docs/p2_daily.json is frozen: sha256 must stay e91c91e57292739956155b4916f41a0cf0d899ab976cd2acaaf0aacdf7465c58. docs/p1_trend.json stays 85f89261.... Never edit them. Ambiguities: take the most literal reading, list it under "deviations" in report.json and the human doc, never change rules after seeing results.
+- Do NOT modify any file listed in docs/p1_forward.json `source_sha256` (P1 forward is deployed on lain and hash-checked). Put P2 in new modules, e.g. src/aquant/multiday/p2/ or src/aquant/multiday/p2_*.py. Shared helpers may be imported, not edited.
+- No orders, no non-GET broker calls, no paid data. Alpaca credentials come from the root .env via existing code; never print or commit them.
+- Do not run anything that writes to outputs/daily/ (a watcher forwards it to the user's WeChat). Do not touch launchd/systemd. No push, no merge, no history rewrite. Keep all negative results.
+
+## Tasks
+1. Data: reuse data/raw/multiday cache (bars, DTB3, Alpaca calendar). Add FRED VIXCLS (https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS) with sha256 manifest. Install scikit-learn from the existing `ml` extra if needed (pinned versions in pyproject).
+2. Engine: episode-based daily simulator per p2_daily.json execution_and_holding (open entry, open exits at H=1/2, close->open for OVERNIGHT, capital reservation per episode, skip-and-log when cash insufficient, $2,000, fractional shares, costs 0/5/15 bp on executed notional incl. terminal liquidation). Rules REV5, IBS, OVERNIGHT, LOGIT exactly as registered; benchmarks CASH, SPY_BH, EW_BH, P1_SMA10. Labelled same-close sensitivity for REV5/IBS.
+3. LOGIT walk-forward exactly as registered (annual refit, expanding, purge+embargo, scaler fit on train only). Report log loss/Brier vs base rate and daily rank IC.
+4. Tests (synthetic): each rule's signal; look-ahead tests (mutating data after t cannot change the decision at t, including VIX availability and LOGIT training rows); purge/embargo; episode capital reservation and no same-session round trips (PDT); cost accounting; bootstrap determinism. Full suite + ruff must pass.
+5. Run P2. Write outputs/research/p2-daily/report.json + report.md: 7 primary trials x 3 costs x (development/validation/holdout/full) + sensitivity + benchmarks; verdict per registered rules; worst 5-day loss and max drawdown in USD on $2,000; DSR with N=107; deviations. Append 7 primary trials to outputs/research/trial_ledger.jsonl.
+6. Forward runner (code only, NOT scheduled, NOT run against outputs/daily): `python -m aquant.multiday.p2_daily` that tracks all 7 primary trials as hypothetical $2,000 portfolios from the first session after the P2 implementation commit, idempotent per date, atomic writes, refuses stale calendar. Register it in a new docs/p2_forward.json (implementation commit, source hashes). Also add a function that returns 2-4 short Chinese lines summarizing P2 forward status for the daily WeChat report, so Claude can later wire it in; do not wire it now.
+7. Human doc: add a concise "结果" section to human/p2-daily-2026-10-21.md (table of 7 primaries at base cost, full period + holdout, verdicts, USD drawdown, honest limits) and update its status line and README row.
+8. Commit in logical commits, trailer "Co-Authored-By: Codex <noreply@openai.com>". Final message: verdicts, test counts, deviations, forward implementation commit, anything Claude must decide.

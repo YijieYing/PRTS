@@ -1,0 +1,1 @@
+[PRTS 总控] 上一轮因为模型容量不足中断了（Selected model is at capacity）。你的修改都还在工作区，测试也都通过了。请从断点继续：完成 job-phaseB-probes.md 里还没做完的部分；确认 results/phaseB/probes-review.md 和 plan.md 是最新的；运行全部测试；按路径暂存（禁止 git add -A），提交信息以 E2: 开头。最后输出不超过 8 行。

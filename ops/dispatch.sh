@@ -1,6 +1,6 @@
 #!/bin/bash
 # Dispatch a Codex job headlessly and record it in the registry.
-# usage: dispatch.sh <name> <workdir> <prompt-file> [extra codex args...]
+# usage: [CODEX_TOP=--search] dispatch.sh <name> <workdir> <prompt-file> [extra codex exec args...]
 # Lessons baked in: stdin closed (codex exec otherwise waits on stdin forever),
 # startup verified (attempted != verified), every job registered (no duplicate workers).
 set -u
@@ -9,7 +9,7 @@ OPS=$HOME/PRTS/ops; LOG=$OPS/jobs/$name; REG=$OPS/registry.jsonl
 mkdir -p "$LOG"
 # workspace-write keeps the repo's own .git read-only; grant it so workers can commit.
 gitdir=$(git -C "$wd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && set -- --add-dir "$gitdir" "$@"
-( cd "$wd" && caffeinate -i codex exec -C "$wd" -s workspace-write "$@" \
+( cd "$wd" && caffeinate -i codex ${CODEX_TOP:-} exec -C "$wd" -s workspace-write "$@" \
     -o "$LOG/last.md" "$(cat "$prompt")" < /dev/null > "$LOG/run.log" 2>&1
   rc=$?
   printf '{"t":"%s","name":"%s","event":"exit","rc":%d}\n' "$(date -u +%FT%TZ)" "$name" $rc >> "$REG" ) &
