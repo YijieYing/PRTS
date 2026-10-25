@@ -1,5 +1,7 @@
 # PRTS memory 索引（agent 用；人类入口在 ../human/README.md）
 
+总控会话：「PRTS 项目会话整理与迁移」(`local_74ec9ace-4f49-48da-b1c2-b88899178758`，2026-10-25 起)。旧的「PRTS 项目尝试」(`local_0d4ca8f6…`) 已改为 ~/research/PRTS 专用研究会话，不再写 memory/。
+
 总控会话开工流程（按顺序，能少读就少读）：
 1. 读本文件。
 2. 检查 PRTS 和 research/PRTS 有没有未推送的提交（`git -C <repo> rev-list --count @{u}..HEAD`）；有积压就在回复里提醒用户（用户 2026-10-21 要求：不自动推送，但要适时提醒）。

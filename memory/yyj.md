@@ -46,10 +46,10 @@ lain 上目前有：
 - `octopus-data`、`aquant-data`、`models`、`datasets`、`services`、`robomaster`。
 
 Mac 上目前有：
-- `~/Projects/`：octopus、codexbridge、aquant、AIInfra、DigitalFly、XinDong、ToiletGame、scala-starter，以及冻结的 Chronos/Tanngo/octopus_ModelTest。
+- `~/research/`：PRTS（研究层）、DigitalFly（2026-10-25 从 ~/Projects 移来；旧路径留了符号链接）、alignment、LearnCodex、Obsidian_Note。
+- `~/Projects/`：octopus、codexbridge、aquant、AIInfra、XinDong、ToiletGame、scala-starter，以及冻结的 Chronos/Tanngo/octopus_ModelTest。
 - `~/Projects/ledger`：记账工具，账本在 `human/账本.xlsx`。
 - `~/CodexBridge`、`~/codexbridge-secretary`：微信侧轻量秘书。
-- `~/research/LearnCodex`、`~/research/Obsidian_Note`。
 - `~/school`、`~/outreach`。
 
 ## 4. 七个长期方向
