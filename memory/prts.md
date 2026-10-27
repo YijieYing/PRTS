@@ -1182,4 +1182,5 @@ PRTS 的长期愿景是：
 
 > **当 Agent 能力已经足以承担长期任务时，我们需要怎样的系统机制，使自主执行、共享状态、资源管理与人类决策能够可靠地协同？**
 
-这不是一个已经确定答案的问题。PRTS 应当首先成为探索它的工具和实验平台，而非预先假定自己就是答案。
+这不是一个已经确定答案的问题。PRTS 应当首先成为探索它的工具和实验平台，而非预先假定自己就是答案。- 2026-10-27 微信秘书自动建记录：秘书回复末尾输出 ```codexbridge 指令块，bridge 去掉后代为执行（只放行新建 /remind /todo /note /log，每次最多 5 条，自动建的提醒直接生效；定时任务和补发回复不执行）。Codex 实现并测试（94c20af，在 CodexBridge 部署分支 fix/durable-weixin-replies 上，未 push），已重启服务。**待用户在微信实测一次**。已知风险：没有去重，保存成功但投递失败时手动重发会重复建。
+- 同日：secretary/PROJECTS.md 重写为当前路径，AGENTS.md 规定路径只看 PROJECTS.md；~/.claude/CLAUDE.md 和 ~/.codex/AGENTS.md 加了“改动时同步更新文档”规则（备份在 ops/backups/）；yyj.md 记录 Claude 决策、Codex 执行的额度分工。
