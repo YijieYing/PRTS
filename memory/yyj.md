@@ -47,9 +47,11 @@ lain 上目前有：
 
 Mac 上目前有：
 - `~/research/`：PRTS（研究层）、DigitalFly（2026-10-25 从 ~/Projects 移来；旧路径留了符号链接）、alignment、LearnCodex、Obsidian_Note。
-- `~/Projects/`：octopus、codexbridge、aquant、AIInfra、XinDong、ToiletGame、scala-starter，以及冻结的 Chronos/Tanngo/octopus_ModelTest。
+- `~/Projects/`：octopus、CodexBridge、aquant、AIInfra、XinDong、NatureCalls、ToiletGame，以及冻结的 Chronos/Tanngo/octopus_ModelTest。
 - `~/Projects/ledger`：记账工具，账本在 `human/账本.xlsx`。
-- `~/CodexBridge`、`~/codexbridge-secretary`：微信侧轻量秘书。
+- `~/Projects/CodexBridge/`：微信侧轻量秘书。`app/` 是源码兼运行中的部署（launchd com.ganxing.codexbridge-weixin），`secretary/` 是 bot 的 Codex 工作目录（不能放进 app/，否则会读到工程的 AGENTS.md）。运行状态在 `~/.codexbridge`。2026-10-27 从 ~/CodexBridge、~/codexbridge-secretary 迁来（旧路径留了符号链接），多余的开发副本 ~/Projects/codexbridge 已移到废纸篓。
+- Scala 课程工程：`~/school/26秋速通作业/类型安全/scala-starter`（10-27 从 ~/Projects 移入）。
+- Unity Hub 模板目录改为 `~/.unity/templates`（原 ~/Unity user templates 是空的，已删）。
 - `~/school`、`~/outreach`。
 
 ## 4. 七个长期方向

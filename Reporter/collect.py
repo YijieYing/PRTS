@@ -19,7 +19,7 @@ import urllib.request
 HOME = os.path.expanduser("~")
 PRTS = os.path.join(HOME, "PRTS")
 CONSOLE = "http://127.0.0.1:7788"
-LOCAL_REPOS = ["~/PRTS", "~/PRTS/AgentConsole", "~/CodexBridge", "~/research/*", "~/Projects/*"]
+LOCAL_REPOS = ["~/PRTS", "~/PRTS/AgentConsole", "~/Projects/CodexBridge/app", "~/research/*", "~/Projects/*"]
 LAIN_REPOS = ["~/Undergrad_3_Autumn/*/*", "~/projects/*", "~/repos/*"]
 
 
