@@ -22,5 +22,10 @@
 - 每个共享文件只有一个写者：memory/ 只由总控写；worker 写在各自的项目里。
 - 做决策时现读文件，不依赖对话记忆。
 - 检索结果只是线索：引用前要回到原文件确认。
+- **检索顺序（2026-10-28 事故后）**：用户提到人、话题或以前的讨论，而本目录里没有时：
+  1. 先用 `search_session_transcripts` 搜所有 session 的对话。
+  2. 再 grep 文件；对话备份在 `ops/backups/claude/`，可能比实时对话旧。
+  3. 多条命中时，读最新的那条。
+  - 事故经过：10-28 用户提到胡瑞，总控只搜了文件，停在 10-15 的 PPT 上，漏掉了 DigitalFly session「果蝇主动决策模型可行性评估」10-23 和用户的讨论。
 - 等文件多到 grep 找不准时，再考虑 embedding。
 - Claude 的自动 memory（~/.claude/projects/-Users-prts/memory/）只保留指向这里的指针，内容以本目录为准。
