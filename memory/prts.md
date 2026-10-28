@@ -17,6 +17,8 @@
 
 **一句话**：当 Agent 已经能承担长期任务时，需要什么样的系统机制，才能让自主执行、共享状态、资源管理和人类决策可靠地协同？关键资源是人类注意力。
 
+**研究总纲（2026-10-28 用户确认）**：人的精力有限，而 agent 的产出速度已超过人能处理的速度。E1–E5 都是它的一部分，评价标准待讨论。
+
 **已定**（详见附录 A）：
 - 利用现有 Agent，不自研 Agent Loop。
 - 24h 不等于持续推理。
@@ -109,13 +111,14 @@
 | 2026-10-24 | 用户批准 E3 下载。总控从官方 HF 仓库下载了 DeepSeek-V3 和 Qwen2.5 的 tokenizer.json，并在 `.venv-tok` 中装了 tiktoken 和 tokenizers（tokenizers/ 已加入 gitignore），已派发 e3-tokenizers。三项任务完成：(1) 真实 token 重算（f5e211f）：真实 token 与代理单位之比的中位数为 1.043，W=8k 约等于 8.6k 真实 token。(2) reference/（3c39a70）：最相关的已有工作是 Pichay、ReadAgent、Factory 的压缩评测；建议优先尝试“页内分段取回 + 可寻址摘要”，最小实验 12 个条件、864 个单元。(3) outreach/（7834234）：12 位教授，契合度 5/5 的有 Yongfeng Zhang、Joseph Gonzalez、Kai-Wei Chang、Graham Neubig、Mohit Bansal、James Zou；另附英文研究简介草稿。 |
 | 2026-10-24 | E3 分词器实测完成（5d45ee0）：以中文为 1，英文约 0.7–0.9，日文约 1.2，法文约 0.9–1.1；改成列表或 JSON 格式可省 25–29%。E2 全部运行完成：64k 重跑 ¥27（重跑后无截断），噪声重复 ¥42（被预算闸门停在 267/288，总控补跑完）。Codex 判分完成，人工队列 364 条（`main-review/终裁表.md`）。初步结果报告：`human/reports/2026-10-24-E2-main.md`。要点：存根把静默缺页几乎全部转成显式缺页，但 3179 次 recall 只有 289 次取到 p*；用户消息固定保留就几乎不丢；文件探针上 CODEX 明显不如 FIFO；OPT 不比 FIFO 更能保住所需信息；噪声翻转率 0–23%。E2 总花费约 ¥280，余额 ¥143 左右。**等用户审查 364 条终裁表。** |
 | 2026-10-28 | 用户提出两条新线：AgentConsole 从观察升级为能分工、回传失败、提醒和接受人工干预的系统（参考 QED、LibreChat），以及把果蝇/线虫的刺激—响应辨识当 autoresearch 试验场，并要求避免 overnight 结果看不懂。Claude 写了可行性评估（`human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md`）：两件事绑在一起做。GPT 提的 5 节点网络在 worm_effectome 的 Exp1 已有 300 节点版本，现在改作人能逐项核对的考场，并按真值阶梯逐级放开；研究题改为比较合作结构下人的核查成本。设计问题池第 6 条。等用户定顺序。 |
+| 2026-10-28 | 用户决定：借 QED，不用 LibreChat；PRTS 每个研究方向一个专用 session，另设研究统筹 session「PRTS 研究统筹：新建研究方向与状态表」（`local_3c429145-cee0-478c-8517-f533a99ac312`）负责新建方向、维护 `research/PRTS/README.md`。写权限按目录划分：统筹写根目录、notes、reference、outreach，各方向只写自己的 `experiments/E<n>/`、`results/E<n>/` 和 `STATUS.md`，互相只读，只提交自己的路径。已让统筹登记总纲和 E5（多 agent 合作结构 × 人的核查成本）。用户澄清：果蝇目前是按步骤管控的研究，不是 autoresearch；理想的 autoresearch 是"给一个 benchmark，让 AI 一直干到超过为止，人尽量不管"。候选试验场：胡瑞的视觉/嗅觉觅食方向（指标：到达食物的成功率）。评估写在可行性报告 §5。 |
 
 ## 总控待办（2026-10-25 由「PRTS 研究」session 移交）
 - 微信日报（10-27 已证实）：网络已修好（IP-CIDR 43.137/43.171 DIRECT）。ret=-2 = context token 过期：用户 11:25 给 bot 发消息刷新 token 后，11:34 重试第一次就送达了 10-26 日报。结论：bot 只能在用户最近一条消息后约 24h 内推送；用户超过一天不发消息，次日日报就会失败。用户 10-27 决定：不加自动化，自己每天给 bot 发消息。日报失败时先查 context-tokens.json 的修改时间。
 - aquant 日报邮件兜底：用户 10-25 决定不开。
 - 10-25 已推送 ~/PRTS 和 ~/research/PRTS（后者按 E2 设计版本分 6 批：phaseA、v0.3–v0.7）。~/research/alignment 按用户决定暂不配远端，不再提醒。
 - ops/dispatch.sh 新增 CODEX_TOP 环境变量（传 --search 等顶层参数），已提交。
-- 研究进展此后以 ~/research/PRTS（README 状态表、results/phaseB）为准；本文件 E2 记录截至 10-24（主阶段完成，等人工终裁 364 条）。
+- 研究进展此后以 ~/research/PRTS 为准：各方向 `experiments/E<n>/STATUS.md`，README 状态表由研究统筹 session 同步（2026-10-28 起）；本文件 E2 记录截至 10-24（主阶段完成，等人工终裁 364 条）。
 
 ## 待讨论
 - 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
@@ -142,9 +145,10 @@
    - 读后写的版本检查（git / mtime）
    - 决策时现读状态，不依赖记忆
    需要先调查 CC 和 Codex 的子 agent 能解决到什么程度。
+   - **2026-10-28 已决定（研究层先行）**：文件结构对应 agent 结构，即单写者 / 目录所有权。根目录和索引由统筹写，叶子目录由各自的方向 session 写，互相只读；要改别人的文件，就给对方发消息。共用一个 checkout 时，只提交自己的路径。规则写在 `research/PRTS/AGENTS.md`。
 4. **Agent 树状监视前端**：以工程目录树为骨架，显示每个目录下运行的 agent、子 agent 及其从属关系。现有 CC 和 Codex 的界面都是侧边栏列表。前端问题，不急，先记着。
 5. **"已尝试"与"已验证"要分开**：Codex 曾把"发出了操作指令"误当成"操作已经成功"（GUI 焦点问题，在 Enter 前没有确认输入框已获得焦点、路径已写入）；lain 修复时，人报告"跑完了"也早于真实完成。可以考虑把这条作为全局规则写进 `~/.codex/AGENTS.md`，但要先弄清它的加载机制（见 LearnCodex/notes/01）。
-6. **AgentConsole 从观察走向协作与干预（2026-10-28 用户提出）**：目标是分工、传递结果和失败反馈、人工提醒、人工干预。参考 QED（文件协议：plan DAG、两层核查、三级失败升级、`human_help/`）和 LibreChat（只借 Trace Viewer）。GPT 建议做成 Research Dashboard，五个操作是打开证据、要求复现、提反例、调目标、在检查点停止，每个都落成文件动作。Claude 评估：与果蝇 autoresearch 绑在一起做，先做真值考场，再只搭它需要的部分。研究角度：比较不同合作结构下“人要花多少核查精力才能信任一条结论”，单纯比较角色分工是否有效的工作已经很多。详见 `human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md`。**未决定**，等用户确认顺序。
+6. **AgentConsole 从观察走向协作与干预（2026-10-28 用户提出）**：目标是分工、传递结果和失败反馈、人工提醒、人工干预。参考 QED（文件协议：plan DAG、两层核查、三级失败升级、`human_help/`）和 LibreChat（只借 Trace Viewer）。GPT 建议做成 Research Dashboard，五个操作是打开证据、要求复现、提反例、调目标、在检查点停止，每个都落成文件动作。Claude 评估：与果蝇 autoresearch 绑在一起做，先做真值考场，再只搭它需要的部分。研究角度：比较不同合作结构下“人要花多少核查精力才能信任一条结论”，单纯比较角色分工是否有效的工作已经很多。详见 `human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md`。2026-10-28：用户同意借 QED、不用 LibreChat；顺序仍未定。
 
 
 ## 研究线 E2：上下文压缩 = 页面置换
