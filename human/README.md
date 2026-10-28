@@ -10,6 +10,7 @@
 ## 报告
 | 日期 | 报告 |
 |---|---|
+| 2026-10-28 | [AgentConsole 升级 × 果蝇 autoresearch：可行性评估](reports/2026-10-28-agentconsole-autoresearch-feasibility.md) |
 | 2026-10-20 | [周报：2026-10-14—2026-10-20](reports/weekly-2026-10-14_2026-10-20.md) |
 | 2026-10-22 | [E2 阶段 B 试点：存根的效果](reports/2026-10-22-E2-pilot.md) |
 | 2026-10-21 | [E2 阶段 A：离线重放结果](reports/2026-10-21-E2-phaseA.md) |
