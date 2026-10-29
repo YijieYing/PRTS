@@ -6,7 +6,7 @@ AgentConsole 负责看，Reporter 负责汇总、分级、投递。**只有 Repo
 2. `compose.md`：只调用一次 `codex exec`，写出 `~/PRTS/human/reports/weekly-*.md` 和微信短版。
 3. `deliver.py`：
    - 邮件：通过 Mail.app 用 iCloud 账户发给自己，并确认已进入“已发送”。
-   - 微信：把短版放到 `outbox/latest-wechat.txt`，由用户在 CodexBridge 建的 `/auto` 任务读取后转发。原因是 CodexBridge 没有主动发消息的入口，回复必须带上用户最近一条消息里的 context token。
+   - 微信：把短版放到 `outbox/latest-wechat.txt`，由用户在 CodexBridge 建的 `/auto` 任务读取后转发。这是 10-30 之前的做法：当时 CodexBridge 没有主动发消息的入口。现在可以用 `~/PRTS/ops/wechat-notify.sh --file <文件>` 直接推送（token 过期时会等用户下一条消息后补发），Reporter 还没改用它。
 
 配置：`config.toml`。投递记录：`out/deliveries.jsonl`。
 

@@ -3,7 +3,7 @@
 
 usage: deliver.py --weekly FILE --wechat FILE [--no-email]
 - email: Mail.app (the user's own iCloud account) via AppleScript; no credentials touched
-- wechat: CodexBridge has no outbound-send entry (replies need a fresh context token), so we only
+- wechat: (written before CodexBridge had `weixin notify`; ~/PRTS/ops/wechat-notify.sh can now push directly) we only
   stage the text at a fixed path that a user-created CodexBridge `/auto` job reads and forwards
 """
 import argparse
