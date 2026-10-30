@@ -24,6 +24,7 @@
 - 全机 agent 监视：http://127.0.0.1:7788（`~/PRTS/AgentConsole/human/README.md`，私有仓库 github.com/YijieYing/AgentConsole）
 - 待你过目的事件：[inbox.md](inbox.md)
 - 哪些工具是 PRTS 新加的、哪些是 Codex/cc 原有的：[ops/README.md](../ops/README.md)
+- 模块结构和名词解释（中英对照，草案）：[GLOSSARY.md](../GLOSSARY.md)
 - 记账：`~/Projects/ledger/human/README.md`，账本 `~/Projects/ledger/human/账本.xlsx`
 
 ## 研究
