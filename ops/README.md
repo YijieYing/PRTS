@@ -26,7 +26,7 @@
 | `registry.jsonl` | 10-20 | 所有派发、续跑、唤醒的事件日志，每行一个 JSON |
 | `retry_resume.sh` | 10-22 | 用 `codex exec resume` 续跑；遇到 at capacity 就隔一段时间重试 |
 | `on_event.sh` | 10-20 | AgentConsole 的事件处理器（在 `~/.agentconsole/config.json` 的 `on_event` 里配置）。派发任务结束、进程空闲太久、session 过期、主机不可达时，写一行到 `human/inbox.md`，严重的弹系统通知。**它不会唤醒总控**，要等你来找我时才处理 |
-| `wake.sh` / `wake_run.sh` | 10-30（Codex 实现中） | 在指定时间唤醒一个 Codex session 去做事。用一次性 launchd 实现，补上「到点叫 agent」这一缺口 |
+| `wake.sh` / `wake_run.sh` | 10-30 | 在指定时间唤醒一个 Codex session 去做事，补上「到点叫 agent」这一缺口。用一次性 launchd 实现：到点用 `codex exec resume`（默认）或 `codex queue`（`--mode queue`）投递 prompt，在 registry 里记 `wake_*` 事件，执行后删除 plist。用法见下；细节见 `wakes/NOTES.md` |
 | `prompts/` | 10-20 | 给 Codex 的任务说明 |
 | `jobs/` | 10-20 | 每个派发任务的日志和 `last.md` |
 | `aquant-overnight/` | 10-20 | 夜间 supervisor：由 shell 控制轮次，Codex 干活 |
@@ -63,3 +63,16 @@
 | 到某个时间点让 agent 去做事 | `wake.sh`（以前没有，10-30 财报事故后补上） |
 | 定时跑纯代码（抓行情、发日报） | launchd plist |
 | 程序给你发微信 | `wechat-notify.sh` |
+
+## wake.sh 用法
+```sh
+ops/wake.sh add '2026-11-01T05:00+09:00' <codex-thread-uuid> prompt.txt --name earnings   # 在哪个目录执行 add，到点就在哪个目录跑
+ops/wake.sh add '05:00' <uuid> prompt.txt          # 东京时间；已过就顺延到明天
+WAKE_DRY=1 ops/wake.sh add '05:00' <uuid> prompt.txt --name dry   # 只记录要执行的命令，不真跑
+ops/wake.sh list
+ops/wake.sh cancel <id>
+```
+默认用 resume：不管有没有打开的客户端，都一定会跑一轮。queue 只保证消息入队；客户端没开时会不会被处理，目前没有可靠证据。
+
+10-30 已实测：dry 唤醒和对一个测试 session 的真实唤醒都按时触发；测试 session 回复了 pong2，plist 已自动删除。
+
