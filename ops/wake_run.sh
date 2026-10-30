@@ -1,0 +1,54 @@
+#!/bin/bash
+# launchd entry point; explicit modes because queue receipt is not turn completion.
+set -eu
+umask 077
+OPS=$(cd "$(dirname "$0")" && pwd)
+id=${1:?usage: wake_run.sh ID}
+"$OPS/wake.sh" _claim "$id" || exit $?
+D="$OPS/wakes/$id"
+label="com.prts.wake.$id"
+# shellcheck disable=SC2329 # Invoked by the EXIT trap.
+finish() {
+  rc=$?
+  trap - EXIT
+  "$OPS/wake.sh" _finish "$id" "$rc" || exit 1
+  # All durable results and plist deletion precede bootout: it can terminate us.
+  launchctl bootout "gui/$(id -u)/$label" || exit 1
+  exit "$rc"
+}
+trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+fields=()
+while IFS= read -r -d '' value; do fields+=("$value"); done < <("$OPS/wake.sh" _fields "$id")
+[ "${#fields[@]}" -eq 9 ] || exit 1
+cwd=${fields[0]}; target=${fields[1]}; mode=${fields[2]}; codex=${fields[3]}
+dry=${fields[4]}; roots=${fields[5]}
+cd "$cwd"
+input="$D/prompt.txt"
+if [ "$mode" = queue ]; then
+  IFS= read -r -d '' prompt < "$input" || : # Preserve trailing newlines too.
+  cmd=("$codex" queue --thread "$target" --message "$prompt")
+  input=/dev/null
+else
+  cmd=("$codex" exec -C "$cwd" resume
+       -c "sandbox_mode=\"${fields[7]}\"" -c "approval_policy=\"${fields[8]}\""
+       -c "sandbox_workspace_write.writable_roots=$roots"
+       -o "$D/last.md" -- "$target" -)
+fi
+if [ "$dry" = 1 ] || [ "${WAKE_DRY:-0}" = 1 ]; then
+  { printf 'DRY cwd=%q command=' "$cwd"; printf '%q ' "${cmd[@]}"; printf '< %q\n' "$input"; } >> "$D/run.log"
+  exit 0
+fi
+tries=${WAKE_TRIES:-6}; gap=${WAKE_GAP:-600}
+for ((i=1; i<=tries; i++)); do
+  rc=0
+  "${cmd[@]}" < "$input" > "$D/run-$i.log" 2>&1 || rc=$?
+  if [ "$mode" = resume ] && grep -qi 'at capacity' "$D/run-$i.log"; then
+    "$OPS/wake.sh" _capacity "$id" "$i"
+    if [ "$i" -lt "$tries" ]; then sleep "$gap"; fi
+    continue
+  fi
+  exit "$rc"
+done
+exit 75
