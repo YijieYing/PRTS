@@ -16,7 +16,7 @@
 | YijieYing | herryying30@gmail.com | 用户本人 | — |
 | aytony | github@aytony.cn、opensource@aytony.cn | 安阳 | 用户说（11-02） |
 | Weinan Shi、swnhieian、石伟男 | swnhieian@126.com | 石伟男 | 推断：octopus 提交署名、私有 git 服务器域名 brain.shiweinan.com |
-| yuchun、yuchun2pcg | yc2pcg@gmail.com | 很可能是喻纯 | 推断：NextHCI/octopus 的提交者，待确认 |
+| yuchun、yuchun2pcg | yc2pcg@gmail.com | 喻纯 | 用户说（11-02） |
 | euxcet、Chengchi Zhou | zcc.qwer@gmail.com | 未知（octopus 提交最多的人，同一个邮箱） | 待问 |
 | shenxing | 81379162@qq.com | 未知（octopus） | 待问 |
 | chengsx21 | chengsx_thu@163.com | 未知（octopus） | 待问 |
@@ -49,7 +49,7 @@
 
 ### 唐元宏
 - 角色：老师（「唐老师」）。他给组里分享过果蝇觅食论文，胡瑞的 10.15 PPT 引用了它。
-- 网上没查到更多。和组的具体关系未知（待问）。
+- 果蝇组的老师（用户说，11-02）。网上没查到更多。
 
 ### 胡瑞
 - 角色：学长。用户评价「不太靠谱」。
@@ -69,7 +69,7 @@
   - 做过智能戒指（手势、文本输入）。
 - 和用户的交集：
   - 10-27 饭局提到，他的组输入法论文多；他不赞成只读旧论文。
-  - NextHCI/octopus 仓库里的 yuchun 很可能是他（待确认）。
+  - NextHCI/octopus 仓库里的 yuchun 就是他（用户说）。
 
 ### 石伟男
 - 用户和录音里叫「石老师」（用户说正字是石伟男）。
@@ -85,7 +85,7 @@
 - Ear（Echo-As-Record/Echo-As-Record）的合作者，有提交。
 
 ### 陈伟浩
-- 博后（10-27 饭局）。和喻纯、石伟男一线的具体关系未知（待问）。
+- 喻纯组的博士后（用户说，11-02）。
 
 ## 四、课程与其他项目
 
@@ -100,9 +100,7 @@
 
 ## 待问（下次合适时问用户，问完删掉对应行）
 
-- euxcet / Chengchi Zhou、shenxing、chengsx21 是谁？和用户什么关系？
-- NatureCalls 的 HPZ07-end、Songyf24 叫什么？
-- BIGfeiyu-friend 是谁？
-- yuchun（yc2pcg）是不是喻纯？
-- 唐元宏、陈伟浩分别在哪个组，和用户什么关系？
-- 用户的导师是谁？
+用户 11-02：没有严格意义上的导师。下面几条「暂时不重要」，不要主动问，除非这些人开始频繁出现：
+- euxcet / Chengchi Zhou、shenxing、chengsx21（octopus）是谁。
+- NatureCalls 的 HPZ07-end、Songyf24 叫什么。
+- BIGfeiyu-friend 是谁。

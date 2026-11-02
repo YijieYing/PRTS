@@ -117,6 +117,7 @@
 | 2026-10-30 | 上游提议：Gan-Xing/CodexBridge 已近 4 个月没有维护，直接提 PR 不划算，所以先开了 issue https://github.com/Gan-Xing/CodexBridge/issues/26 ，提议「回复持久化」和「weixin notify」；维护者有回应再拆成 PR。AMZN 财报推送全是「未核实」，原因：aquant 的监控只自动抓行情，财报实际值要等有人核实后写入 `evidence.json`，但 Codex session 04:33 就结束了，之后没有任何东西去写这个文件。因此只推送了 05:20 一条，「电话会后」阶段也一直卡住（要求先核实电话会已结束）。另外，lain 的 ssh 拉取有超时。 |
 | 2026-10-30 | 新增 `ops/wake.sh`（Codex 实现，a484436）：用一次性 launchd 在指定时间唤醒 Codex session，默认用 `codex exec resume`。Codex 的沙盒没法写 LaunchAgents，所以由总控实测：dry 唤醒和真实唤醒都按时触发，测试 session 回复 pong2，plist 已自删。新增 `ops/README.md`，区分 PRTS 自己做的工具和 Codex、cc 原有的功能；AGENTS.md 加了事件监控规则（每个阶段都要安排唤醒，未核实要写进结论）。 |
 | 2026-11-02 | 新建 `memory/people.md`，yyj.md §5 改成指针。内容：GitHub/邮箱对照（用户确认 aytony=安阳，石伟男、喻纯从提交推断），FlyBrain 组（老板李国齐；最靠谱的学长陈白雨，做 BrainFuse；唐元宏），清华 HCI（喻纯、石伟男），以及待问清单。主动提问机制记为设计问题池第 7 条（未决定）。Gmail：connector 目录里有官方 Gmail，但还没连接，需要用户自己在 Connectors 里授权。 |
+| 2026-11-02 | 用户补充：yuchun=喻纯；唐元宏属于果蝇组；陈伟浩是喻纯组的博士后；用户没有严格意义上的导师；其余待问的人暂时不重要（已写进 people.md）。Gmail connector 已接上（herryying30@gmail.com），实测能读。主动提问写成提案 v1（设计问题池第 7 条）：问题对象、值不值得问的规则、叫醒/送达/回收表、分三步做。等用户定。 |
 
 ## 总控待办（2026-10-25 由「PRTS 研究」session 移交）
 - 微信日报（10-27 已证实）：网络已修好（IP-CIDR 43.137/43.171 DIRECT）。ret=-2 = context token 过期：用户 11:25 给 bot 发消息刷新 token 后，11:34 重试第一次就送达了 10-26 日报。结论：bot 只能在用户最近一条消息后约 24h 内推送；用户超过一天不发消息，次日日报就会失败。用户 10-27 决定：不加自动化，自己每天给 bot 发消息。日报失败时先查 context-tokens.json 的修改时间。
@@ -155,16 +156,36 @@
 5. **"已尝试"与"已验证"要分开**：Codex 曾把"发出了操作指令"误当成"操作已经成功"（GUI 焦点问题，在 Enter 前没有确认输入框已获得焦点、路径已写入）；lain 修复时，人报告"跑完了"也早于真实完成。可以考虑把这条作为全局规则写进 `~/.codex/AGENTS.md`，但要先弄清它的加载机制（见 LearnCodex/notes/01）。
 6. **AgentConsole 从观察走向协作与干预（2026-10-28 用户提出）**：目标是分工、传递结果和失败反馈、人工提醒、人工干预。参考 QED（文件协议：plan DAG、两层核查、三级失败升级、`human_help/`）和 LibreChat（只借 Trace Viewer）。GPT 建议做成 Research Dashboard，五个操作是打开证据、要求复现、提反例、调目标、在检查点停止，每个都落成文件动作。Claude 评估：与果蝇 autoresearch 绑在一起做，先做真值考场，再只搭它需要的部分。研究角度：比较不同合作结构下“人要花多少核查精力才能信任一条结论”，单纯比较角色分工是否有效的工作已经很多。详见 `human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md`。2026-10-28：用户同意借 QED、不用 LibreChat；顺序仍未定。
 
-7. **总控怎么主动问用户（2026-11-02 用户提出）**：现在总控只能在用户来找它时问（wrap_up 的问题），没有「攒着问题、合适时候问」的通道。
-   - **Claude 提案（未决定）**：把「问题」做成 interaction 模块里的一种对象（ask），和 task、wake 并列。
-     - 产生：各处发现需要人来回答的事，写一条到问题队列 `state/questions`，内容包括问题、来源、紧急度和过期时间。
-       - 例子：observe 扫到陌生的 GitHub 提交者；验收时缺一个决定。
-     - 送达：普通问题攒到用户下次开 session 时由总控一起问。急的问题由 reporter 推微信，但只发问题本身，不在微信里收答案。
-     - 回收：用户在 session 里回答，或者直接改 `human/` 下的文件（会被「人类修改」事件捕捉）。总控把答案写进对应的记忆，比如 `memory/people.md`，再关掉这个问题。
-   - **第一个实例：陌生 GitHub 用户**。
-     - 开工流程里扫各仓库最近 30 天的提交者，和 people.md 的对照表比较。
-     - 提交数 ≥ 3 但不在表里的账号，进 people.md 的「待问」。
-     - 现在先由总控手工做，等 interaction 迁移时再做成命令。
+7. **总控怎么主动问用户（2026-11-02 用户提出；Claude 提案 v1，未决定）**
+   - **难点**：agent 只在被叫醒时运行，也只能在运行时说话。所以要解决三件事：谁来叫醒它、问题怎么送到人、答案怎么回来。另外还要决定哪些事值得占用人的注意力（见 §2.6）。
+   - **对象**：问题（question）属于 interaction 模块，和 task、wake 并列。每条问题的字段：
+     - `id`、`question`；
+     - `why`：答案能解锁哪个决定；
+     - `default`：没人回答时总控怎么做；
+     - `urgency`：blocking（卡住了，而且有截止时间）、soon、whenever；
+     - `expires`、`source`、`dedupe_key`。
+     - 数据放 `interaction/state/questions.jsonl`，现阶段先放 `ops/questions.jsonl`，只有总控写。
+     - `human/questions.md` 是给人看的视图，由总控生成；人可以直接在里面写答案。
+   - **值不值得问**：
+     - 能自己查到的不问（先搜对话和文件）。
+     - 必须写得出 `default`；写不出说明问题没想清楚。
+     - 有合理的 `default` 且不急：攒着，等用户下次来时一起问。
+     - 只有 blocking 才推送。
+     - 推送上限：每天最多 2 条，夜里不推。
+     - 用户说「不重要」的问题降级，除非情况变了。例：陌生 GitHub 用户的提交继续增多。
+   - **叫醒、送达、回收**：
+     | 环节 | 现有手段 | 缺什么 |
+     |---|---|---|
+     | 叫醒 | Codex 用 `wake.sh`；Claude 用 scheduled-tasks（按时间新开一个 Claude session，现在一个都没建）；AgentConsole 事件 | 没有「每天整理一次问题」的定时任务 |
+     | 送达（用户在场） | session 里的 wrap_up 提问 | 无 |
+     | 送达（用户不在） | 微信（`wechat-notify.sh`）、Claude app 推送（只有 session 在运行时能发）、Gmail（每封都要用户批准，不适合） | 无 |
+     | 回收 | 在 session 里回答；改 `human/questions.md` | 微信里的回复进的是 CodexBridge 秘书，到不了总控 |
+   - **分三步做**：
+     1. 先不写代码。问题写进队列，总控开工时把未答的问题一次性问完（INDEX 开工流程加一步）。blocking 的问题在有 session 运行时用 PushNotification 推送。
+     2. 建一个 Claude scheduled task，每天固定时间整理队列：过期的关掉，要问的用微信发一条汇总。
+     3. 给 CodexBridge 加 `/答 <id> <内容>`：秘书把答案追加到 `questions.jsonl`，总控下次运行时写进记忆。这样微信就成了完整的问答通道。
+   - **研究价值**：可以和 §2.6 结合，记录每条问题的结果（答了、忽略、过期），统计「问题 → 打扰成本」。这是「人类注意力是资源」的一个可测量的版本。
+   - **第一个实例**：陌生 GitHub 提交者（INDEX 开工流程第 6 步）。
 
 ## 研究线 E2：上下文压缩 = 页面置换
 设计和状态见 `~/research/PRTS/`（README 是实验状态表）。背景见 `human/reports/2026-10-20-context-paging.md`。关键点：缺页可能是静默的，所以评价指标必须包括隐式缺页（因为缺信息而犯的错）。下一步是用本机 rollout 做离线重放。
