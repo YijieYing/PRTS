@@ -1,7 +1,7 @@
 #!/bin/bash
 # Reporter weekly pipeline: collect (deterministic) -> compose (one Codex run) -> deliver (email + WeChat outbox).
 set -euo pipefail
-R=$HOME/PRTS/Reporter
+R=$HOME/PRTS/reporter
 until=${1:-$(date +%F)}; since=$(date -j -v-6d -f %F "$until" +%F)
 C=$R/out/collect-${since}_$until.json
 W=$HOME/PRTS/human/reports/weekly-${since}_$until.md

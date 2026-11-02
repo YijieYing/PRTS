@@ -20,7 +20,7 @@
 | `human/` | human entry | 给你看的入口：报告链接、待办（inbox）、留言 | 总控，以及你 | 同 |
 | `memory/` | controller memory | 总控的记忆和开工流程 | 总控 | 同 |
 | `interaction/` | agent interaction | 和 agent 打交道的模块：派发、续跑、定时唤醒、验收 | 本模块 | `ops/` 的一部分 |
-| `reporter/` | reporting & notification | 生成内容并送达你：周报、日报、单条通知 | 本模块 | `Reporter/` + `ops/wechat-notify.sh` 等 |
+| `reporter/` | reporting & notification | 生成内容并送达你：周报、日报、单条通知 | 本模块 | `reporter/` + `ops/wechat-notify.sh` 等 |
 | `AgentConsole/` | monitor | 只观察、产生事件，不做判断（独立仓库） | 本模块 | 同 |
 | `maintenance/` | maintenance | 一次性维护脚本，不承诺接口 | — | `ops/` 的一部分 |
 | `GLOSSARY.md` | glossary | 本文件 | 总控 | 新 |
@@ -67,11 +67,11 @@
 | 名字 | English | 做什么 | 现在 |
 |---|---|---|---|
 | `bin/notify <level> <title> --text\|--file` | notify | 送达一条通知。level 决定渠道：log 只记录，wechat 发微信，alert 发微信并弹窗 | `ops/wechat-notify.sh` |
-| `bin/report weekly\|daily` | report | 生成并送达周报或日报 | `Reporter/run_weekly.sh`、`aquant_daily.py` |
-| `lib/collect`、`compose`、`render` | collect / compose / render | 收集素材、写成文字、排版 | `Reporter/*.py` |
+| `bin/report weekly\|daily` | report | 生成并送达周报或日报 | `reporter/run_weekly.sh`、`aquant_daily.py` |
+| `lib/collect`、`compose`、`render` | collect / compose / render | 收集素材、写成文字、排版 | `reporter/*.py` |
 | `lib/channels/wechat`、`email`、`macos` | channels | 各送达渠道的适配器；wechat 调用 CodexBridge 的 `weixin notify` | 分散 |
-| `config/` | configuration | 收件人、发送时间 | `Reporter/config.toml` |
-| `state/` | delivery log | 已生成的报告和送达记录 | `Reporter/out/`、`Reporter/outbox/` |
+| `config/` | configuration | 收件人、发送时间 | `reporter/config.toml` |
+| `state/` | delivery log | 已生成的报告和送达记录 | `reporter/out/`、`reporter/outbox/` |
 
 ## AgentConsole/（监视 / monitor）
 | 名字 | English | 含义 |

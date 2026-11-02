@@ -48,7 +48,7 @@
 | 位置 | 作用 |
 |---|---|
 | `~/PRTS/AgentConsole` | 全机 agent 监视：http://127.0.0.1:7788，launchd 常驻，产生事件交给 `on_event.sh` |
-| `~/PRTS/Reporter` | 周报和 aquant 日报的收集、生成、发送 |
+| `~/PRTS/reporter` | 周报和 aquant 日报的收集、生成、发送 |
 | `~/PRTS/human/` | 给你看的入口：报告、inbox、留言 |
 | `~/PRTS/memory/` | 总控的记忆，只有总控写 |
 | CodexBridge 本地分支 `fix/durable-weixin-replies` | 在原仓库之上加了：回复持久化、`weixin notify` 主动推送、秘书可起草 `/auto add`、`/auto` 一次性时间表、两个小修复。已向原仓库提议（issue #26），尚未合入 |

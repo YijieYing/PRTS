@@ -1,4 +1,4 @@
-# Reporter（PRTS 的“说”）
+# reporter（PRTS 的“说”）
 AgentConsole 负责看，Reporter 负责汇总、分级、投递。**只有 Reporter 对外发消息**，而且只发给用户本人。
 
 流水线：`run_weekly.sh [YYYY-MM-DD]`
