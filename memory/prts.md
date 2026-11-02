@@ -118,6 +118,7 @@
 | 2026-10-30 | 新增 `ops/wake.sh`（Codex 实现，a484436）：用一次性 launchd 在指定时间唤醒 Codex session，默认用 `codex exec resume`。Codex 的沙盒没法写 LaunchAgents，所以由总控实测：dry 唤醒和真实唤醒都按时触发，测试 session 回复 pong2，plist 已自删。新增 `ops/README.md`，区分 PRTS 自己做的工具和 Codex、cc 原有的功能；AGENTS.md 加了事件监控规则（每个阶段都要安排唤醒，未核实要写进结论）。 |
 | 2026-11-02 | 新建 `memory/people.md`，yyj.md §5 改成指针。内容：GitHub/邮箱对照（用户确认 aytony=安阳，石伟男、喻纯从提交推断），FlyBrain 组（老板李国齐；最靠谱的学长陈白雨，做 BrainFuse；唐元宏），清华 HCI（喻纯、石伟男），以及待问清单。主动提问机制记为设计问题池第 7 条（未决定）。Gmail：connector 目录里有官方 Gmail，但还没连接，需要用户自己在 Connectors 里授权。 |
 | 2026-11-02 | 用户补充：yuchun=喻纯；唐元宏属于果蝇组；陈伟浩是喻纯组的博士后；用户没有严格意义上的导师；其余待问的人暂时不重要（已写进 people.md）。Gmail connector 已接上（herryying30@gmail.com），实测能读。主动提问写成提案 v1（设计问题池第 7 条）：问题对象、值不值得问的规则、叫醒/送达/回收表、分三步做。等用户定。 |
+| 2026-11-02 | `Reporter/` 改名为 `reporter/`（af926c4），launchd 的 aquant 日报 plist 已改路径并重新加载，手动触发一次正常。aquant `event.py` 里还写着旧路径 `Reporter/outbox`，因为文件系统不区分大小写所以照常工作；那是 aquant 的文件，没改。主动提问：按用户反馈修订（问题队列归 reporter、按紧急度扫描、每批最多 3 条、outcome 数据结构），见设计问题池第 7 条。 |
 
 ## 总控待办（2026-10-25 由「PRTS 研究」session 移交）
 - 微信日报（10-27 已证实）：网络已修好（IP-CIDR 43.137/43.171 DIRECT）。ret=-2 = context token 过期：用户 11:25 给 bot 发消息刷新 token 后，11:34 重试第一次就送达了 10-26 日报。结论：bot 只能在用户最近一条消息后约 24h 内推送；用户超过一天不发消息，次日日报就会失败。用户 10-27 决定：不加自动化，自己每天给 bot 发消息。日报失败时先查 context-tokens.json 的修改时间。
@@ -186,6 +187,27 @@
      3. 给 CodexBridge 加 `/答 <id> <内容>`：秘书把答案追加到 `questions.jsonl`，总控下次运行时写进记忆。这样微信就成了完整的问答通道。
    - **研究价值**：可以和 §2.6 结合，记录每条问题的结果（答了、忽略、过期），统计「问题 → 打扰成本」。这是「人类注意力是资源」的一个可测量的版本。
    - **第一个实例**：陌生 GitHub 提交者（INDEX 开工流程第 6 步）。
+   - **2026-11-02 用户反馈与修订**：
+     - 已同意：问题对象，`human/questions.md`，「值不值得问」的规则，研究角度。
+     - **位置**：问题队列、送达和收答案都归 reporter（唯一面对人的模块）。具体：
+       - 数据放 `reporter/state/questions.jsonl`；
+       - 总控只决定问不问、拿答案做什么；
+       - 接口两条：`reporter ask`、`reporter answers`。
+       - `interaction/` 目前只是 GLOSSARY 里的目标名，还不存在。
+     - **按紧急度扫描**：扫描本身是代码，不用 agent。
+       - blocking：每 30 分钟查一次，没回答就最多每 30 分钟提醒一次，直到回答或过期；
+       - soon：每天一次汇总；
+       - whenever：只在下次开 session 时问。
+     - **一次少问**：每批（一次推送或一次开工）最多 3 条，按优先级排；只有全部都是「干活之前必须解决」时才可以超过。在自然的停顿点问（开工、做完一件事），不在干活中途问。
+     - **用户不在时的送达渠道**：
+       - 微信受 24 小时 token 限制（用户 24 小时内没发过消息，就只能等下一条消息后补发），不稳定，只作辅助；
+       - 候选：定时 Claude session 发 app 推送，用户点开直接在那个 session 回答；Bark 或 ntfy（iOS 推送，靠一个 HTTP 请求，没有 token 过期）；邮件改成从 iCloud 发到 Gmail（不同账户，提醒正常）；iMessage。
+       - 都没测过。
+     - **记录的数据结构**：每条问题一串只追加的事件 `created / delivered(channel) / opened / answered / closed(outcome)`。
+       - outcome 的取值：`answered`、`deferred`（用户说以后）、`delegated`（你定，用 default）、`rejected`（问题本身不该问）、`expired_unseen`（没有打开的证据）、`expired_seen`（打开过但没回答）。
+       - 「为什么没回」不追问；推送里带「以后 / 你定 / 别问」按钮，让用户一下就能表态。
+       - 额外记录：回答用了多久、当批有几条、发出的时间段，以及 `default_ok`（用了 default 以后，用户有没有改过它）。
+       - 用途：如果 default 大多是对的，以后就少问。
 
 ## 研究线 E2：上下文压缩 = 页面置换
 设计和状态见 `~/research/PRTS/`（README 是实验状态表）。背景见 `human/reports/2026-10-20-context-paging.md`。关键点：缺页可能是静默的，所以评价指标必须包括隐式缺页（因为缺信息而犯的错）。下一步是用本机 rollout 做离线重放。
