@@ -78,10 +78,6 @@ Mac 上目前有：
 
 学术研究线目前有三条：PRTS、SwarmBot、NeuroScience。
 
-## 5. 人物（只记指针，详情读原处）
+## 5. 人物
 
-- **胡瑞**：DigitalFly 组里的学长，用户评价"不太靠谱"。
-  - **他的方向**：视觉、嗅觉 → 脑网络 → 参考路径 → VNC 觅食（10.15 PPT）。
-  - **他的提议**：今年集中做"能动、能用 connectome 自主决策"的果蝇，冲 Nature。用户认为目标太大，也没有评价标准。
-  - **评估在哪**：DigitalFly session「果蝇主动决策模型可行性评估」（`local_f0c819f4-4403-4f23-a7f0-0fca8708e6f3`，10-23）。
-  - **评估结论**：已有 Eon、FlyGM、Digital Sphinx 等竞争者；MLP 比脑网络效果更好，说明连接组的用法不对。胡瑞想用 fast weights 加容量，就算赢了也证明不了是连接组的作用。
+已移到 [people.md](people.md)（2026-11-02 起）：GitHub 账号对照、FlyBrain 组、清华 HCI、课程队友、待问清单。

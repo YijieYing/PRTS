@@ -8,11 +8,13 @@
 3. 读 `prts.md` 的 §〇（约 60 行），不整篇读。
 4. 运行 `git -C ~/PRTS status --short human/ && git -C ~/PRTS diff human/`，查看人类改了什么。读完后用 `git commit -m "human: ..."` 提交，并把从中学到的东西写进对应的记忆文件。
 5. 按需读下面的文件。
+6. 每周一次左右（或用户提到合作者时）：扫各仓库近 30 天的提交者（`git log --since=30.days --format='%an|%ae'`），和 `people.md` 的对照表比较；陌生账号提交数 ≥ 3 时，加进 people.md 的「待问」，在合适时问用户。
 
 | 文件 | 内容 | 什么时候读 |
 |---|---|---|
 | prts.md | PRTS 背景、§〇 进度日志、设计问题池、实验设计 | 每次开工读 §〇；讨论设计时读相应章节 |
 | yyj.md | 用户画像：机器、目录、七个方向、合作约定、偏好 | 涉及用户环境或偏好时 |
+| people.md | 用户身边的人：GitHub/邮箱对照、各人 profile、待问清单 | 用户提到某人、仓库或对话里出现陌生人时 |
 | [~/research/PRTS/](../../research/PRTS/README.md) | 研究层：实验状态表（README）、E2 设计、E3/E4 笔记 | 讨论研究或实验时先读它的 README |
 | ../ops/ | 派发脚本、Codex 任务 prompt（jobs/）、运行日志 | 复用或排查派发 |
 | ../human/reports/ | 给人看的报告（也是事实记录） | 回顾某次运行 |
