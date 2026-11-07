@@ -1,0 +1,3 @@
+state/**/*.log
+state/prompts/
+state/events/

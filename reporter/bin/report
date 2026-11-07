@@ -1,0 +1,10 @@
+#!/bin/bash
+# Generate and deliver a report to the user.
+# usage: report weekly [YYYY-MM-DD]   weekly report (collect -> one Codex compose -> email + WeChat)
+#        report daily                 forward the aquant daily report (validated) to the WeChat outbox
+L=$(cd "$(dirname "$(readlink -f "$0")")/../lib" && pwd)
+case "${1:-}" in
+  weekly) shift; exec "$L/weekly.sh" "$@" ;;
+  daily)  shift; exec /opt/homebrew/bin/python3 "$L/aquant_daily.py" "$@" ;;
+  *) sed -n '2,4p' "$0" >&2; exit 2 ;;
+esac

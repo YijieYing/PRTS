@@ -1,2 +1,3 @@
-out/
-outbox/
+__pycache__/
+state/out/
+state/outbox/
