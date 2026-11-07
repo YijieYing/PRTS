@@ -119,6 +119,7 @@
 | 2026-11-02 | 新建 `memory/people.md`，yyj.md §5 改成指针。内容：GitHub/邮箱对照（用户确认 aytony=安阳，石伟男、喻纯从提交推断），FlyBrain 组（老板李国齐；最靠谱的学长陈白雨，做 BrainFuse；唐元宏），清华 HCI（喻纯、石伟男），以及待问清单。主动提问机制记为设计问题池第 7 条（未决定）。Gmail：connector 目录里有官方 Gmail，但还没连接，需要用户自己在 Connectors 里授权。 |
 | 2026-11-02 | 用户补充：yuchun=喻纯；唐元宏属于果蝇组；陈伟浩是喻纯组的博士后；用户没有严格意义上的导师；其余待问的人暂时不重要（已写进 people.md）。Gmail connector 已接上（herryying30@gmail.com），实测能读。主动提问写成提案 v1（设计问题池第 7 条）：问题对象、值不值得问的规则、叫醒/送达/回收表、分三步做。等用户定。 |
 | 2026-11-02 | `Reporter/` 改名为 `reporter/`（af926c4），launchd 的 aquant 日报 plist 已改路径并重新加载，手动触发一次正常。aquant `event.py` 里还写着旧路径 `Reporter/outbox`，因为文件系统不区分大小写所以照常工作；那是 aquant 的文件，没改。主动提问：按用户反馈修订（问题队列归 reporter、按紧急度扫描、每批最多 3 条、outcome 数据结构），见设计问题池第 7 条。 |
+| 2026-11-07 | NatureCalls「代码库架构概览」session 说“没法直接联系 Codex”，把任务说明丢给用户转交。原因：派 Codex 的规则只写在 `/Users/prts` 的自动记忆、yyj.md 和 AGENTS.md 里，在别的目录启动的 session 看不到。修复：全局 `~/.claude/CLAUDE.md` 新增「写代码交给 Codex」一节（用户批准），并转告了该 session。重构时这一节的路径要一起改（列入第 5 步）。另：af926c4 的大小写改名只提交了内容改动，已补提交。重构计划已给出（5 步，等用户确认）。 |
 
 ## 总控待办（2026-10-25 由「PRTS 研究」session 移交）
 - 微信日报（10-27 已证实）：网络已修好（IP-CIDR 43.137/43.171 DIRECT）。ret=-2 = context token 过期：用户 11:25 给 bot 发消息刷新 token 后，11:34 重试第一次就送达了 10-26 日报。结论：bot 只能在用户最近一条消息后约 24h 内推送；用户超过一天不发消息，次日日报就会失败。用户 10-27 决定：不加自动化，自己每天给 bot 发消息。日报失败时先查 context-tokens.json 的修改时间。
