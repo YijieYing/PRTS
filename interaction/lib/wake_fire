@@ -4,14 +4,14 @@ set -eu
 umask 077
 OPS=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)  # interaction/
 id=${1:?usage: wake_fire ID}
-"$OPS/bin/wake" _claim "$id" || exit $?
-D="$OPS/state/wakes/$id"
+"$OPS/lib/wake_state" _claim "$id" || exit $?
+D="${PRTS_INTERACTION_STATE:-$OPS/state}/wakes/$id"
 label="com.prts.wake.$id"
 # shellcheck disable=SC2329 # Invoked by the EXIT trap.
 finish() {
   rc=$?
   trap - EXIT
-  "$OPS/bin/wake" _finish "$id" "$rc" || exit 1
+  "$OPS/lib/wake_state" _finish "$id" "$rc" || exit 1
   # All durable results and plist deletion precede bootout: it can terminate us.
   launchctl bootout "gui/$(id -u)/$label" || exit 1
   exit "$rc"
@@ -20,35 +20,15 @@ trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 fields=()
-while IFS= read -r -d '' value; do fields+=("$value"); done < <("$OPS/bin/wake" _fields "$id")
+while IFS= read -r -d '' value; do fields+=("$value"); done < <("$OPS/lib/wake_state" _fields "$id")
 [ "${#fields[@]}" -eq 9 ] || exit 1
 cwd=${fields[0]}; target=${fields[1]}; mode=${fields[2]}; codex=${fields[3]}
 dry=${fields[4]}; roots=${fields[5]}
 cd "$cwd"
-input="$D/prompt.txt"
-if [ "$mode" = queue ]; then
-  IFS= read -r -d '' prompt < "$input" || : # Preserve trailing newlines too.
-  cmd=("$codex" queue --thread "$target" --message "$prompt")
-  input=/dev/null
-else
-  cmd=("$codex" exec -C "$cwd" resume
-       -c "sandbox_mode=\"${fields[7]}\"" -c "approval_policy=\"${fields[8]}\""
-       -c "sandbox_workspace_write.writable_roots=$roots"
-       -o "$D/last.md" -- "$target" -)
-fi
+args=(--cwd "$cwd" --target "$target" --prompt "$D/prompt.txt" --output "$D/last.md"
+      --log "$D/run-{i}.log" --name "$id" --wake-id "$id" --binary "$codex"
+      --tries "${WAKE_TRIES:-6}" --gap "${WAKE_GAP:-600}")
 if [ "$dry" = 1 ] || [ "${WAKE_DRY:-0}" = 1 ]; then
-  { printf 'DRY cwd=%q command=' "$cwd"; printf '%q ' "${cmd[@]}"; printf '< %q\n' "$input"; } >> "$D/run.log"
-  exit 0
+  args+=(--dry --log "$D/run.log")
 fi
-tries=${WAKE_TRIES:-6}; gap=${WAKE_GAP:-600}
-for ((i=1; i<=tries; i++)); do
-  rc=0
-  "${cmd[@]}" < "$input" > "$D/run-$i.log" 2>&1 || rc=$?
-  if [ "$mode" = resume ] && grep -qi 'at capacity' "$D/run-$i.log"; then
-    "$OPS/bin/wake" _capacity "$id" "$i"
-    if [ "$i" -lt "$tries" ]; then sleep "$gap"; fi
-    continue
-  fi
-  exit "$rc"
-done
-exit 75
+"$OPS/lib/codex" "${args[@]}" "$mode"

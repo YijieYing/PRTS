@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""All Codex process execution and internal-file compatibility live here."""
+import argparse
+import json
+import os
+from pathlib import Path
+import runpy
+import shlex
+import sqlite3
+import subprocess
+import sys
+import time
+import uuid
+
+registry = runpy.run_path(str(Path(__file__).with_name('registry')))
+
+def canonical(target):
+    try: return str(uuid.UUID(target))
+    except ValueError:
+        # Compatibility dependency on Codex's INTERNAL state_5.sqlite threads schema.
+        # Replace with a public session lookup command when Codex provides one.
+        db = Path(os.environ.get('CODEX_HOME', Path.home() / '.codex')).resolve() / 'state_5.sqlite'
+        with sqlite3.connect(db.as_uri() + '?mode=ro', uri=True) as c:
+            rows = c.execute('SELECT id FROM threads WHERE name=?', (target,)).fetchall()
+        if len(rows) != 1: raise ValueError('exact thread name must resolve to one session; use UUID')
+        return rows[0][0]
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('mode', choices=['exec', 'resume', 'queue'])
+    for arg in ('cwd', 'prompt', 'log', 'name'): p.add_argument('--' + arg, required=True)
+    p.add_argument('--start', action='store_true')
+    p.add_argument('--target'); p.add_argument('--output'); p.add_argument('--wake-id')
+    p.add_argument('--binary', default='codex'); p.add_argument('--dry', action='store_true')
+    p.add_argument('--tries', type=int, default=int(os.environ.get('CODEX_TRIES', '6')))
+    p.add_argument('--gap', type=float, default=float(os.environ.get('CODEX_GAP', '600')))
+    p.add_argument('extra', nargs=argparse.REMAINDER)
+    a = p.parse_args()
+    if a.tries < 1 or a.gap < 0: p.error('tries must be positive and gap nonnegative')
+    prompt = Path(a.prompt).read_text()
+    git = subprocess.run(['git', '-C', a.cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], capture_output=True, text=True)
+    roots = [str(Path(a.cwd).resolve())]
+    if git.returncode == 0: roots.append(git.stdout.strip())
+    cmd = [a.binary] + shlex.split(os.environ.get('CODEX_TOP', ''))
+    if a.mode == 'queue':
+        cmd += ['queue', '--thread', a.target, '--message', prompt]
+    else:
+        cmd += ['exec', '-C', a.cwd]
+        if a.mode == 'resume': cmd += ['resume']
+        cmd += ['-c', 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"',
+                '-c', 'sandbox_workspace_write.writable_roots=' + json.dumps(roots, ensure_ascii=False)]
+        extra = a.extra[1:] if a.extra[:1] == ['--'] else a.extra
+        cmd += extra
+        if a.output: cmd += ['-o', a.output]
+        cmd += ['--'] + ([a.target] if a.mode == 'resume' else []) + [prompt]
+    if a.dry:
+        Path(a.log.format(i=1)).write_text('DRY cwd=' + shlex.quote(a.cwd) + ' command=' + shlex.join(cmd) + ' < /dev/null\n')
+        return 0
+    if a.start:
+        registry['append'](dict(name=a.name, event='start', pid=os.getpid(), cwd=a.cwd, prompt=a.prompt))
+    for i in range(1, a.tries + 1):
+        log = Path(a.log.format(i=i))
+        with log.open('w') as f:
+            try:
+                rc = subprocess.run(cmd, cwd=a.cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT).returncode
+            except OSError as e:
+                f.write(str(e) + '\n'); rc = 127
+        if 'at capacity' not in log.read_text(errors='replace').lower():
+            if not a.wake_id:
+                registry['append'](dict(name=a.name, event='exit', rc=rc, via=a.mode) | {'try': i})
+            return rc
+        if a.wake_id:
+            subprocess.run([str(Path(__file__).with_name('wake_state')), '_capacity', a.wake_id, str(i)], check=True)
+        else: registry['append']({'name': a.name, 'event': 'capacity', 'try': i})
+        if i < a.tries: time.sleep(a.gap)
+    if not a.wake_id: registry['append'](dict(name=a.name, event='gave_up', tries=a.tries))
+    return 75
+
+if __name__ == '__main__':
+    try: sys.exit(main())
+    except (OSError, ValueError) as e:
+        print('codex adapter: ' + str(e), file=sys.stderr); sys.exit(1)

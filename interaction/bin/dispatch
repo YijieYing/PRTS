@@ -1,26 +1,29 @@
 #!/bin/bash
-# Dispatch a Codex job headlessly and record it in the registry.
-# usage: [CODEX_TOP=--search] dispatch <name> <workdir> <prompt-file> [extra codex exec args...]
-# Lessons baked in: stdin closed (codex exec otherwise waits on stdin forever),
-# startup verified (attempted != verified), every job registered (no duplicate workers).
-set -u
-name=$1; wd=$2; prompt=$3; shift 3
-S=$HOME/PRTS/interaction/state; LOG=$S/tasks/$name; REG=$S/registry.jsonl
+# usage: dispatch <task> <workdir> [prompt-file] [extra codex exec args...]
+set -eu
+I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+S=${PRTS_INTERACTION_STATE:-$I/state}
+name=${1:?task required}; wd=${2:?workdir required}; shift 2
+[[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo 'invalid task name' >&2; exit 2; }
+wd=$(cd "$wd" && pwd)
+LOG=$S/tasks/$name
+prompt=${1:-$LOG/prompt.md}; [ "$#" -eq 0 ] || shift
 mkdir -p "$LOG"
-# Keep the task's prompt with its runs, wherever the caller wrote it.
-[ "$(cd "$(dirname "$prompt")" && pwd)/$(basename "$prompt")" = "$LOG/prompt.md" ] || cp "$prompt" "$LOG/prompt.md"
-# workspace-write keeps the repo's own .git read-only; grant it so workers can commit.
-gitdir=$(git -C "$wd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && set -- --add-dir "$gitdir" "$@"
-( cd "$wd" && caffeinate -i codex ${CODEX_TOP:-} exec -C "$wd" -s workspace-write "$@" \
-    -o "$LOG/last.md" "$(cat "$prompt")" < /dev/null > "$LOG/run.log" 2>&1
-  rc=$?
-  printf '{"t":"%s","name":"%s","event":"exit","rc":%d}\n' "$(date -u +%FT%TZ)" "$name" $rc >> "$REG" ) &
+[ "$(cd "$(dirname "$prompt")" && pwd)/$(basename "$prompt")" = "$(cd "$LOG" && pwd)/prompt.md" ] || cp "$prompt" "$LOG/prompt.md"
+args=(--cwd "$wd" --prompt "$LOG/prompt.md" --name "$name" --log "$LOG/run.log" --output "$LOG/last.md")
+if [ "${DISPATCH_DRY:-0}" = 1 ]; then
+  exec "$I/lib/codex" "${args[@]}" --dry exec -- "$@"
+fi
+"$I/lib/codex" "${args[@]}" --start exec -- "$@" &
 pid=$!
-printf '{"t":"%s","name":"%s","event":"start","pid":%d,"cwd":"%s","prompt":"%s"}\n' \
-  "$(date -u +%FT%TZ)" "$name" $pid "$wd" "$prompt" >> "$REG"
-for _ in $(seq 1 30); do   # up to 60s: wait for real activity, not just the banner
+for ((i=0; i<30; i++)); do
   sleep 2
-  if ! kill -0 $pid 2>/dev/null; then echo "DIED early:"; tail -5 "$LOG/run.log"; exit 1; fi
-  [ "$(grep -cvE '^(Reading additional input from stdin|\s*)$' "$LOG/run.log")" -gt 8 ] && { echo "OK $name pid=$pid log=$LOG/run.log"; exit 0; }
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rc=0; wait "$pid" || rc=$?
+    echo "EXIT $name rc=$rc log=$LOG/run.log"; exit "$rc"
+  fi
+  if [ -f "$LOG/run.log" ] && [ "$(grep -cvE '^(Reading additional input from stdin|[[:space:]]*)$' "$LOG/run.log")" -gt 8 ]; then
+    echo "OK $name pid=$pid log=$LOG/run.log"; exit 0
+  fi
 done
 echo "SUSPECT $name: no activity after 60s"; tail -5 "$LOG/run.log"; exit 2

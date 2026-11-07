@@ -1,14 +1,9 @@
 #!/bin/bash
-# Retry `codex exec resume` while the model reports "at capacity". usage: resume <name> <thread> <cwd> <msg-file> [tries] [gap_s]
-name=$1; tid=$2; cwd=$3; msg=$4; tries=${5:-6}; gap=${6:-600}
-S=$HOME/PRTS/interaction/state; L=$S/tasks/$name; REG=$S/registry.jsonl; mkdir -p "$L"; git_dir=$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir)
-for i in $(seq 1 $tries); do
-  cd "$cwd" && caffeinate -i codex exec resume "$tid" -c sandbox_mode='"workspace-write"' -c approval_policy='"never"' \
-    -c "sandbox_workspace_write.writable_roots=[\"$git_dir\"]" -o "$L/last.md" "$(cat "$msg")" < /dev/null > "$L/run-resume-$i.log" 2>&1
-  rc=$?
-  if grep -q "at capacity" "$L/run-resume-$i.log"; then
-    printf '{"t":"%s","name":"%s","event":"capacity","try":%d}\n' "$(date -u +%FT%TZ)" "$name" $i >> "$REG"; sleep $gap; continue
-  fi
-  printf '{"t":"%s","name":"%s","event":"exit","rc":%d,"via":"resume","try":%d}\n' "$(date -u +%FT%TZ)" "$name" $rc $i >> "$REG"; exit $rc
-done
-printf '{"t":"%s","name":"%s","event":"gave_up","tries":%d}\n' "$(date -u +%FT%TZ)" "$name" $tries >> "$REG"; exit 75
+# usage: resume <name> <thread> <cwd> <msg-file> [tries] [gap_s]
+set -eu
+I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+name=${1:?name required}; tid=${2:?thread required}; cwd=${3:?cwd required}; msg=${4:?msg-file required}
+[[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo 'invalid task name' >&2; exit 2; }
+L=${PRTS_INTERACTION_STATE:-$I/state}/tasks/$name
+mkdir -p "$L"
+exec "$I/lib/codex" --cwd "$cwd" --target "$tid" --prompt "$msg" --name "$name" --output "$L/last.md" --log "$L/run-resume-{i}.log" --tries "${5:-6}" --gap "${6:-600}" resume

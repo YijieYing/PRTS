@@ -1,11 +1,12 @@
 #!/bin/bash
 # Isolated functional tests; never touches real LaunchAgents, registry or sessions.
 set -eu
-SRC=$(cd "$(dirname "$0")" && pwd)
+SRC=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
-mkdir -p "$T/ops/wakes" "$T/bin" "$T/home"
-cp "$SRC/wake.sh" "$SRC/wake_run.sh" "$T/ops/"
+mkdir -p "$T/interaction/state/wakes" "$T/bin" "$T/home"
+cp -R "$SRC/bin" "$SRC/lib" "$T/interaction/"
+export PRTS_INTERACTION_STATE="$T/interaction/state"
 export HOME="$T/home" CODEX_HOME="$T/home/.codex" PATH="$T/bin:$PATH"
 export WAKE_GAP=0 WAKE_TRIES=2
 unset WAKE_DRY
@@ -34,7 +35,7 @@ if (p/'capacity').exists():
 print('pong')
 PY
 chmod +x "$T/bin/"*
-W="$T/ops/wake.sh"
+W="$T/interaction/bin/wake"
 cd "$T"
 # shellcheck disable=SC2016 # Literal attack text must reach Codex unchanged.
 printf '%s\n' '$(touch INJECTED) `touch INJECTED` ; "quoted"' > prompt
@@ -47,7 +48,7 @@ id=$("$W" add "$future" "$uuid" prompt --name iso)
 python3 - "$id" "$future" <<'PY'
 import json,pathlib,plistlib,sys,os
 import datetime as dt,math
-p=pathlib.Path('ops/wakes')/sys.argv[1]
+p=pathlib.Path('interaction/state/wakes')/sys.argv[1]
 s=json.loads((p/'spec.json').read_text())
 assert s['mode']=='resume' and s['epoch']%60==0
 assert s['epoch']==math.ceil(dt.datetime.fromisoformat(sys.argv[2]).timestamp()/60)*60
@@ -69,7 +70,7 @@ if "$W" add "$future" "$uuid" prompt --name duplicate 2>/dev/null; then exit 1; 
 "$W" cancel "$id"
 python3 - "$id" <<'PY'
 import json,pathlib,sys
-s=json.loads((pathlib.Path('ops/wakes')/sys.argv[1]/'spec.json').read_text())
+s=json.loads((pathlib.Path('interaction/state/wakes')/sys.argv[1]/'spec.json').read_text())
 assert s['status']=='cancelled' and not pathlib.Path(s['plist']).exists()
 PY
 hhmm=$(TZ=Asia/Tokyo date +%H:%M)
@@ -77,41 +78,41 @@ id=$("$W" add "$hhmm" "$uuid" prompt --name tomorrow)
 python3 - "$id" <<'PY'
 import datetime as d,json,pathlib,sys
 from zoneinfo import ZoneInfo
-s=json.loads((pathlib.Path('ops/wakes')/sys.argv[1]/'spec.json').read_text())
+s=json.loads((pathlib.Path('interaction/state/wakes')/sys.argv[1]/'spec.json').read_text())
 assert d.datetime.fromisoformat(s['when']).date()==d.datetime.now(ZoneInfo('Asia/Tokyo')).date()+d.timedelta(days=1)
 PY
 "$W" cancel "$id"
 # Set due time to exercise the runner without waiting for a simulated clock.
 due() { python3 - "$1" <<'PY'
 import json,pathlib,sys,time
-p=pathlib.Path('ops/wakes')/sys.argv[1]/'spec.json'
+p=pathlib.Path('interaction/state/wakes')/sys.argv[1]/'spec.json'
 s=json.loads(p.read_text()); s['epoch']=int(time.time())-120; p.write_text(json.dumps(s))
 PY
 }
 id=$(WAKE_DRY=1 "$W" add "$future" "$uuid" prompt --name dry)
 # Early invocation must not claim the job.
-if "$T/ops/wake_run.sh" "$id"; then exit 1; fi
+if "$T/interaction/lib/wake_fire" "$id"; then exit 1; fi
 due "$id"
-"$T/ops/wake_run.sh" "$id"
+"$T/interaction/lib/wake_fire" "$id"
 test ! -e "$HOME/calls"
-test -s "ops/wakes/$id/run.log"
+test -s "interaction/state/wakes/$id/run.log"
 id=$("$W" add "$future" "$uuid" prompt --name real)
 due "$id"
-"$T/ops/wake_run.sh" "$id"
-if "$T/ops/wake_run.sh" "$id"; then exit 1; fi
+"$T/interaction/lib/wake_fire" "$id"
+if "$T/interaction/lib/wake_fire" "$id"; then exit 1; fi
 python3 - "$id" <<'PY'
 import json,pathlib,sys
-s=json.loads((pathlib.Path('ops/wakes')/sys.argv[1]/'spec.json').read_text())
+s=json.loads((pathlib.Path('interaction/state/wakes')/sys.argv[1]/'spec.json').read_text())
 assert s['status']=='done' and s['rc']==0 and s['delay_minutes']>=2
 assert not pathlib.Path(s['plist']).exists()
 calls=[json.loads(l) for l in (pathlib.Path.home()/'calls').read_text().splitlines()]
-assert len(calls)==1 and calls[0]['stdin']==pathlib.Path('prompt').read_text()
-assert calls[0]['args'][-1]=='-' and 'resume' in calls[0]['args']
+assert len(calls)==1 and calls[0]['stdin']==''
+assert calls[0]['args'][-1]==pathlib.Path('prompt').read_text() and 'resume' in calls[0]['args']
 assert not pathlib.Path('INJECTED').exists()
 PY
 id=$("$W" add "$future" "$uuid" prompt --name queue --mode queue)
 due "$id"
-"$T/ops/wake_run.sh" "$id"
+"$T/interaction/lib/wake_fire" "$id"
 python3 - <<'PY'
 import pathlib,json
 call=json.loads((pathlib.Path.home()/'calls').read_text().splitlines()[-1])
@@ -123,14 +124,14 @@ touch "$HOME/capacity"
 id=$("$W" add "$future" "$uuid" prompt --name capacity)
 due "$id"
 rc=0
-"$T/ops/wake_run.sh" "$id" || rc=$?
+"$T/interaction/lib/wake_fire" "$id" || rc=$?
 test "$rc" = 75
 python3 - "$id" <<'PY'
 import json,pathlib,sys
-s=json.loads((pathlib.Path('ops/wakes')/sys.argv[1]/'spec.json').read_text())
+s=json.loads((pathlib.Path('interaction/state/wakes')/sys.argv[1]/'spec.json').read_text())
 assert s['status']=='failed' and s['rc']==75
 assert not pathlib.Path(s['plist']).exists()
-events=[json.loads(l) for l in pathlib.Path('ops/registry.jsonl').read_text().splitlines()]
+events=[json.loads(l) for l in pathlib.Path('interaction/state/registry.jsonl').read_text().splitlines()]
 assert len([e for e in events if e['event']=='wake_capacity'])==2
 PY
 "$W" list
