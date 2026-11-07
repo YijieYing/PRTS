@@ -1,0 +1,220 @@
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/prts/Projects/aquant/.git] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1532a-c005-7360-a2e8-859f9de0843a
+--------
+user
+[PRTS 总控夜间指令 · 收尾轮] 规则同前：不下单、不推送、只提交到研究分支。
+请确认以下文件都已写好并提交，缺的补上：
+- ML-03 结论（在 `human/` 下，并在 `human/README.md` 里加上链接）；
+- 2026-10-20 收盘报告；
+- `human/decision-2026-10-21.md`；
+- `docs/overnight/STATE-2026-10-21.md`。
+最后输出不超过 10 行的摘要：
+- ML-03 是否拒绝；
+- 参考 ETF 的实时可用性；
+- ML-01 前向结果；
+- 待用户决定的事项。
+codex
+我会核对这四份文档、入口链接及提交记录；缺漏才补写，并保留现有研究结论。
+exec
+/bin/zsh -lc 'git diff HEAD -- human/' in /Users/prts/Projects/aquant/.worktrees/ml03
+exec
+/bin/zsh -lc 'git status --short --branch' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+## research/ml03-cross-asset-20261020
+
+ succeeded in 0ms:
+exec
+/bin/zsh -lc "git log -p --since='2026-10-20T20:41:52Z' -- human/" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+commit a0fa798a8fe186ac6ba84c0c7ae7e661750512d3
+Author: YijieYing <herryying30@gmail.com>
+Date:   Wed Oct 21 05:42:33 2026 +0900
+
+    report: finalize ML03 overnight evidence and direction decision
+
+diff --git a/human/README.md b/human/README.md
+index 566aead..ef84454 100644
+--- a/human/README.md
++++ b/human/README.md
+@@ -73,3 +73,8 @@ PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python scripts/research/run_bigquant_e
+ - 2026-10-20 15:50 ET（盘中观察，无新增代码，最近773测试通过）：[固定阈值、输入资格与SIP/IEX标签分离核验](availability-2026-10-20.md)
+ 
+ - 2026-10-20 16:22 ET（收盘归档已核实，首次账务 UNRESOLVED；联合报告待 16:40）：[实时覆盖、参考 ETF 与 Paper 现金差额](archive-2026-10-20.md)
++
++- 2026-10-20收盘只读核验（AUDITED）：[报告](close-2026-10-20.md)
++- 2026-10-21方向决策（待人类决定）：[备忘](decision-2026-10-21.md)
++
++- 2026-10-20 16:40 ET（最终核验完成，AUDITED≠盈利或完整有效观察日）：[收盘结果与数据边界](close-2026-10-20.md)；2026-10-21[一页方向备忘](decision-2026-10-21.md)待用户选择。
+diff --git a/human/close-2026-10-20.md b/human/close-2026-10-20.md
+new file mode 100644
+index 0000000..b23d567
+--- /dev/null
++++ b/human/close-2026-10-20.md
+@@ -0,0 +1,83 @@
++# 2026-10-20 收盘：只读前向观察
++
++核验时间 2026-10-20T20:40:00.008418+00:00；核验状态 AUDITED。这不是策略盈利验收。
++提前预测 630 条，不重复输入窗口 105 个；阈值信号 0 条。首次 2026-10-20T17:08:10.725339+00:00，末次 2026-10-20T19:25:01.746922+00:00。
++采集 complete=True，compromised=True；既有休眠/心跳异常与缺失记录不回填，不能把全日标为合格。
++
++|标的|原始分钟覆盖|
++|---|---:|
++|SPY|381/390 (97.69%)|
++|QQQ|360/390 (92.31%)|
++
++模型编号沿用 ML-01：M0 零预测，M1 Ridge，M2 LightGBM；ML-03 报告中的 M1/M2 则指原特征/跨资产特征。
++
++|Feed / 模型|标签状态|RMSE bp|方向正确率|
++|---|---|---:|---:|
++|iex/fold5-M0-h15|{'VALID': 84, 'INVALID_MISSING_OR_TIMEOUT': 21}|7.127|N/A|
++|iex/fold5-M0-h30|{'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}|8.264|N/A|
++|iex/fold5-M1-h15|{'VALID': 84, 'INVALID_MISSING_OR_TIMEOUT': 21}|6.945|50.00%|
++|iex/fold5-M1-h30|{'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}|7.947|75.00%|
++|iex/fold5-M2-h15|{'VALID': 84, 'INVALID_MISSING_OR_TIMEOUT': 21}|7.183|36.90%|
++|iex/fold5-M2-h30|{'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}|8.245|72.37%|
++|sip/fold5-M0-h15|{'VALID': 105}|7.272|N/A|
++|sip/fold5-M0-h30|{'VALID': 105}|8.727|N/A|
++|sip/fold5-M1-h15|{'VALID': 105}|7.054|52.38%|
++|sip/fold5-M1-h30|{'VALID': 105}|8.411|72.38%|
++|sip/fold5-M2-h15|{'VALID': 105}|7.258|42.86%|
++|sip/fold5-M2-h30|{'VALID': 105}|8.662|78.10%|
++
++未决标签 0；因果/版本/标签核验异常 0。
++原始实时输入逐项重核 630 条；输入异常 0。核对前缀Hash、事件与接收时间、输入ID和因果特征；不重新训练。
++IEX是实时路径标签，SIP是延迟核验标签，不相互替换。共同目标对照保存在JSON。
++所有目标来自同一天且高度重叠，不能按模型条数当作独立样本。无NBBO，执行P&L为N/A。
++
++## 参考 ETF 实时可见性
++
++独立IEX REST轮询，未修改WebSocket。延迟含轮询、网络和缓存，不是WS到达延迟。
++|ETF|成熟分钟覆盖|及时覆盖≤90秒|P50/P95秒|16根合格窗口|
++|---|---:|---:|---:|---:|
++|SPY|100.00%|100.00%|6.3/11.0|82|
++|QQQ|96.91%|96.91%|6.6/11.3|55|
++|IWM|100.00%|100.00%|6.3/11.0|82|
++|XLK|84.54%|84.54%|6.2/10.9|1|
++|XLF|96.91%|96.91%|6.2/11.0|39|
++|XLE|97.94%|97.94%|6.3/11.0|65|
++|SMH|98.97%|98.97%|6.8/12.1|66|
++
++五个参考ETF同时满足窗口的次数：1，但它结束于15:59，按固定lag1需要收盘后的基础bar；收盘前可用的全五窗口为0。原协议允许参考子集，并不要求全五同时齐备。
++仅部分下午时段；缺柱不能一概解释为网络丢包。未产生ML03预测或盈利证据。
++
++## Paper账务与结论
++
++原定16:15、实际16:19:41 ET执行的只读复核状态：UNRESOLVED。原始结果（或未找到标记）及10月22日计划附在JSON，原文件未改。
++订单毛收益：0.000468637596 USD；账户现金变化（未归因）：-0.02 USD；fees_final=False。
++没有把账户全部余额变化归于Smoke；未查明最终净收益时继续保留UNRESOLVED。
++ML03固定比较已拒绝晋级；本日报不改变ML01评级，也不授权交易。
++方向选择见[一页备忘](decision-2026-10-21.md)。
++
++## 交叉核验与解释边界
++
++冻结登记于13:07:12 ET，Git `3c6edcdf4eb82609fcfda4af700de048738c50f2`；首次预测13:08:10、末次15:25:01。
++6个模型及5份配置/源码Hash未变，完整版本信息保存在原始JSON。105窗口为SPY101、QQQ4，不是105个独立交易日。
++原Forward 09:20:09启动、16:02:00结束；记录online_seconds=23080.390，含盘前与收盘缓冲，不能除以常规时段秒数当覆盖率。
++原流收到381/360分钟，冻结门禁实际接受373/354（95.64%/90.77%）；差额14根接收早于分钟结束7.5—42.4ms，原因未定。
++两标的15:59原流缺柱、REST存在的差异保留；没有用收盘后历史数据补造决策，详见[归档核验](archive-2026-10-20.md)。
++原趋势策略0信号、0假设交易；Phase 6压缩/动量/回归原始信号21/52/10，数据资格5/2/3，均因无合格NBBO不能认定成交收益。
++
++|共同目标对照|15分钟|30分钟|
++|---|---:|---:|
++|IEX/SIP共同有效目标（全为SPY）|84|76|
++|收益方向不同的目标数|2|1|
++|两源标签平均绝对差（bp）|0.408|0.442|
++|共同目标SIP RMSE：零预测/Ridge/LightGBM（bp）|6.964 / 6.782 / 7.023|8.208 / 7.894 / 8.188|
++
++Ridge在今天这些目标上误差较小，但只有一个且不完整的观察日，不能计算可信的跨日置信区间或据此晋级。
++630条SIP标签按首次终态响应页复算一致，未采用后来修订；IEX缺失标签仍失效，尤其QQQ全部对应路径不完整。
++固定预测与概率门槛均未产生入场信号；今天的成本敏感性、成交胜率和策略收益仍N/A，不能把无交易记成盈利证据。
++
++参考测量14:23—15:59仅97分钟、559轮询；0请求失败/超过30秒间断。24处缺柱均仅含不适用分钟价格的成交，未决0；不推广为所有历史缺口的原因。
++Paper Cash/Equity最新$1,999.98；CAT/REG各−$0.01未明确逐单链接，毛收益与现金变动差−$0.020468637596，最终可归因净收益N/A。
++10月22日16:15 ET原第二次复核计划未改；历史探索、实时前向模拟、Paper实际模拟订单账务分别报告、不相加。
++
++机器报告：[原始联合JSON](../outputs/ml03/closing-20261020/report.json)；[已入库核验证据](../docs/overnight/EVIDENCE-2026-10-21-round8.json)。
++历史ML03全部失败与正值代理见[完整比较](ml03-2026-10-20.md)，本日不改变其REJECTED结论。
+diff --git a/human/decision-2026-10-21.md b/human/decision-2026-10-21.md
+new file mode 100644
+index 0000000..63e1020
+--- /dev/null
++++ b/human/decision-2026-10-21.md
+@@ -0,0 +1,28 @@
++# 方向决策备忘 · 2026-10-21
++
++待用户决定；数据截止核验时间 2026-10-20T20:40:00.008418+00:00。本轮没有开启 ML-04。
++
++ML01/02没有可靠增量Alpha；ML03四个共同样本RMSE均变差。表现最好的跨资产正收益代理仅12笔、7个活跃日，区间跨零；其他偶发正值也不构成稳定优势。
++今天有 630 条提前预测、105 个输入窗口，但全日compromised、
++重叠标签及无NBBO限制仍在；一天不能证明正期望。MSE失败不是交易失败的唯一依据，IC、分位收益与成本证据也未一致支持晋级。
++
++|可选方向|现有证据|代价与缺口|现在能否自动启动|
++|---|---|---|---|
++|继续日内，换信息源或标的|同类价格/ETF特征边际收益低，执行报价仍不合格|先写经济机制与预算；付费数据须单独批准，换标的不能只挑历史赢家|否|
++|日线或多日、低换手目标|分钟成本压力明确；ML02单纯延长标签已失败|需重新设计目标、隔夜风险与验证，不保证更容易盈利|否|
++|转向BigQuant比赛线|已有独立工程和数据入口|需确认比赛目标、可用官方标签及评测证据；不把工程完成当成绩|否|
++|暂停新算法，只保留只读观察|可继续积累真实前向与数据可靠性证据|仍需解决睡眠、缺失和报价条件；确认维护期限|保留既有任务，新增授权另议|
++
++建议先暂停同类算法扩展，选择研究目标和数据预算。若继续日内，优先明确新信息机制与执行条件；
++若不能接受成本与运行约束，再讨论低换手目标或比赛线。没有证据支持现在自动Paper策略交易。
++
++另一个独立决定：是否把只读采集迁至lain。本机已有休眠/心跳间断与断连证据；本轮未迁移、未改launchd/.env，
++也未改变系统睡眠设置。迁移不能修复仅有不适用成交条件造成的合法分钟空缺，
++也不能补齐NBBO。参考ETF分钟覆盖率不等于跨资产连续窗口资格，见
++[缺柱核验](gaps-2026-10-20.md)与[实际接收资格](availability-2026-10-20.md)。
++14根提前接收被拒绝及末分钟原流缺失还需定位；迁移不能替代时序核验，不能修改今晚记录。
++付费数据、迁移与方向选择均记录在[PENDING](../docs/overnight/PENDING.md)，不能视为默认批准。
++首次账务已核查：权益$1,999.98，CAT/REG各−$0.01但未逐单归因，最终净收益仍UNRESOLVED；10月22日16:15 ET复核保留。
++依据：[ML03历史比较](ml03-2026-10-20.md)、[真实收盘核验](close-2026-10-20.md)、[数据及现金差额](archive-2026-10-20.md)。
++
++HISTORICAL_EXPLORATION、FORWARD_OBSERVATION与PAPER_EXECUTION收益不相加。
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import pathlib,subprocess,hashlib
+root=pathlib.Path('.')
+files=['human/ml03-2026-10-20.md','human/close-2026-10-20.md','human/decision-2026-10-21.md','docs/overnight/STATE-2026-10-21.md','human/README.md']
+for name in files:
+ p=root/name
+ committed=subprocess.check_output(['git','show',f'HEAD:{name}'])
+ print(name,'exists',p.exists(),'matches_HEAD',p.read_bytes()==committed,'last_commit',subprocess.check_output(['git','log','-1','--format=%h', '--',name],text=True).strip())
+index=(root/'human/README.md').read_text()
+for name in files[:3]:print('index_link',name,pathlib.Path(name).name in index)
+print('latest',subprocess.check_output(['git','log','-1','--format=%h %s'],text=True).strip())
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+human/ml03-2026-10-20.md exists True matches_HEAD True last_commit b8b27c2
+human/close-2026-10-20.md exists True matches_HEAD True last_commit a0fa798
+human/decision-2026-10-21.md exists True matches_HEAD True last_commit a0fa798
+docs/overnight/STATE-2026-10-21.md exists True matches_HEAD True last_commit a0fa798
+human/README.md exists True matches_HEAD True last_commit a0fa798
+index_link human/ml03-2026-10-20.md True
+index_link human/close-2026-10-20.md True
+index_link human/decision-2026-10-21.md True
+latest a0fa798 report: finalize ML03 overnight evidence and direction decision
+
+codex
+ALL DONE
+四份文档均已写好并提交，README 链接齐全；研究分支最新提交 `a0fa798`，工作区干净，无需补写。
+ML-03：**拒绝晋级**，跨资产特征没有稳定优于原特征。
+参考 ETF：下午97分钟覆盖 IWM/XLK/XLF/XLE/SMH 为100%/84.54%/96.91%/97.94%/98.97%；REST可见延迟P95约11–12秒，收盘前全五连续窗口为0。
+ML-01：630条提前预测、105个窗口、0阈值信号；核验无异常，但全天 compromised，无可执行盈利证据。
+待用户决定：研究方向、数据预算、是否迁移采集至 lain、继续观察的期限；详见[方向备忘](/Users/prts/Projects/aquant/.worktrees/ml03/human/decision-2026-10-21.md)。
+Paper最终收益仍UNRESOLVED，10月22日复核保留；未下单、未推送、未开启ML-04。
+tokens used
+3,991,976
+ALL DONE
+四份文档均已写好并提交，README 链接齐全；研究分支最新提交 `a0fa798`，工作区干净，无需补写。
+ML-03：**拒绝晋级**，跨资产特征没有稳定优于原特征。
+参考 ETF：下午97分钟覆盖 IWM/XLK/XLF/XLE/SMH 为100%/84.54%/96.91%/97.94%/98.97%；REST可见延迟P95约11–12秒，收盘前全五连续窗口为0。
+ML-01：630条提前预测、105个窗口、0阈值信号；核验无异常，但全天 compromised，无可执行盈利证据。
+待用户决定：研究方向、数据预算、是否迁移采集至 lain、继续观察的期限；详见[方向备忘](/Users/prts/Projects/aquant/.worktrees/ml03/human/decision-2026-10-21.md)。
+Paper最终收益仍UNRESOLVED，10月22日复核保留；未下单、未推送、未开启ML-04。

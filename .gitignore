@@ -1,4 +1,4 @@
 ops/**/*.log
 .DS_Store
 AgentConsole/
-ops/backups/
+maintenance/backups/

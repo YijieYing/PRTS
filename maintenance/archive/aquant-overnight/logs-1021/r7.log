@@ -1,0 +1,2358 @@
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/prts/Projects/aquant/.git] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1532a-c005-7360-a2e8-859f9de0843a
+--------
+user
+[PRTS 总控夜间指令 · 第 7 轮 · 纽约 15:52（16:00 收盘）]
+用户已经睡觉。本线程由 PRTS 总控（Claude）通过 `codex exec resume` 驱动，**不会有人类回复你**。
+
+总控对目前进展的评估在 `~/PRTS/human/reports/2026-10-21-aquant-ml-assessment.md`，开工前先读一遍（只读）。
+
+按优先级推进：
+1. **完成 ML-03**，严格按你手上的指令和 `docs/ml03.json` 执行，不追加参数搜索。M2 如果没有稳定优于 M1，就明确拒绝。
+2. **收盘前**（16:00 ET 之前）：用实时数据测量参考 ETF（IWM、XLK、XLF、XLE、SMH）的 IEX 实时覆盖率和到达延迟，判断它们能否作为实时特征。保持 ML-01 实时旁路、Forward 和 Shadow 继续运行。不重启冻结服务。
+3. **收盘后**：核对 ML-01 今日提前登记的预测和到期标签，写出 2026-10-20 收盘报告。
+4. **最后**：写 `human/decision-2026-10-21.md`，一页纸的方向决策备忘，列出可选方向和各自的证据，供用户醒来决定。**不要自行开启 ML-04。**
+
+硬规则：
+- 禁止任何 Paper 或 Live 订单，禁止付费行情，禁止微信推送，不改 launchd 和 `.env`。
+- 需要人决定的事写进 `docs/overnight/PENDING.md`，然后改做不依赖它的事。
+- 每轮约 25 分钟。在对应的研究分支上小步 commit（`.git` 现在可写），不要提交到 main。进度追加到 `docs/overnight/STATE-2026-10-21.md`。
+- 结束时输出不超过 8 行的摘要。全部做完后，回复的第一行写 `ALL DONE`。
+codex
+本轮将核对收盘时的采集归档、到期标签，以及16:15的首次 Paper 账务复核。先读取总控评估和文档增量；保持冻结服务继续运行，不提前停止、不修改授权。
+exec
+/bin/zsh -lc "cat /Users/prts/PRTS/human/reports/2026-10-21-aquant-ml-assessment.md; git status --short; git log -p --since='2026-10-20T19:50:24+00:00' -- human/; git diff HEAD -- human/; date -u '+%Y-%m-%dT%H:%M:%SZ'" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+# aquant ML 进展评估（截至 2026-10-21 03:10 JST / 10-20 14:10 ET）
+
+## 结论
+**过程很严谨，结果是一致的负面：在 SPY/QQQ 分钟级、用免费 IEX 价格特征，目前没有可用的扣成本正期望。**这个负面结论本身可信，也有价值，但继续在同一问题上加 worktree 的边际收益已经很低。今晚应该做完 ML-03、用好最后两小时的实时数据，然后停下来做一次方向决策，而不是开 ML-04。
+
+## 三轮 ML 做了什么
+
+| 轮次 | 假设 | 结果 |
+|---|---|---|
+| ML-01 成本感知 | 11 个价格特征 + Ridge/LightGBM 预测 15/30 分钟收益 | 六折中 12 次选择全部落在零预测；LightGBM 有 +$15.9 代理盈利，但只有 9 笔交易 |
+| ML-02 拉长周期 | 60/120 分钟可能累积漂移，摊薄成本 | 8 个组合 MSE 都不如零预测；最高预测分位的实际收益只有 1–1.6bp，低于约 3.2bp 的往返成本 |
+| ML-03 跨资产 | 加入 IWM/XLK/XLF/XLE/SMH 的相对强弱、相关性、广度 | **进行中**（03:05 提交特征代码，正在下载参考标的行情） |
+
+另有 ML-01 实时诊断旁路：13:08 ET 起提前登记、只读预测，截至 13:30 SPY 有 23 个合格窗口，QQQ 为 0（连续性门禁没有放宽），阈值信号 0。
+
+## 做得好的地方
+- 每轮都先预注册（固定参数、阈值、评价指标），再看结果；负面结果全部保留，没有事后挑选。
+- 因果性和防泄漏处理到位：只用决策时刻已完成的 bar，有 embargo，按交易日分组做 bootstrap。
+- 实时诊断做到了“预测先落盘、再看结果”，这是真正的前向证据。
+
+## 我看到的问题
+1. **问题本身选得太难。**SPY/QQQ 是全世界最有效的标的，分钟级、只用价格、免费 IEX 数据，几乎是散户最难找到 edge 的组合。模型换来换去都输给零预测，说明瓶颈不在模型。
+2. **用 MSE 选模型天然偏向零预测。**信号极弱时，任何非零预测都会抬高 MSE。交易上更有意义的是排序能力（IC）和最高分位扣成本后的收益。ML-02 已经报告了分位收益，这部分做得对；以后的协议可以把 IC 定为主指标。
+3. **多重比较在累积。**ML-01、02、03 加起来已有上百个组合。即使 ML-03 出现“显著”改善，也要按累积的尝试次数打折扣。
+4. **执行数据才是硬约束。**IEX 不满足 NBBO 门禁，就算预测有效，也不能形成合格的模拟成交。
+5. **基础设施拖后腿。**今天开盘的数据缺口来自 Mac 空闲睡眠和合盖（09:27–09:30、11:34–11:42 ET）。采集应该搬到 24 小时不睡的 lain，或者至少保证 Mac 不睡眠（今晚已开 caffeinate）。
+
+## 今晚的安排（总控派发，只读，不下单）
+1. 让你的 Codex 按原指令完成 ML-03，不追加参数搜索；M2 如果不稳定优于 M1，就明确拒绝。
+2. 用好收盘前最后约 2 小时：记录参考 ETF 的实时 IEX 覆盖率和到达延迟，这是 ML-03 能否实盘接入的关键事实；同时让 ML-01 实时旁路和 Shadow 继续跑到收盘。
+3. 收盘后：核对 ML-01 今日提前登记预测和实际标签，写出 10-20 收盘报告。
+4. 最后写一页“方向决策备忘”，列出可选方向供你醒来决定：
+   - 继续日内，但换数据源或换标的（需要付费数据，要你批准）；
+   - 改做日线或多日周期；
+   - 把精力转到 BigQuant 比赛线；
+   - 暂停 aquant 研究，只保留前向观察。
+
+## 待你决定
+- 是否把实时采集迁到 lain。
+- 上面的方向选择（明早看备忘录）。
+commit ecfddd5454dbee65c79319ce7a6884484858b3b6
+Author: YijieYing <herryying30@gmail.com>
+Date:   Wed Oct 21 04:51:24 2026 +0900
+
+    report: preserve pre-close forecast integrity and feed divergence
+
+diff --git a/human/README.md b/human/README.md
+index 2ddf74c..8c7d5e0 100644
+--- a/human/README.md
++++ b/human/README.md
+@@ -70,4 +70,4 @@ PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python scripts/research/run_bigquant_e
+ 
+ - 2026-10-20 15:15 ET（盘中审计，770测试通过）：[跨资产输入的实际接收资格](availability-2026-10-20.md)
+ 
+-- 2026-10-20 15:22 ET（盘中审计，773测试通过）：[固定阈值零信号与SIP标签来源核验](availability-2026-10-20.md)
++- 2026-10-20 15:50 ET（盘中观察，无新增代码，最近773测试通过）：[固定阈值、输入资格与SIP/IEX标签分离核验](availability-2026-10-20.md)
+diff --git a/human/availability-2026-10-20.md b/human/availability-2026-10-20.md
+index af0d55e..de90b86 100644
+--- a/human/availability-2026-10-20.md
++++ b/human/availability-2026-10-20.md
+@@ -32,7 +32,8 @@ REST 首次可见延迟包含轮询间隔、网络与缓存，不能冒充 WebSo
+ 
+ - 33个处于新测量的初始预热，单列，不能归咎于行情故障。
+ - 预热后23个中，7个通过跨资产输入门禁、16个未通过。
+-- 7个通过时点只涉及15:04—15:07的4个目标分钟，不是7个独立统计样本。
++- 7个通过时点对应15:04—15:07的4个输入K线时间，实际接收截止约在下一分钟；
++  这不是未来收益标签时间，也不是7个独立统计样本。
+   前6个参考子集为 IWM/SMH，最后一个另有 XLF。
+ - QQQ 的15:07、15:09分钟再次缺失；15:07在原 WebSocket 也没有分钟记录。
+   这些新缺口尚未到本轮延迟逐笔核验时刻，不能先断言原因。
+@@ -110,3 +111,25 @@ QQQ 15:07的11笔成交现已确认均不适用于分钟价格；累计17处缺
+ 另4处仍待延迟窗口。保持原流缺失，不回填。
+ 15:25原ML-01已有630条预测/105输入窗口，仍无阈值信号；新增预测和标签待收盘核验。
+ 机器证据：[round5](../docs/overnight/EVIDENCE-2026-10-21-round5.json)。
++
++## 15:43 ET更新：预测停止新增，标签核验继续
++
++冻结输入规则为K线时间早于当日收盘前35分钟，所以最后输入为15:24、
++最后预测完成于15:25:01；105个窗口（SPY101、QQQ4）、630条预测随后保持不变。
++这不是服务停止。原始输入与提前提交重核630/630通过，6个模型、5个代码Hash均未变。
++最晚30分钟目标为15:56，仍须等待对应行情及SIP延迟窗口。
++
++15:42时，每模型15分钟IEX标签已全部终结：84有效、21缺失/超时失效。
++其中QQQ的4窗口×3模型共12条15分钟标签全部失效，而15:43核对的同组SIP标签
++12条全部有效。QQQ30分钟的12条IEX标签也全部失效，SIP尚待到期。
++两种来源不会互相替换；SIP完整不等于实时路径合格，更不等于可成交利润。
++
++当前累计20处缺柱已由延迟逐笔确认仅有不适用成交；本轮未修改模型、门禁、
++采集或汇总程序，不重新运行已通过的全量测试。完整结果仍须等16:40实际收盘核验。
++
++15:30—15:50完成22次本地只读检查，0心跳异常，ML-01游标每次均追上最新分钟线，
++630条预测及提交时间Hash全部未变。检查程序已正常退出，原采集继续运行。
++15:50成熟85分钟中，IWM/XLK/XLF/XLE/SMH分别可见85/70/82/83/84根；
++P95首次可见延迟约10.8—12.1秒，488次轮询无失败或超过30秒间断。
++截至15:49:49，30分钟IEX标签每模型68有效、29失效、8待定；并非完整收盘结论。
++证据：[round6](../docs/overnight/EVIDENCE-2026-10-21-round6.json)。
+2026-10-20T19:52:19Z
+
+exec
+/bin/zsh -lc "rg -n 'close|complete|stop|timedelta' /Users/prts/Projects/aquant/src/aquant/forward.py | tail -55; sed -n '300,405p' scripts/research/arrival.py; cat /Users/prts/Projects/aquant/outputs/research/forward_observations/20261020/report.json 2>/dev/null | head -c 500; rg --files --hidden --no-ignore /Users/prts/Projects/aquant/outputs/research/forward_observations | rg '20261020|2026-10-20' | head -20; date -u '+%Y-%m-%dT%H:%M:%SZ'" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+16:from datetime import timedelta
+118:            raise AcceptanceError("Frozen forward implementation changed; monitoring stopped")
+170:            "close": str(closing),
+183:            "complete": False,
+313:        if self.s["complete"] or received < pd.Timestamp(self.p["activated_at"]):
+493:                    else "stop"
+494:                    if bid <= entry * (1 - D(self.config.stop))
+581:        self.s.update(complete=True, ended_at=stamp(instant), connected=False)
+588:                        "reason": "no_eligible_quote_before_close",
+609:        count = int((pd.Timestamp(s["close"]) - pd.Timestamp(s["open"])).total_seconds() / 60)
+611:            str(t) for t in pd.date_range(s["open"], s["close"], freq="min", inclusive="left")
+621:                "complete": s["complete"],
+626:                "valid_observation": s["complete"]
+704:        if not s["complete"]:
+729:    start = str(day - timedelta(days=14))
+733:    rows = client.get("/calendar", {"start": start, "end": str(day + timedelta(days=14))})
+743:    stop = asyncio.Event()
+746:        loop.add_signal_handler(sig, stop.set)
+751:            and not stop.is_set()
+760:                    and not stop.is_set()
+801:                await stream.close()
+802:            if not stop.is_set() and not (root / "STOP").exists() and clock() < day.closing:
+807:            day.anomaly("stopped_before_close", clock())
+816:        return {"status": "stopped"}
+841:            if old and old["complete"]:
+858:            client.close()
+953:                    for k in ("day", "heartbeat", "connected", "complete", "compromised")
+966:        "stopped": (DIRECTORY / "STOP").exists(),
+1016:        await stream.close()
+1029:            "stop",
+1058:                client.close()
+1080:                client.close()
+1084:        elif args.action == "stop":
+1089:            result = {"stopped": True, "orders_authorized": False}
+1096:                result = {"stopped": True}
+1102:                    client.close()
+2026-10-20T19:52:27Z
+
+exec
+/bin/zsh -lc "sed -n '735,815p' /Users/prts/Projects/aquant/src/aquant/forward.py; tail -100 scripts/research/arrival.py; rg --files --hidden --no-ignore /Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1 | head -20; rg -n 'closing|minutes=|timedelta|close.*[+]' /Users/prts/Projects/aquant/src/aquant/shadow.py | tail -25" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+    atomic(path, {"checked_day": str(day), "received_at": stamp(instant), "rows": rows})
+    return rows
+
+
+async def collect(
+    day, root, clock=readonly.now, stream_factory=readonly.Stream, sleeper=asyncio.sleep
+):
+    day.clock = clock
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop.set)
+    failures = 0
+    try:
+        while (
+            clock() < day.closing + pd.Timedelta(minutes=2)
+            and not stop.is_set()
+            and not (root / "STOP").exists()
+        ):
+            stream = stream_factory()
+            try:
+                await stream.connect()
+                last_data, last_beat = clock(), clock()
+                while (
+                    clock() < day.closing + pd.Timedelta(minutes=2)
+                    and not stop.is_set()
+                    and not (root / "STOP").exists()
+                ):
+                    instant = clock()
+                    if (instant - last_beat).total_seconds() >= 15:
+                        day.heartbeat(instant)
+                        last_beat = instant
+                        if (
+                            shutil.disk_usage(root).free < 256 * 1024**2
+                            or (root / "state.sqlite3").stat().st_size > 5 * 1024**3
+                        ):
+                            raise AcceptanceError("Observation disk budget exhausted")
+                    if (instant - last_data).total_seconds() > 90:
+                        raise TimeoutError("stream silent")
+                    try:
+                        messages, received = await asyncio.wait_for(stream.receive(), timeout=2)
+                    except TimeoutError:
+                        continue
+                    for m in messages:
+                        if m.get("T") == "error":
+                            if m.get("code") in {401, 402, 404, 405, 409}:
+                                raise AcceptanceError("Stream authorization/subscription rejected")
+                            raise ConnectionError("stream provider error")
+                        if m.get("T") == "subscription":
+                            if not all(
+                                set(m.get(k, [])) == {"SPY", "QQQ"} for k in ("bars", "quotes")
+                            ):
+                                raise AcceptanceError("Unexpected subscription acknowledgement")
+                            day.connection(True, received)
+                        if m.get("T") in {"b", "q", "u"}:
+                            last_data, failures = received, 0
+                            day.consume(m, received)
+            except AcceptanceError:
+                day.anomaly("fatal_capability_or_permission_failure", clock())
+                (root / "STOP").touch()
+                raise
+            except Exception as error:
+                day.anomaly("connection_error_" + type(error).__name__, clock())
+                failures += 1
+            finally:
+                day.connection(False, clock())
+                await stream.close()
+            if not stop.is_set() and not (root / "STOP").exists() and clock() < day.closing:
+                await sleeper(min(60, 2 ** min(failures, 6)))
+        if clock() >= day.closing:
+            day.finish(clock())
+        else:
+            day.anomaly("stopped_before_close", clock())
+            day.persist()
+    finally:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(sig)
+
+
+def tick(root=DIRECTORY, client_factory=readonly.Client):
+    if (root / "STOP").exists():
+        {
+            "after": a[1],
+            "before": b[0],
+            "seconds": (pd.Timestamp(b[0]) - pd.Timestamp(a[1])).total_seconds(),
+        }
+        for a, b in zip(polls, polls[1:], strict=False)
+        if pd.Timestamp(b[0]) - pd.Timestamp(a[1]) > pd.Timedelta(seconds=30)
+    ]
+    return {
+        "at": instant.isoformat(),
+        "manifest": manifest,
+        "assets": assets,
+        "polls": len(polls),
+        "failures": failures,
+        "poll_gaps": gaps,
+        "last_poll": polls[-1][1] if polls else None,
+        "all_five_qualified_16_bar_windows": len(sync),
+        "finished": instant >= close + pd.Timedelta(minutes=3),
+        "limitations": "REST first receipt includes polling/network/cache. No WS arrival proof. "
+        "No backfill before registration; absent bars are not necessarily lost trades. "
+        "Short partial session; no prediction or executable PnL.",
+    }
+
+
+def publish(folder, db, m):
+    result = report(db, m)
+    temp = folder / "status.tmp"
+    temp.write_text(json.dumps(result, indent=2))
+    temp.replace(folder / "status.json")
+    return result
+
+
+def run(folder, root):
+    m = history.read(folder / "manifest.json")
+    if m["orders_authorized"] or m["source"] != "iex_rest_poll":
+        raise ValueError("Invalid arrival manifest")
+    if hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != m["code_hash"]:
+        raise ValueError("Frozen arrival code changed")
+    with (folder / "arrival.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        db = journal(folder / "arrival.sqlite3")
+        client = StockHistoricalDataClient(*credentials(root), raw_data=True)
+        client._session.close()
+        client._session = Transport()
+        client._retry = 0
+        try:
+            while pd.Timestamp.now(tz="UTC") < pd.Timestamp(m["closing"]) + pd.Timedelta(minutes=3):
+                if (folder / "STOP").exists():
+                    break
+                started = now()
+                end = pd.Timestamp(started).floor("min") - pd.Timedelta(microseconds=1)
+                params = {
+                    "symbols": ",".join(SYMBOLS),
+                    "feed": "iex",
+                    "timeframe": "1Min",
+                    "adjustment": "raw",
+                    "asof": "-",
+                    "sort": "asc",
+                    "limit": 1000,
+                    "start": (end.floor("min") - pd.Timedelta(minutes=2)).isoformat(),
+                    "end": end.isoformat(),
+                }
+                try:
+                    body = client.get("/stocks/bars", params)
+                    if body.get("next_page_token"):
+                        raise ValueError(
+                            "Unexpected pagination for seven symbols and three minutes"
+                        )
+                    body["request"] = params
+                except Exception as exc:
+                    body = {"failure": history.failure(exc), "request": params}
+                record(db, body, started, now(), m)
+                publish(folder, db, m)
+                if body.get("failure", {}).get("http_status") in {401, 403}:
+                    break
+                for _ in range(10):
+                    if (folder / "STOP").exists():
+                        break
+                    time.sleep(1)
+            final = publish(folder, db, m)
+            history.immutable(
+                folder / ("final-" + datetime.now(UTC).strftime("%H%M%S") + ".json"), final
+            )
+        finally:
+            client._session.close()
+            db.close()
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest="command", required=True)
+    f = sub.add_parser("register")
+    f.add_argument("--folder", type=Path, required=True)
+    f.add_argument("--calendar-path", type=Path, required=True)
+    r = sub.add_parser("run")
+    r.add_argument("--folder", type=Path, required=True)
+    r.add_argument("--root", type=Path, required=True)
+    a = vars(p.parse_args())
+    command = a.pop("command")
+    (register if command == "register" else run)(**a)
+/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1/shadow.sqlite3
+/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1/stdout.log
+/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1/manifest.json
+/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1/com.aquant.shadow.20261020.plist
+/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1/stderr.log
+/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1/shadow.lock
+47:    closing = pd.Timestamp(calendar["date"] + " " + calendar["close"], tz="America/New_York")
+59:        "closing": closing.isoformat(),
+126:            manifest["day"]: (pd.Timestamp(manifest["opening"]), pd.Timestamp(manifest["closing"]))
+170:            opening, closing = self.calendar[self.manifest["day"]]
+177:            elif not opening <= t < closing:
+183:            elif not 0 <= (receipt - t - pd.Timedelta(minutes=1)).total_seconds() <= 90:
+218:                            and t - pd.Timestamp(previous) < pd.Timedelta(minutes=30)
+286:        opening, closing = self.calendar[self.manifest["day"]]
+287:        expected = int((closing - opening).total_seconds() / 60)
+329:            "complete_session_elapsed": pd.Timestamp(instant) >= closing,
+417:            deadline = pd.Timestamp(manifest["closing"]) + pd.Timedelta(minutes=3)
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import plistlib,json
+p=Path('/Users/prts/Library/LaunchAgents/com.aquant.paper-pnl.plist')
+if p.exists():
+ d=plistlib.loads(p.read_bytes());print({k:d.get(k) for k in ['Label','ProgramArguments','StartInterval','StartCalendarInterval','RunAtLoad','StandardOutPath','StandardErrorPath']})
+else:print('paper-pnl plist not found at expected path')
+root=Path('/Users/prts/Projects/aquant');ml=root/'.worktrees/ml01/outputs/ml01/forward-20261020'
+for p in [ml/'status.json',ml/'sip/status.json',Path('outputs/ml03/arrival-20261020/status.json')]:
+ d=json.loads(p.read_text());print(str(p),{k:d[k] for k in ['at','cursor','finished','polls','canonical_status'] if k in d})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+{'Label': 'com.aquant.paper-pnl', 'ProgramArguments': ['/Users/prts/Projects/aquant/.venv/bin/python', '-m', 'aquant.forward', 'reconcile-run'], 'StartInterval': 300, 'StartCalendarInterval': None, 'RunAtLoad': True, 'StandardOutPath': '/dev/null', 'StandardErrorPath': '/dev/null'}
+/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020/status.json {'at': '2026-10-20T19:52:45.688990+00:00', 'cursor': 42325}
+/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020/sip/status.json {'at': '2026-10-20T19:52:39.468208+00:00', 'canonical_status': {'VALID': 540}}
+outputs/ml03/arrival-20261020/status.json {'at': '2026-10-20T19:52:45.655948+00:00', 'finished': False, 'polls': 502}
+
+exec
+/bin/zsh -lc "sed -n '560,610p' /Users/prts/Projects/aquant/src/aquant/forward.py; sed -n '690,730p' /Users/prts/Projects/aquant/src/aquant/forward.py; sed -n '400,445p' /Users/prts/Projects/aquant/src/aquant/shadow.py; sed -n '397,437p' /Users/prts/Projects/aquant/.worktrees/ml01/src/aquant/prediction.py; rg -n 'check-|reconcile-run|def run|due' /Users/prts/Projects/aquant/src/aquant/reconciliation.py /Users/prts/Projects/aquant/src/aquant/forward.py | tail -35" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+                    "entry_fee": str(fee),
+                    "entry_time": stamp(instant),
+                    "signal_time": pending,
+                    "entry_quote": dict(q),
+                }
+                book["cash"] = str(D(book["cash"]) - amount - fee)
+            equity = D(book["cash"])
+            for s, pos in book["positions"].items():
+                quote = self.s["quotes"].get(s)
+                if quote is None or (instant - pd.Timestamp(quote["t"])).total_seconds() > 2:
+                    break
+                equity += D(pos["qty"]) * D(str(quote["bid"]))
+            else:
+                book["marks"].append({"time": stamp(instant), "equity": str(equity)})
+                book["peak"] = str(max(D(book["peak"]), equity))
+                if equity <= D(book["peak"]) * D(".9"):
+                    self.s["halted"] = True
+                    self.anomaly("drawdown_review_required", instant)
+
+    def finish(self, instant):
+        self.heartbeat(instant)
+        self.s.update(complete=True, ended_at=stamp(instant), connected=False)
+        for book in self.s["books"].values():
+            for symbol in book["pending"]:
+                book["events"].append(
+                    {
+                        "time": stamp(instant),
+                        "symbol": symbol,
+                        "reason": "no_eligible_quote_before_close",
+                    }
+                )
+            book["pending"].clear()
+        self.persist()
+
+
+def summarize_days(days, p):
+    """No historical/Paper PnL is accepted or added to these metrics."""
+    output = {
+        "kind": "forward_simulated",
+        "hypothetical": True,
+        "feed": "iex",
+        "config_hash": p["config_hash"],
+        "days": [],
+        "costs": {},
+        "orders_authorized": False,
+    }
+    for s in days:
+        if s["kind"] != "forward_simulated" or s["config_hash"] != p["config_hash"]:
+            raise AcceptanceError("Cannot mix historical/Paper results or different strategies")
+        count = int((pd.Timestamp(s["close"]) - pd.Timestamp(s["open"])).total_seconds() / 60)
+        expected = {
+    lines += [
+        "",
+        "无交易指标为N/A。IEX不是NBBO；未通过冻结报价门禁的信号不产生假设成交。",
+        "历史回测、实时前向模拟与Paper订单收益分别保存，绝不相加。缺失/中断见JSON。",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def publish(root=DIRECTORY):
+    p = policy(root)
+    days = records(root)
+    report = summarize_days(days, p)
+    for s in days:
+        if not s["complete"]:
+            continue
+        folder = root / s["day"]
+        if (folder / "report.json").exists() and (folder / "report.md").exists():
+            continue
+        daily = summarize_days([s], p)
+        cumulative = summarize_days([d for d in days if d["day"] <= s["day"]], p)
+        daily["cumulative_costs"] = cumulative["costs"]
+        daily["decisions"] = s["decisions"]
+        daily["hypothetical_books"] = s["books"]
+        if not (folder / "report.json").exists():
+            history.immutable(folder / "report.json", daily)
+        if not (folder / "report.md").exists():
+            (folder / "report.md").write_text(markdown(daily) + "\n累计：\n" + markdown(cumulative))
+    atomic(root / "summary.json", report)
+    (root / "summary.md").write_text(markdown(report))
+    return report
+
+
+def calendar(client, root, instant):
+    path = root / "calendar.json"
+    day = instant.astimezone(NY).date()
+    cached = history.read(path) if path.exists() else None
+    if cached and cached["checked_day"] == str(day):
+        return cached["rows"]
+    start = str(day - timedelta(days=14))
+    if (root / "policy.json").exists():
+        "",
+        "完整事件时间、接收时间、处理时间、源序号、窗口 Hash 和拒绝原因见 shadow.sqlite3。",
+        "同日多个策略和 SPY/QQQ 不是独立日样本。单日观察不构成盈利或晋级证据。",
+        "历史探索另见 study-v1/report.json；Paper 账务由原独立任务处理。",
+        "三类收益不相加。",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def run(manifest_path):
+    manifest = json.loads(manifest_path.read_text())
+    verify(manifest)
+    folder = manifest_path.parent
+    with (folder / "shadow.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        recorder = Recorder(folder / "shadow.sqlite3", manifest)
+        try:
+            deadline = pd.Timestamp(manifest["closing"]) + pd.Timedelta(minutes=3)
+            while pd.Timestamp(now()) < deadline and not (folder / "STOP").exists():
+                instant = now()
+                recorder.tick(instant)
+                try:
+                    with sqlite3.connect(f"file:{SOURCE}?mode=ro", uri=True, timeout=1) as db:
+                        db.execute("PRAGMA query_only=ON")
+                        rows = db.execute(
+                            "SELECT rowid,id,day,received,kind,payload FROM observations "
+                            "WHERE rowid>? ORDER BY rowid LIMIT 2000",
+                            (recorder.s["cursor"],),
+                        ).fetchall()
+                except sqlite3.OperationalError as error:
+                    recorder.s["interruptions"].append(
+                        {"at": instant, "error": type(error).__name__}
+                    )
+                    rows = []
+                recorder.consume(rows, now())
+                time.sleep(2)
+            report = recorder.report(now())
+            report["original_observer"] = original_status(SOURCE, manifest["day"])
+            path = folder / f"report-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%f')}.json"
+            path.write_text(encode(report) + "\n")
+            path.with_suffix(".md").write_text(markdown(report))
+        finally:
+            recorder.close()
+
+
+if __name__ == "__main__":
+def run(path):
+    m = json.loads(path.read_text())
+    for name, expected in m["code_hashes"].items():
+        if digest(ROOT / name) != expected:
+            raise ValueError("Frozen observer code changed")
+    with (path.parent / "prediction.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = Recorder(path.parent / "prediction.sqlite3", m)
+        try:
+            while pd.Timestamp(now()) < pd.Timestamp(m["closing"]) + pd.Timedelta(minutes=4):
+                if (path.parent / "STOP").exists():
+                    break
+                r.tick()
+                try:
+                    with sqlite3.connect(f"file:{m['source']}?mode=ro", uri=True, timeout=1) as db:
+                        db.execute("PRAGMA query_only=ON")
+                        rows = db.execute(
+                            "SELECT rowid,id,day,received,kind,payload FROM observations "
+                            "WHERE rowid>? AND kind IN ('b','u') ORDER BY rowid LIMIT 1000",
+                            (r.s["cursor"],),
+                        ).fetchall()
+                    r.consume(rows)
+                    r.evaluate()
+                except sqlite3.OperationalError as e:
+                    r.s["interruptions"].append({"at": now(), "type": type(e).__name__})
+                    r.persist()
+                report = r.report()
+                temp = path.parent / "status.tmp"
+                temp.write_text(encode(report))
+                temp.replace(path.parent / "status.json")
+                time.sleep(2)
+        finally:
+            (path.parent / f"report-{datetime.now(UTC).strftime('%H%M%S%f')}.json").write_text(
+                encode(r.report())
+            )
+            r.close()
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    p.add_argument("action", choices=["freeze", "run"])
+/Users/prts/Projects/aquant/src/aquant/forward.py:872:            "tick" if label == LABEL else "reconcile-run",
+/Users/prts/Projects/aquant/src/aquant/forward.py:1033:            "reconcile-run",
+/Users/prts/Projects/aquant/src/aquant/forward.py:1094:        elif args.action == "reconcile-run":
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:83:                "due": stamp(
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:302:            f"计划：{report['slot']['due']}；第 {report['slot']['number']} 次检查。",
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:341:def run(client, root=DIRECTORY, actual=None):
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:348:            target = root / f"check-{slot['number']}.json"
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:364:            if actual < datetime.fromisoformat(slot["due"]):
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:387:                delayed=(actual - datetime.fromisoformat(slot["due"])).total_seconds() > 300,
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:405:                "report": str(root / f"check-{slot['number']}.json"),
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:406:                "completed": (root / f"check-{slot['number']}.json").exists(),
+/Users/prts/Projects/aquant/src/aquant/reconciliation.py:407:                "markdown_exists": (root / f"check-{slot['number']}.md").exists(),
+
+codex
+已确认既有停止时间：Forward约16:02归档，Phase6与参考ETF采集约16:03结束，ML-01约16:04结束；延迟SIP核验继续到16:36。Paper复核由原有每300秒任务执行，16:15到期后可能等待下一次触发，不会将这段正常等待误报为漏执行。
+exec
+/bin/zsh -lc ".venv/bin/python -u - <<'PY'
+from pathlib import Path
+from datetime import datetime,timezone,timedelta
+import sqlite3,json,time
+root=Path('/Users/prts/Projects/aquant');base=Path('outputs/ml03');ml=root/'.worktrees/ml01/outputs/ml01/forward-20261020';shadow=root/'outputs/research/phase6-20261020/shadow-v1';paper=root/'outputs/alpaca/paper_pnl_reconciliation';closing=datetime(2026,10,20,20,tzinfo=timezone.utc);deadline=closing+timedelta(minutes=17)
+with (base/'watch-round7.jsonl').open('x') as log:
+ while datetime.now(timezone.utc)<deadline:
+  instant=datetime.now(timezone.utc);row={'at':instant.isoformat(),'orders_authorized':False};errors=[]
+  try:
+   with sqlite3.connect(f'file:{root}/outputs/research/forward_observations/state.sqlite3?mode=ro',uri=True) as c:
+    state=json.loads(c.execute(\"select value from records where name='forward:2026-10-20'\").fetchone()[0]);row['forward']={k:state.get(k) for k in ['heartbeat','complete','connected','compromised','ended_at']};row['latest_bar']=c.execute(\"select rowid,received from observations where kind='b' order by rowid desc limit 1\").fetchone()
+   s=json.loads((ml/'status.json').read_text());row['ml01']={'at':s['at'],'cursor':s['cursor'],'models':{k:{n:v[n] for n in ['predictions','labels','threshold_signals']} for k,v in s['models'].items()},'reports':sorted(p.name for p in ml.glob('report-*.json'))}
+   s=json.loads((ml/'sip/status.json').read_text());row['sip']={k:s.get(k) for k in ['at','status','available_end','canonical_status']}
+   s=json.loads((base/'arrival-20261020/status.json').read_text());row['reference']={'at':s['at'],'finished':s['finished'],'polls':s['polls'],'failures':len(s['failures']),'gaps':len(s['poll_gaps']),'finals':sorted(p.name for p in (base/'arrival-20261020').glob('final-*.json')),'coverage':{k:[v['mature_present'],v['mature_expected']] for k,v in s['assets'].items()}}
+   row['shadow_reports']=sorted(p.name for p in shadow.glob('report-*.json'));row['forward_report']=(root/'outputs/research/forward_observations/2026-10-20/report.json').exists()
+   p=paper/'check-1.json';row['paper_check1']=None
+   if p.exists():
+    check=json.loads(p.read_text());row['paper_check1']={k:check.get(k) for k in ['result','status','checked_at','actual_check_time','fees_final','gross_from_order_fills','account_cash_change_not_attributed']}
+   for name,at,end in [('forward',row['forward']['heartbeat'],closing+timedelta(minutes=2)),('ml01',row['ml01']['at'],closing+timedelta(minutes=4)),('reference',row['reference']['at'],closing+timedelta(minutes=3))]:
+    age=(instant-datetime.fromisoformat(at.replace('Z','+00:00'))).total_seconds()
+    if instant<end and age>120:errors.append(f'{name}_heartbeat_age={age:.0f}s')
+   if instant>closing+timedelta(minutes=3) and not row['forward']['complete']:errors.append('forward_not_complete_after_expected_end')
+   if instant>closing+timedelta(minutes=4) and not row['reference']['finals']:errors.append('reference_final_missing')
+   if instant>closing+timedelta(minutes=5) and not row['ml01']['reports']:errors.append('ml01_report_missing')
+  except Exception as exc:errors.append(type(exc).__name__)
+  row['errors']=errors;log.write(json.dumps(row)+'\\n');log.flush()
+  print(json.dumps({'at':row['at'],'errors':errors,'forward_complete':row.get('forward',{}).get('complete'),'ml01_report':bool(row.get('ml01',{}).get('reports')),'reference_finished':row.get('reference',{}).get('finished'),'h15':row.get('ml01',{}).get('models',{}).get('fold5-M0-h15',{}).get('labels'),'h30':row.get('ml01',{}).get('models',{}).get('fold5-M0-h30',{}).get('labels'),'sip':row.get('sip',{}).get('canonical_status'),'paper':row.get('paper_check1')}),flush=True)
+  time.sleep(min(55,max(0,(deadline-datetime.now(timezone.utc)).total_seconds())))
+ print('BOUNDED_LOCAL_OBSERVATION_COMPLETE',flush=True)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+codex
+15:54 的30分钟 IEX 标签只剩每模型3个待定，采集无新增异常。参考 ETF 测量仍覆盖收盘前分钟；收盘后会检查实际末次接收时间和归档文件，不仅依据计划时间判断完成。
+codex
+15:55 的待定30分钟 IEX 标签降至每模型2个。预测仍为630条、阈值信号仍为0；本轮不会因标签表现而重新训练或改变规则。
+codex
+15:57 时，两种期限的 IEX 标签均已进入终态：每模型15分钟84有效／21失效，30分钟76有效／29失效。延迟 SIP 尚在补足其独立标签，最终报告会同时保留这些有效与失效结果。
+codex
+15:58 的延迟 SIP 标签已增至579条。尚未收盘，原采集继续运行；我会等各进程自行归档，再验证报告内容、锁释放和末次接收时间。
+codex
+市场已于16:00 ET收盘。采集进程按既定规则保留几分钟接收和归档窗口，目前尚未结束属于正常流程；我不会手动中断它们。
+codex
+16:01 的收盘接收窗口仍正常，所有 IEX 预测标签已经终结。SIP 的579条标签保持独立，剩余标签将由原延迟核验任务继续处理。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json,sqlite3
+from datetime import datetime,timezone
+root=Path('/Users/prts/Projects/aquant');p=root/'outputs/research/forward_observations/2026-10-20/report.json'
+print(datetime.now(timezone.utc).isoformat(),'forward report',p.exists())
+if p.exists():
+ d=json.loads(p.read_text());print('keys',list(d));print('days',d['days']);print('costs',d['costs'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+2026-10-20T20:02:46.453341+00:00 forward report True
+keys ['config_hash', 'costs', 'cumulative_costs', 'days', 'decisions', 'feed', 'hypothetical', 'hypothetical_books', 'kind', 'orders_authorized']
+days [{'anomalies': [{'count': 1, 'kind': 'connected', 'time': '2026-10-20T13:20:12.571548Z'}, {'count': 1, 'kind': 'connection_error_TimeoutError', 'time': '2026-10-20T13:21:42.680108Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T13:21:42.683378Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T13:21:46.330215Z'}, {'count': 1, 'kind': 'connection_error_TimeoutError', 'time': '2026-10-20T13:23:16.455667Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T13:23:16.460490Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T13:23:22.285242Z'}, {'count': 1, 'kind': 'connection_error_TimeoutError', 'time': '2026-10-20T13:24:52.363993Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T13:24:52.368727Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T13:25:03.384643Z'}, {'count': 1, 'kind': 'connection_error_TimeoutError', 'time': '2026-10-20T13:26:33.473929Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T13:26:33.475672Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T13:26:51.426990Z'}, {'count': 1, 'kind': 'sleep_or_heartbeat_gap', 'time': '2026-10-20T13:30:18.794794Z'}, {'count': 1, 'kind': 'connection_error_TimeoutError', 'time': '2026-10-20T13:30:18.813099Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T13:30:18.813318Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T13:30:52.671785Z'}, {'count': 9871, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:30:52.707364Z'}, {'count': 7422, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:31:52.715770Z'}, {'count': 12359, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:32:52.943312Z'}, {'count': 7011, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:33:52.953882Z'}, {'count': 3506, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:34:53.251748Z'}, {'count': 5603, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:35:53.259439Z'}, {'count': 5628, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:36:53.351207Z'}, {'count': 5854, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:37:56.773333Z'}, {'count': 5583, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:38:57.214411Z'}, {'count': 8946, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:39:57.217348Z'}, {'count': 6687, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:40:57.221800Z'}, {'count': 4493, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:41:57.230209Z'}, {'count': 7254, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:42:57.623607Z'}, {'count': 8162, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:43:57.651964Z'}, {'count': 4253, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:44:57.665540Z'}, {'count': 1012, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:45:58.091947Z'}, {'count': 115, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:47:07.160150Z'}, {'count': 82, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:48:09.955537Z'}, {'count': 143, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:49:12.954198Z'}, {'count': 195, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:50:15.832506Z'}, {'count': 68, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:51:39.533266Z'}, {'count': 51, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:52:52.870316Z'}, {'count': 187, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:53:55.622340Z'}, {'count': 223, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:54:58.837696Z'}, {'count': 49, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:56:01.539717Z'}, {'count': 102, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:57:04.897461Z'}, {'count': 3071, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:58:27.128748Z'}, {'count': 658, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T13:59:31.265875Z'}, {'count': 378, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:00:34.145562Z'}, {'count': 1021, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:01:37.055406Z'}, {'count': 649, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:02:39.917413Z'}, {'count': 226, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:03:45.970637Z'}, {'count': 2238, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:04:46.363288Z'}, {'count': 66, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:05:46.665634Z'}, {'count': 60, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:07:02.844872Z'}, {'count': 636, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:08:03.213077Z'}, {'count': 546, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:09:04.269905Z'}, {'count': 6594, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:10:11.221155Z'}, {'count': 836, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:12:33.753344Z'}, {'count': 3796, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:14:01.101706Z'}, {'count': 2490, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:15:27.697864Z'}, {'count': 10905, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:17:54.299023Z'}, {'count': 1, 'kind': 'bar_revision_not_applied', 'time': '2026-10-20T14:18:29.947083Z'}, {'count': 12813, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:18:54.367230Z'}, {'count': 2, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T14:18:59.957645Z'}, {'count': 12263, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:19:54.425345Z'}, {'count': 11188, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:20:54.439029Z'}, {'count': 16007, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:21:54.486357Z'}, {'count': 12204, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:22:54.489669Z'}, {'count': 11889, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:23:54.548546Z'}, {'count': 13266, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:24:54.562559Z'}, {'count': 23477, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:25:54.647006Z'}, {'count': 14163, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:26:54.703978Z'}, {'count': 10208, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:27:54.749969Z'}, {'count': 23682, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:28:54.754726Z'}, {'count': 25703, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:29:54.761057Z'}, {'count': 17949, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:30:54.783996Z'}, {'count': 21340, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:31:54.795934Z'}, {'count': 21001, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:32:54.839858Z'}, {'count': 22043, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:33:54.844694Z'}, {'count': 25822, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:34:54.849090Z'}, {'count': 26276, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:35:54.862348Z'}, {'count': 24473, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:36:54.863752Z'}, {'count': 23707, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:37:54.867948Z'}, {'count': 19973, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:38:54.925761Z'}, {'count': 21959, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:39:54.932346Z'}, {'count': 18123, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:40:55.619815Z'}, {'count': 15919, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:41:55.626246Z'}, {'count': 19176, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:42:55.630811Z'}, {'count': 18462, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:43:55.636683Z'}, {'count': 22946, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:44:55.658984Z'}, {'count': 16415, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:45:55.661345Z'}, {'count': 16883, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:46:55.676061Z'}, {'count': 13463, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:47:55.744897Z'}, {'count': 14145, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:48:55.767761Z'}, {'count': 13034, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:49:56.093323Z'}, {'count': 20040, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:50:56.107497Z'}, {'count': 16710, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:51:56.134678Z'}, {'count': 9799, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:52:56.143942Z'}, {'count': 9913, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:53:56.205424Z'}, {'count': 10962, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:54:56.237009Z'}, {'count': 13782, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:55:56.243632Z'}, {'count': 15535, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:56:56.321806Z'}, {'count': 13259, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:57:56.322078Z'}, {'count': 2, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T14:57:59.964562Z'}, {'count': 12233, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:58:56.357204Z'}, {'count': 15230, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T14:59:56.394215Z'}, {'count': 1, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T14:59:59.992483Z'}, {'count': 19037, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:00:56.395291Z'}, {'count': 17325, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:01:56.398295Z'}, {'count': 11338, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:02:56.412858Z'}, {'count': 16970, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:03:56.422384Z'}, {'count': 13449, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:04:56.445691Z'}, {'count': 13212, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:05:56.454596Z'}, {'count': 10944, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:06:56.456206Z'}, {'count': 8354, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:07:56.469173Z'}, {'count': 7424, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:08:56.472286Z'}, {'count': 5467, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:09:56.508098Z'}, {'count': 9216, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:10:56.519510Z'}, {'count': 8943, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:11:56.528972Z'}, {'count': 10274, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:12:56.531746Z'}, {'count': 11215, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:13:56.567516Z'}, {'count': 16804, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:14:56.583733Z'}, {'count': 9495, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:15:56.586469Z'}, {'count': 21946, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:16:56.593540Z'}, {'count': 16094, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:17:56.915772Z'}, {'count': 6540, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:18:56.931187Z'}, {'count': 11838, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:19:57.339964Z'}, {'count': 6560, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:20:57.427029Z'}, {'count': 10165, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:21:57.694683Z'}, {'count': 14187, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:22:57.772440Z'}, {'count': 13567, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:23:57.803839Z'}, {'count': 16202, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:24:57.838182Z'}, {'count': 2, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T15:24:59.969997Z'}, {'count': 11815, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:25:57.903189Z'}, {'count': 11492, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:26:57.906553Z'}, {'count': 11096, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:27:57.960159Z'}, {'count': 2, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T15:27:59.975368Z'}, {'count': 7989, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:28:58.257373Z'}, {'count': 1, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T15:28:59.988535Z'}, {'count': 14262, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:30:03.709800Z'}, {'count': 14601, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:31:03.712287Z'}, {'count': 13534, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:32:03.730126Z'}, {'count': 1467, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:33:03.730412Z'}, {'count': 1, 'kind': 'connection_error_ConnectionClosedError', 'time': '2026-10-20T15:33:51.815224Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T15:33:51.816033Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T15:33:57.226933Z'}, {'count': 2702, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:34:31.335382Z'}, {'count': 1, 'kind': 'connection_error_ConnectionClosedError', 'time': '2026-10-20T15:35:03.709392Z'}, {'count': 2, 'kind': 'disconnect', 'time': '2026-10-20T15:35:03.710251Z'}, {'count': 1, 'kind': 'connection_error_TimeoutError', 'time': '2026-10-20T15:35:15.758485Z'}, {'count': 1, 'kind': 'sleep_or_heartbeat_gap', 'time': '2026-10-20T15:36:58.336054Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T15:36:58.336054Z'}, {'count': 486, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:36:58.372613Z'}, {'count': 1, 'kind': 'connection_error_ConnectionClosedError', 'time': '2026-10-20T15:38:08.819301Z'}, {'count': 3, 'kind': 'disconnect', 'time': '2026-10-20T15:38:08.822517Z'}, {'count': 1, 'kind': 'connection_error_OSError', 'time': '2026-10-20T15:38:10.866465Z'}, {'count': 1, 'kind': 'connection_error_TimeoutError', 'time': '2026-10-20T15:38:24.892769Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T15:38:43.969743Z'}, {'count': 1, 'kind': 'connection_error_ConnectionClosedError', 'time': '2026-10-20T15:39:30.624807Z'}, {'count': 4, 'kind': 'disconnect', 'time': '2026-10-20T15:39:30.627385Z'}, {'count': 3, 'kind': 'connection_error_OSError', 'time': '2026-10-20T15:39:32.658971Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T15:40:12.481127Z'}, {'count': 6953, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:40:12.550526Z'}, {'count': 1, 'kind': 'sleep_or_heartbeat_gap', 'time': '2026-10-20T15:41:33.784656Z'}, {'count': 1689, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:41:33.869895Z'}, {'count': 1, 'kind': 'connection_error_ConnectionClosedError', 'time': '2026-10-20T15:42:06.359460Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T15:42:06.360533Z'}, {'count': 1, 'kind': 'connected', 'time': '2026-10-20T15:42:09.739833Z'}, {'count': 4653, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:42:34.014296Z'}, {'count': 7995, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:43:34.243738Z'}, {'count': 9850, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:44:34.262063Z'}, {'count': 7450, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:45:34.275700Z'}, {'count': 6730, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:46:34.312079Z'}, {'count': 3189, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:47:34.370830Z'}, {'count': 3079, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:48:34.986570Z'}, {'count': 2693, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:49:35.011179Z'}, {'count': 1257, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:50:36.418560Z'}, {'count': 7427, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:51:36.424776Z'}, {'count': 9553, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:52:36.429366Z'}, {'count': 11281, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:53:36.510189Z'}, {'count': 9325, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:54:36.582868Z'}, {'count': 8059, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:55:36.592153Z'}, {'count': 2377, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:56:36.600939Z'}, {'count': 361, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:57:36.674617Z'}, {'count': 5139, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:58:37.305228Z'}, {'count': 8107, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T15:59:37.327108Z'}, {'count': 7924, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:00:37.334085Z'}, {'count': 5680, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:01:37.340549Z'}, {'count': 6870, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:02:37.345338Z'}, {'count': 4340, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:03:37.347753Z'}, {'count': 3898, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:04:37.441361Z'}, {'count': 4600, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:05:37.526259Z'}, {'count': 4767, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:06:37.531472Z'}, {'count': 4330, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:07:37.744467Z'}, {'count': 2105, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:08:37.795762Z'}, {'count': 76, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:09:39.176797Z'}, {'count': 3054, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:10:41.243517Z'}, {'count': 2663, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:11:41.251199Z'}, {'count': 2135, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:12:41.353840Z'}, {'count': 1605, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:13:41.525115Z'}, {'count': 1328, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:14:41.528474Z'}, {'count': 60, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:15:41.555911Z'}, {'count': 643, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:17:25.172600Z'}, {'count': 402, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:18:25.781530Z'}, {'count': 88, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:19:26.037809Z'}, {'count': 31, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:20:26.418842Z'}, {'count': 10, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:21:33.019066Z'}, {'count': 482, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T16:47:04.254466Z'}, {'count': 6414, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:26:32.249433Z'}, {'count': 6798, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:27:32.260189Z'}, {'count': 1, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:27:59.988346Z'}, {'count': 5623, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:28:32.265784Z'}, {'count': 8523, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:29:32.272016Z'}, {'count': 7618, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:30:32.278547Z'}, {'count': 4480, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:31:32.336265Z'}, {'count': 3959, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:32:32.591642Z'}, {'count': 1, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:32:59.985861Z'}, {'count': 6792, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:33:32.610650Z'}, {'count': 5493, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:34:32.626253Z'}, {'count': 4336, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:35:32.895300Z'}, {'count': 4401, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:36:32.903216Z'}, {'count': 5835, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:37:32.927231Z'}, {'count': 1, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:37:59.992072Z'}, {'count': 5038, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:38:32.937422Z'}, {'count': 5575, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:39:33.010909Z'}, {'count': 5896, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:40:33.156021Z'}, {'count': 4972, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:41:33.241811Z'}, {'count': 4866, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:42:33.374730Z'}, {'count': 1, 'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:42:59.982402Z'}, {'count': 5689, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:43:33.984698Z'}, {'count': 5288, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:44:33.985536Z'}, {'count': 4978, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:45:34.046515Z'}, {'count': 5559, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:46:34.270133Z'}, {'count': 5759, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:47:34.326679Z'}, {'count': 4015, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:48:34.348742Z'}, {'count': 4641, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:49:34.441820Z'}, {'count': 5644, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:50:34.459196Z'}, {'count': 4663, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:51:34.461355Z'}, {'count': 4284, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:52:34.467455Z'}, {'count': 8075, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:53:34.621179Z'}, {'count': 7115, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:54:34.663123Z'}, {'count': 7090, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:55:34.759918Z'}, {'count': 8006, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:56:34.905883Z'}, {'count': 4320, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:57:34.923691Z'}, {'count': 209, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:58:35.108143Z'}, {'count': 3605, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T19:59:49.846585Z'}, {'count': 5, 'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T20:01:00.232097Z'}, {'count': 1, 'kind': 'disconnect', 'time': '2026-10-20T20:02:00.671578Z'}], 'complete': True, 'coverage': {'QQQ': 0.9076923076923077, 'SPY': 0.9564102564102565}, 'day': '2026-10-20', 'execution_evidence': False, 'halted': False, 'hypothetical_trades': 0, 'missing': {'QQQ': ['2026-10-20 14:18:00+00:00', '2026-10-20 14:57:00+00:00', '2026-10-20 15:08:00+00:00', '2026-10-20 15:24:00+00:00', '2026-10-20 15:26:00+00:00', '2026-10-20 15:27:00+00:00', '2026-10-20 15:28:00+00:00', '2026-10-20 15:29:00+00:00', '2026-10-20 15:34:00+00:00', '2026-10-20 15:35:00+00:00', '2026-10-20 15:36:00+00:00', '2026-10-20 15:37:00+00:00', '2026-10-20 15:38:00+00:00', '2026-10-20 15:39:00+00:00', '2026-10-20 15:40:00+00:00', '2026-10-20 15:41:00+00:00', '2026-10-20 15:43:00+00:00', '2026-10-20 16:04:00+00:00', '2026-10-20 16:27:00+00:00', '2026-10-20 16:28:00+00:00', '2026-10-20 16:29:00+00:00', '2026-10-20 16:33:00+00:00', '2026-10-20 16:37:00+00:00', '2026-10-20 16:51:00+00:00', '2026-10-20 17:03:00+00:00', '2026-10-20 17:27:00+00:00', '2026-10-20 17:42:00+00:00', '2026-10-20 17:43:00+00:00', '2026-10-20 17:49:00+00:00', '2026-10-20 17:58:00+00:00', '2026-10-20 18:05:00+00:00', '2026-10-20 18:06:00+00:00', '2026-10-20 18:31:00+00:00', '2026-10-20 19:07:00+00:00', '2026-10-20 19:09:00+00:00', '2026-10-20 19:59:00+00:00'], 'SPY': ['2026-10-20 14:18:00+00:00', '2026-10-20 14:57:00+00:00', '2026-10-20 14:59:00+00:00', '2026-10-20 15:24:00+00:00', '2026-10-20 15:27:00+00:00', '2026-10-20 15:28:00+00:00', '2026-10-20 15:34:00+00:00', '2026-10-20 15:35:00+00:00', '2026-10-20 15:36:00+00:00', '2026-10-20 15:37:00+00:00', '2026-10-20 15:38:00+00:00', '2026-10-20 15:39:00+00:00', '2026-10-20 15:40:00+00:00', '2026-10-20 15:41:00+00:00', '2026-10-20 17:32:00+00:00', '2026-10-20 17:37:00+00:00', '2026-10-20 19:59:00+00:00']}, 'net_pnl': None, 'online_seconds': 23080.390191000002, 'quotes_received': 5159434, 'rejected_signals': 0, 'signals': 0, 'unevaluable_minutes': 631, 'unresolved_positions': False, 'valid_observation': False}]
+costs {'base': {'basis': 'continuous hypothetical cash, initial 2000 USD; no Paper cash included', 'max_drawdown': None, 'net_pnl': None, 'profit_factor': None, 'trades': 0, 'unresolved': False, 'win_rate': None}, 'stress': {'basis': 'continuous hypothetical cash, initial 2000 USD; no Paper cash included', 'max_drawdown': None, 'net_pnl': None, 'profit_factor': None, 'trades': 0, 'unresolved': False, 'win_rate': None}, 'zero': {'basis': 'continuous hypothetical cash, initial 2000 USD; no Paper cash included', 'max_drawdown': None, 'net_pnl': None, 'profit_factor': None, 'trades': 0, 'unresolved': False, 'win_rate': None}}
+
+codex
+Forward 已实际完成归档，日报仍标记 `valid_observation=false`，没有将既有缺失和异常清除。报告列出最后一分钟缺失；我会对照原始接收记录核查，这是数据未到达还是资格规则排除，暂不推断原因。
+exec
+/bin/zsh -lc "sed -n '292,385p' /Users/prts/Projects/aquant/src/aquant/forward.py; sed -n '120,210p' scripts/research/arrival.py; .venv/bin/python - <<'PY'
+from pathlib import Path
+import sqlite3,json
+root=Path('/Users/prts/Projects/aquant');p=root/'outputs/research/forward_observations/state.sqlite3'
+with sqlite3.connect(f'file:{p}?mode=ro',uri=True) as c:
+ rows=c.execute(\"select rowid,received,kind,payload from observations where day='2026-10-20' and kind in ('b','u') and json_extract(payload,'"'$.event.t'"') >= '2026-10-20T19:58' order by rowid\").fetchall()
+ for seq,received,kind,payload in rows:
+  d=json.loads(payload);e=d.get('event',{});print('raw',seq,received,kind,{k:e.get(k) for k in ['S','t','o','h','l','c','v']})
+p=Path('outputs/ml03/arrival-20261020/arrival.sqlite3')
+with sqlite3.connect(f'file:{p}?mode=ro',uri=True) as c:print('REST',c.execute(\"select symbol,t,received from first where t>='2026-10-20T19:58' order by t,symbol\").fetchall())
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+            (
+                identity,
+                self.s["day"],
+                stamp(received),
+                safe.get("T", "unknown"),
+                json.dumps(
+                    {
+                        "event": safe,
+                        "feed": "iex",
+                        "source": source,
+                        "received_at": stamp(received),
+                        "regular_session_receipt": self.opening <= received < self.closing,
+                    }
+                ),
+            ),
+        )
+        return bool(cursor.rowcount)
+
+    def consume(self, message, received, source="iex_websocket"):
+        if source != "iex_websocket":
+            raise AcceptanceError("Historical input is not a live observation")
+        if self.s["complete"] or received < pd.Timestamp(self.p["activated_at"]):
+            raise AcceptanceError("Event outside activated forward session")
+        if message.get("S") not in {"SPY", "QQQ"} or message.get("T") not in {"b", "q", "u"}:
+            return
+        if message["T"] == "q":
+            try:
+                self.quote(message, pd.Timestamp(message["t"]), received)
+                self.s["quotes_received"] += 1
+                previous = self.quote_saved.get(message["S"])
+                if previous is None or (received - previous).total_seconds() >= 1:
+                    with self.journal.connection:
+                        self.event(message, received, source)
+                    self.quote_saved[message["S"]] = received
+            except (ValueError, KeyError, TypeError, ArithmeticError):
+                self.anomaly("malformed_quote", received)
+            return
+        # Commit the bar and decision together; quote sampling is not strategy input sampling.
+        with self.journal.connection:
+            if not self.event(message, received, source):
+                return
+            try:
+                t = pd.Timestamp(message["t"])
+                if t.tzinfo is None:
+                    raise ValueError("naive event")
+                if message["T"] == "u":
+                    self.anomaly("bar_revision_not_applied", received)
+                elif message["T"] == "q":
+                    self.quote(message, t, received)
+                else:
+                    self.bar(message, t, received)
+            except (ValueError, KeyError, TypeError, ArithmeticError):
+                self.anomaly("malformed_market_event", received)
+            self.persist()
+
+    def quote(self, m, t, received):
+        symbol = m["S"]
+        numbers = [D(str(m[k])) for k in ("bp", "ap", "bs", "as")]
+        if (
+            t.tzinfo is None
+            or t > received
+            or (received - t).total_seconds() > 2
+            or not all(x.is_finite() and x > 0 for x in numbers)
+            or numbers[0] > numbers[1]
+        ):
+            self.anomaly("stale_or_invalid_quote", received)
+            self.s["quotes"].pop(symbol, None)
+            return
+        q = {
+            "symbol": symbol,
+            "t": str(t),
+            "received_at": stamp(received),
+            "scope": "iex",
+            "bid": m["bp"],
+            "ask": m["ap"],
+            # Legacy stream docs say round lots; the 2025 changelog says CTA/UTP
+            # quotes use shares. Never multiply by 100 with unverified IEX units.
+            "bid_size": str(m["bs"]),
+            "ask_size": str(m["as"]),
+            "raw_bid_size": m["bs"],
+            "raw_ask_size": m["as"],
+            "size_basis": "raw numeric lower bound in shares; IEX unit not independently verified",
+        }
+        q["bid_size"], q["ask_size"] = str(q["bid_size"]), str(q["ask_size"])
+        previous = self.s["quotes"].get(symbol)
+        if previous and t < pd.Timestamp(previous["t"]):
+            self.anomaly("out_of_order_quote", received)
+            return
+        self.s["quotes"][symbol] = q
+        self.advance(symbol, q, received)
+
+    def bar(self, m, t, received):
+        symbol = m["S"]
+        if not self.opening <= t < self.closing:
+def record(db, body, started, received, manifest):
+    """One atomic poll. Revisions retained in polls; first observations never overwritten."""
+    seq = db.execute(
+        "INSERT INTO polls(started,received,payload) VALUES(?,?,?)",
+        (started, received, json.dumps(body)),
+    ).lastrowid
+    begin, closing = map(pd.Timestamp, (manifest["observe_from"], manifest["closing"]))
+    for symbol, bars in (body.get("bars") or {}).items():
+        if symbol not in SYMBOLS:
+            raise ValueError("Unexpected symbol")
+        for bar in bars:
+            if not valid(bar):
+                continue
+            t = pd.Timestamp(bar["t"])
+            if begin <= t < closing and t + pd.Timedelta(minutes=1) <= pd.Timestamp(received):
+                db.execute(
+                    "INSERT OR IGNORE INTO first VALUES(?,?,?,?,?)",
+                    (symbol, t.isoformat(), received, seq, json.dumps(bar)),
+                )
+    db.commit()
+
+
+def report(db, manifest, instant=None):
+    instant = pd.Timestamp(instant or now())
+    begin, close = map(pd.Timestamp, (manifest["observe_from"], manifest["closing"]))
+    expected = pd.date_range(begin, min(close, instant.floor("min")), freq="min", inclusive="left")
+    mature = expected[expected + pd.Timedelta(minutes=1, seconds=90) <= instant]
+    rows = db.execute("SELECT symbol,t,received,payload FROM first").fetchall()
+    assets = {}
+    windows = {}
+    for symbol in SYMBOLS:
+        received = {pd.Timestamp(t): pd.Timestamp(r) for s, t, r, _ in rows if s == symbol}
+        present = set(received) & set(expected)
+        qualified = {
+            t
+            for t in present
+            if 0 <= (received[t] - t - pd.Timedelta(minutes=1)).total_seconds() <= 90
+        }
+        latency = [(received[t] - t - pd.Timedelta(minutes=1)).total_seconds() for t in present]
+        # Eligibility at the ML03 fixed decision boundary: lag1 reference bar ends at t,
+        # target decision is one minute later. Each member must actually have arrived.
+        windows[symbol] = {
+            t
+            for t in mature
+            if all(
+                x in qualified and received[x] <= t + pd.Timedelta(minutes=2)
+                for x in pd.date_range(t - pd.Timedelta(minutes=15), t, freq="min")
+            )
+        }
+        assets[symbol] = {
+            "observed": len(present),
+            "expected_completed": len(expected),
+            "mature_expected": len(mature),
+            "mature_present": len(present & set(mature)),
+            "mature_timely": len(qualified & set(mature)),
+            "mature_coverage": len(present & set(mature)) / len(mature) if len(mature) else None,
+            "timely_coverage": len(qualified & set(mature)) / len(mature) if len(mature) else None,
+            "missing_mature": [t.isoformat() for t in mature if t not in present],
+            "latency_seconds": {
+                "p50": float(np.median(latency)),
+                "p95": float(np.quantile(latency, 0.95)),
+                "max": float(max(latency)),
+            }
+            if latency
+            else None,
+            "qualified_16_bar_windows": len(windows[symbol]),
+        }
+    refs = SYMBOLS[2:]
+    sync = set.intersection(*(windows[s] for s in refs))
+    polls = db.execute("SELECT started,received,payload FROM polls ORDER BY seq").fetchall()
+    failures = [json.loads(p) for _, _, p in polls if "failure" in json.loads(p)]
+    gaps = [
+        {
+            "after": a[1],
+            "before": b[0],
+            "seconds": (pd.Timestamp(b[0]) - pd.Timestamp(a[1])).total_seconds(),
+        }
+        for a, b in zip(polls, polls[1:], strict=False)
+        if pd.Timestamp(b[0]) - pd.Timestamp(a[1]) > pd.Timedelta(seconds=30)
+    ]
+    return {
+        "at": instant.isoformat(),
+        "manifest": manifest,
+        "assets": assets,
+        "polls": len(polls),
+        "failures": failures,
+        "poll_gaps": gaps,
+        "last_poll": polls[-1][1] if polls else None,
+        "all_five_qualified_16_bar_windows": len(sync),
+        "finished": instant >= close + pd.Timedelta(minutes=3),
+        "limitations": "REST first receipt includes polling/network/cache. No WS arrival proof. "
+REST [('IWM', '2026-10-20T19:58:00+00:00', '2026-10-20T19:59:09.734998+00:00'), ('QQQ', '2026-10-20T19:58:00+00:00', '2026-10-20T19:59:09.734998+00:00'), ('SMH', '2026-10-20T19:58:00+00:00', '2026-10-20T19:59:09.734998+00:00'), ('SPY', '2026-10-20T19:58:00+00:00', '2026-10-20T19:59:09.734998+00:00'), ('XLE', '2026-10-20T19:58:00+00:00', '2026-10-20T19:59:09.734998+00:00'), ('XLF', '2026-10-20T19:58:00+00:00', '2026-10-20T19:59:09.734998+00:00'), ('XLK', '2026-10-20T19:58:00+00:00', '2026-10-20T19:59:09.734998+00:00'), ('IWM', '2026-10-20T19:59:00+00:00', '2026-10-20T20:00:02.669884+00:00'), ('QQQ', '2026-10-20T19:59:00+00:00', '2026-10-20T20:00:02.669884+00:00'), ('SMH', '2026-10-20T19:59:00+00:00', '2026-10-20T20:00:02.669884+00:00'), ('SPY', '2026-10-20T19:59:00+00:00', '2026-10-20T20:00:02.669884+00:00'), ('XLE', '2026-10-20T19:59:00+00:00', '2026-10-20T20:00:02.669884+00:00'), ('XLF', '2026-10-20T19:59:00+00:00', '2026-10-20T20:00:02.669884+00:00'), ('XLK', '2026-10-20T19:59:00+00:00', '2026-10-20T20:00:02.669884+00:00')]
+
+exec
+/bin/zsh -lc "sed -n '383,434p' /Users/prts/Projects/aquant/src/aquant/forward.py; .venv/bin/python - <<'PY'
+from pathlib import Path
+import sqlite3,json
+import pandas as pd
+root=Path('/Users/prts/Projects/aquant');db=root/'outputs/research/forward_observations/state.sqlite3'
+with sqlite3.connect(f'file:{db}?mode=ro',uri=True) as c:
+ rows=c.execute(\"select rowid,received,kind,payload from observations where day='2026-10-20' and kind in ('b','u') order by rowid desc limit 20\").fetchall()
+ for seq,received,kind,payload in reversed(rows):
+  x=json.loads(payload);e=x.get('event',{})
+  if pd.Timestamp(e['t'])>=pd.Timestamp('2026-10-20T19:58Z'):print(seq,received,kind,e,x.get('regular_session_receipt'))
+ s=json.loads(c.execute(\"select value from records where name='forward:2026-10-20'\").fetchone()[0]);print('state last bars',{k:v[-2:] for k,v in s['bars'].items()});print('anomalies tail',s['anomalies'][-4:])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 146ms:
+43134 2026-10-20T19:59:00.864178Z b {'T': 'b', 'S': 'QQQ', 'o': 717.145, 'h': 717.17, 'l': 716.9, 'c': 717.07, 'v': 9469, 't': '2026-10-20 19:58:00+00:00', 'n': 159, 'vw': 717.010499} True
+43135 2026-10-20T19:59:00.942817Z b {'T': 'b', 'S': 'SPY', 'o': 768.58, 'h': 768.59, 'l': 768.33, 'c': 768.47, 'v': 11612, 't': '2026-10-20 19:58:00+00:00', 'n': 194, 'vw': 768.504815} True
+state last bars {'SPY': [{'symbol': 'SPY', 't': '2026-10-20 19:57:00+00:00', 'received_at': '2026-10-20T19:58:00.613431Z', 'day': '2026-10-20', 'o': 768.565, 'h': 768.69, 'l': 768.51, 'c': 768.58, 'v': 10560, 'vw': 768.592992, 'n': 162}, {'symbol': 'SPY', 't': '2026-10-20 19:58:00+00:00', 'received_at': '2026-10-20T19:59:00.942817Z', 'day': '2026-10-20', 'o': 768.58, 'h': 768.59, 'l': 768.33, 'c': 768.47, 'v': 11612, 'vw': 768.504815, 'n': 194}], 'QQQ': [{'symbol': 'QQQ', 't': '2026-10-20 19:57:00+00:00', 'received_at': '2026-10-20T19:58:00.539785Z', 'day': '2026-10-20', 'o': 717.135, 'h': 717.22, 'l': 717.0, 'c': 717.145, 'v': 6253, 'vw': 717.125968, 'n': 100}, {'symbol': 'QQQ', 't': '2026-10-20 19:58:00+00:00', 'received_at': '2026-10-20T19:59:00.864178Z', 'day': '2026-10-20', 'o': 717.145, 'h': 717.17, 'l': 716.9, 'c': 717.07, 'v': 9469, 'vw': 717.010499, 'n': 159}]}
+anomalies tail [{'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T17:58:35.108143Z', 'count': 209}, {'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T19:59:49.846585Z', 'count': 3605}, {'kind': 'stale_or_invalid_quote', 'time': '2026-10-20T20:01:00.232097Z', 'count': 5}, {'kind': 'disconnect', 'time': '2026-10-20T20:02:00.671578Z', 'count': 1}]
+
+exec
+/bin/zsh -lc "rg -n 'class Stream|def receive|bars|_run|closing' /Users/prts/Projects/aquant/src/aquant/readonly.py; sed -n '100,230p' /Users/prts/Projects/aquant/src/aquant/readonly.py; .venv/bin/python - <<'PY'
+from pathlib import Path
+import json
+for folder,pattern in [(Path('outputs/ml03/arrival-20261020'),'final-*.json'),(Path('/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1'),'report-*.json'),(Path('/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020'),'report-*.json')]:
+ for p in folder.glob(pattern):
+  d=json.loads(p.read_text());print(str(p),list(d));print({k:d[k] for k in ['at','finished','last_poll','complete_session_elapsed'] if k in d})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+89:class Stream(StockDataStream):
+129:                    "bars": ["SPY", "QQQ"],
+136:    async def receive(self):
+                "ping_interval": 10,
+                "ping_timeout": 20,
+                "max_queue": 256,
+                "open_timeout": 10,
+            },
+        )
+
+    async def _connect(self):
+        if self._endpoint != STREAM:
+            raise AcceptanceError("Only the IEX market-data socket is authorized")
+        await super()._connect()
+        if (
+            self._ws.host != "stream.data.alpaca.markets"
+            or self._ws.path != "/v2/iex"
+            or not self._ws.secure
+            or self._ws.port != 443
+        ):
+            await self.close()
+            raise AcceptanceError("Redirected socket rejected before authentication")
+
+    async def connect(self):
+        try:
+            await asyncio.wait_for(self._start_ws(), timeout=25)
+        except ValueError:
+            raise PermissionError("IEX stream authentication/protocol rejected") from None
+        await self._ws.send(
+            msgpack.packb(
+                {
+                    "action": "subscribe",
+                    "bars": ["SPY", "QQQ"],
+                    "updatedBars": ["SPY", "QQQ"],
+                    "quotes": ["SPY", "QQQ"],
+                }
+            )
+        )
+
+    async def receive(self):
+        raw = await self._ws.recv()
+        received = now()  # actual arrival time, before processing or disk writes
+        return msgpack.unpackb(raw, timestamp=3), received
+outputs/ml03/arrival-20261020/final-200303.json ['all_five_qualified_16_bar_windows', 'assets', 'at', 'failures', 'finished', 'last_poll', 'limitations', 'manifest', 'poll_gaps', 'polls']
+{'at': '2026-10-20T20:03:03.882964+00:00', 'finished': True, 'last_poll': '2026-10-20T20:02:53.746967+00:00'}
+/Users/prts/Projects/aquant/outputs/research/phase6-20261020/shadow-v1/report-20261020T200300942747.json ['as_of', 'complete_session_elapsed', 'coverage', 'hypothetical_pnl', 'kind', 'manifest', 'orders_authorized', 'original_observer', 'pnl_kind', 'state', 'strategies', 'warning']
+{'complete_session_elapsed': True}
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from datetime import datetime,timezone
+import sqlite3,json,hashlib
+import pandas as pd
+root=Path('/Users/prts/Projects/aquant');target=pd.Timestamp('2026-10-20T19:59Z');source=root/'outputs/research/forward_observations/state.sqlite3'
+with sqlite3.connect(f'file:{source}?mode=ro',uri=True) as c:
+ bars=[{'seq':seq,'received':received,'kind':kind,'body':json.loads(body)} for seq,received,kind,body in c.execute(\"select rowid,received,kind,payload from observations where day='2026-10-20' and kind in ('b','u') order by rowid\")]
+ exact=[r for r in bars if pd.Timestamp(r['body']['event']['t'])==target]
+ latest_quote=c.execute(\"select rowid,received,payload from observations where day='2026-10-20' and kind='q' order by rowid desc limit 1\").fetchone()
+ state=json.loads(c.execute(\"select value from records where name='forward:2026-10-20'\").fetchone()[0])
+with sqlite3.connect('file:outputs/ml03/arrival-20261020/arrival.sqlite3?mode=ro',uri=True) as c:
+ rest=[{'symbol':s,'t':t,'received':r,'poll_seq':seq,'bar':json.loads(p)} for s,t,r,seq,p in c.execute(\"select symbol,t,received,seq,payload from first where symbol in ('SPY','QQQ')\") if pd.Timestamp(t)==target]
+result={'at':datetime.now(timezone.utc).isoformat(),'kind':'POSTHOC_STREAM_REST_COMPARISON','target':target.isoformat(),'websocket_records_at_target':exact,'websocket_last_bars':bars[-2:],'websocket_last_quote':{'sequence':latest_quote[0],'received':latest_quote[1],'event_time':json.loads(latest_quote[2])['event']['t']},'rest_first':rest,'forward_ended_at':state.get('ended_at'),'forward_complete':state['complete'],'cause':'UNRESOLVED: REST saw valid closing bars; original persisted websocket stream has no b/u for this minute. Cannot isolate upstream publication, transport, or consumption from these observations. No backfill or retrospective decision.','orders_authorized':False,'pnl':None}
+with Path('outputs/ml03/closing-gap-round7.json').open('x') as f:json.dump(result,f,indent=2);f.write('\\n')
+print({k:v for k,v in result.items() if k not in ['websocket_last_bars','rest_first']});print('REST',[(r['symbol'],r['received']) for r in rest])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 183ms:
+{'at': '2026-10-20T20:03:56.498456+00:00', 'kind': 'POSTHOC_STREAM_REST_COMPARISON', 'target': '2026-10-20T19:59:00+00:00', 'websocket_records_at_target': [], 'websocket_last_quote': {'sequence': 43255, 'received': '2026-10-20T20:01:36.599721Z', 'event_time': '2026-10-20 20:01:36.509878+00:00'}, 'forward_ended_at': '2026-10-20T20:02:00.999739Z', 'forward_complete': True, 'cause': 'UNRESOLVED: REST saw valid closing bars; original persisted websocket stream has no b/u for this minute. Cannot isolate upstream publication, transport, or consumption from these observations. No backfill or retrospective decision.', 'orders_authorized': False, 'pnl': None}
+REST [('QQQ', '2026-10-20T20:00:02.669884+00:00'), ('SPY', '2026-10-20T20:00:02.669884+00:00')]
+
+codex
+已确认收盘边界存在来源差异：REST在16:00:02收到了SPY、QQQ的15:59分钟线，但原WebSocket持久化记录中没有这两根线；原流仍接收报价至16:01:36。原因暂记为未解决，不能直接归因于网络或上游，也不会回填冻结记录。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json,fcntl
+root=Path('/Users/prts/Projects/aquant');ml=root/'.worktrees/ml01/outputs/ml01/forward-20261020';shadow=root/'outputs/research/phase6-20261020/shadow-v1';arrival=Path('outputs/ml03/arrival-20261020')
+for name,folder,lockfile in [('forward',root/'outputs/research/forward_observations','state.lock'),('shadow',shadow,'shadow.lock'),('ml01',ml,'prediction.lock'),('arrival',arrival,'arrival.lock')]:
+ with (folder/lockfile).open('r') as lock:
+  try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB);held=False;fcntl.flock(lock,fcntl.LOCK_UN)
+  except BlockingIOError:held=True
+ print(name,'lock_held',held)
+for p in shadow.glob('report-*.json'):
+ d=json.loads(p.read_text());print('shadow',p.name,'coverage',d['coverage']);print('strategies',d['strategies']);print('state keys',list(d['state']))
+for p in ml.glob('report-*.json'):
+ d=json.loads(p.read_text());print('ml01',p.name,d['at'],{k:(v['predictions'],v['labels']) for k,v in d['models'].items()})
+for p in arrival.glob('final-*.json'):
+ d=json.loads(p.read_text());print('arrival',p.name,d['last_poll'],d['polls'],{k:(v['mature_present'],v['mature_expected'],v['qualified_16_bar_windows']) for k,v in d['assets'].items()})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+forward lock_held False
+shadow lock_held False
+ml01 lock_held False
+arrival lock_held False
+shadow report-20261020T200300942747.json coverage {'QQQ': {'coverage': 0.9076923076923077, 'expected_minutes': 390, 'fresh_minutes': 354}, 'SPY': {'coverage': 0.9564102564102565, 'expected_minutes': 390, 'fresh_minutes': 373}}
+strategies {'compression': {'eligible_signals': 5, 'execution_rejection': 'no_eligible_nbbo', 'hypothetical_pnl': None, 'independent_days_observed': 0, 'input_rejections': {'bar_unfinished_or_stale': 14, 'cooldown': 4, 'time_valid': 52, 'window_valid': 468}, 'raw_signals': 21, 'status': 'EXPLORATORY'}, 'momentum': {'eligible_signals': 2, 'execution_rejection': 'no_eligible_nbbo', 'hypothetical_pnl': None, 'independent_days_observed': 0, 'input_rejections': {'bar_unfinished_or_stale': 14, 'cooldown': 24, 'time_valid': 52, 'window_valid': 468}, 'raw_signals': 52, 'status': 'EXPLORATORY'}, 'reversion': {'eligible_signals': 3, 'execution_rejection': 'no_eligible_nbbo', 'hypothetical_pnl': None, 'independent_days_observed': 0, 'input_rejections': {'bar_unfinished_or_stale': 14, 'cooldown': 2, 'time_valid': 52, 'window_valid': 468}, 'raw_signals': 10, 'status': 'EXPLORATORY'}}
+state keys ['accepted_bars', 'bars', 'buffers', 'cooldown', 'cursor', 'interruptions', 'last', 'last_tick', 'manifest_hash', 'online_seconds', 'quotes', 'started_at']
+ml01 report-200400800990.json 2026-10-20T20:04:00.804141+00:00 {'fold5-M0-h15': (105, {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}), 'fold5-M0-h30': (105, {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}), 'fold5-M1-h15': (105, {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}), 'fold5-M1-h30': (105, {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}), 'fold5-M2-h15': (105, {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}), 'fold5-M2-h30': (105, {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76})}
+arrival final-200303.json 2026-10-20T20:02:53.746967+00:00 559 {'IWM': (97, 97, 82), 'QQQ': (94, 97, 55), 'SMH': (96, 97, 66), 'SPY': (97, 97, 82), 'XLE': (95, 97, 65), 'XLF': (94, 97, 39), 'XLK': (82, 97, 1)}
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json,sqlite3
+import pandas as pd
+root=Path('/Users/prts/Projects/aquant')
+with sqlite3.connect(f'file:{root}/outputs/research/forward_observations/state.sqlite3?mode=ro',uri=True) as c:
+ raw=[json.loads(x[0]) for x in c.execute(\"select payload from observations where day='2026-10-20' and kind='b'\")]
+ for symbol in ['SPY','QQQ']:
+  rows=[r for r in raw if r['event']['S']==symbol and pd.Timestamp('2026-10-20T13:30Z')<=pd.Timestamp(r['event']['t'])<pd.Timestamp('2026-10-20T20:00Z')]
+  print(symbol,'raw unique',len({pd.Timestamp(r['event']['t']) for r in rows}),'late',sum((pd.Timestamp(r['received_at'])-pd.Timestamp(r['event']['t'])-pd.Timedelta(minutes=1)).total_seconds()>90 for r in rows))
+p=root/'outputs/research/forward_observations/2026-10-20/report.json';d=json.loads(p.read_text());s=d['days'][0]
+print({k:v for k,v in s.items() if k not in ['anomalies','missing']})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 130ms:
+SPY raw unique 381 late 0
+QQQ raw unique 360 late 0
+{'complete': True, 'coverage': {'QQQ': 0.9076923076923077, 'SPY': 0.9564102564102565}, 'day': '2026-10-20', 'execution_evidence': False, 'halted': False, 'hypothetical_trades': 0, 'net_pnl': None, 'online_seconds': 23080.390191000002, 'quotes_received': 5159434, 'rejected_signals': 0, 'signals': 0, 'unevaluable_minutes': 631, 'unresolved_positions': False, 'valid_observation': False}
+
+codex
+Forward、Phase6、ML-01和参考ETF采集均已生成归档文件并释放各自锁。参考测量覆盖97个预登记分钟，559次请求无失败；原策略与Phase6仍因数据或NBBO条件不满足而没有合格收益。我正在核对“原始收到”与“有效采用”的覆盖差异，避免混用两个口径。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import sqlite3,json
+import pandas as pd
+p=Path('/Users/prts/Projects/aquant/outputs/research/forward_observations/state.sqlite3')
+with sqlite3.connect(f'file:{p}?mode=ro',uri=True) as c:
+ s=json.loads(c.execute(\"select value from records where name='forward:2026-10-20'\").fetchone()[0]);accepted={(symbol,pd.Timestamp(b['t'])) for symbol,bars in s['bars'].items() for b in bars}
+ raw=[(seq,received,json.loads(payload)) for seq,received,payload in c.execute(\"select rowid,received,payload from observations where day='2026-10-20' and kind='b'\")]
+ for seq,received,r in raw:
+  b=r['event'];t=pd.Timestamp(b['t'])
+  if pd.Timestamp('2026-10-20T13:30Z')<=t<pd.Timestamp('2026-10-20T20:00Z') and (b['S'],t) not in accepted:print(seq,received,b)
+ print('bar anomalies',[x for x in s['anomalies'] if 'bar' in x['kind'] or 'malformed_market' in x['kind']])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 145ms:
+5502 2026-10-20T14:18:59.957645Z {'T': 'b', 'S': 'SPY', 'o': 769.6, 'h': 769.735, 'l': 769.5, 'c': 769.735, 'v': 4887, 't': '2026-10-20 14:18:00+00:00', 'n': 62, 'vw': 769.567078}
+5503 2026-10-20T14:18:59.967712Z {'T': 'b', 'S': 'QQQ', 'o': 719.7, 'h': 719.71, 'l': 719.38, 'c': 719.535, 'v': 2428, 't': '2026-10-20 14:18:00+00:00', 'n': 26, 'vw': 719.580004}
+10035 2026-10-20T14:57:59.964562Z {'T': 'b', 'S': 'SPY', 'o': 772.11, 'h': 772.21, 'l': 772.07, 'c': 772.12, 'v': 8393, 't': '2026-10-20 14:57:00+00:00', 'n': 77, 'vw': 772.169096}
+10036 2026-10-20T14:57:59.970874Z {'T': 'b', 'S': 'QQQ', 'o': 722.59, 'h': 722.59, 'l': 722.3, 'c': 722.45, 'v': 428, 't': '2026-10-20 14:57:00+00:00', 'n': 12, 'vw': 722.440328}
+10265 2026-10-20T14:59:59.992483Z {'T': 'b', 'S': 'SPY', 'o': 772.05, 'h': 772.07, 'l': 771.73, 'c': 771.77, 'v': 2807, 't': '2026-10-20 14:59:00+00:00', 'n': 33, 'vw': 771.87678}
+13135 2026-10-20T15:24:59.969997Z {'T': 'b', 'S': 'SPY', 'o': 769.19, 'h': 769.41, 'l': 769.11, 'c': 769.41, 'v': 1453, 't': '2026-10-20 15:24:00+00:00', 'n': 26, 'vw': 769.231067}
+13136 2026-10-20T15:24:59.992052Z {'T': 'b', 'S': 'QQQ', 'o': 718.86, 'h': 719.265, 'l': 718.86, 'c': 719.24, 'v': 1041, 't': '2026-10-20 15:24:00+00:00', 'n': 23, 'vw': 719.002326}
+13482 2026-10-20T15:27:59.975368Z {'T': 'b', 'S': 'QQQ', 'o': 719.29, 'h': 719.29, 'l': 719.29, 'c': 719.29, 'v': 108, 't': '2026-10-20 15:27:00+00:00', 'n': 3, 'vw': 719.29}
+13483 2026-10-20T15:27:59.989173Z {'T': 'b', 'S': 'SPY', 'o': 769.385, 'h': 769.4, 'l': 769.19, 'c': 769.19, 'v': 3012, 't': '2026-10-20 15:27:00+00:00', 'n': 47, 'vw': 769.249521}
+13596 2026-10-20T15:28:59.988535Z {'T': 'b', 'S': 'SPY', 'o': 769.11, 'h': 769.18, 'l': 769.11, 'c': 769.13, 'v': 916, 't': '2026-10-20 15:28:00+00:00', 'n': 20, 'vw': 769.151454}
+26322 2026-10-20T17:27:59.988346Z {'T': 'b', 'S': 'QQQ', 'o': 719.39, 'h': 719.43, 'l': 719.39, 'c': 719.42, 'v': 279, 't': '2026-10-20 17:27:00+00:00', 'n': 8, 'vw': 719.420377}
+26878 2026-10-20T17:32:59.985861Z {'T': 'b', 'S': 'SPY', 'o': 769.725, 'h': 769.725, 'l': 769.695, 'c': 769.72, 'v': 257, 't': '2026-10-20 17:32:00+00:00', 'n': 17, 'vw': 769.713889}
+27423 2026-10-20T17:37:59.992072Z {'T': 'b', 'S': 'SPY', 'o': 769.54, 'h': 769.58, 'l': 769.54, 'c': 769.58, 'v': 133, 't': '2026-10-20 17:37:00+00:00', 'n': 5, 'vw': 769.554803}
+27969 2026-10-20T17:42:59.982402Z {'T': 'b', 'S': 'QQQ', 'o': 719.42, 'h': 719.42, 'l': 719.405, 'c': 719.405, 'v': 340, 't': '2026-10-20 17:42:00+00:00', 'n': 4, 'vw': 719.417059}
+bar anomalies [{'kind': 'bar_revision_not_applied', 'time': '2026-10-20T14:18:29.947083Z', 'count': 1}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T14:18:59.957645Z', 'count': 2}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T14:57:59.964562Z', 'count': 2}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T14:59:59.992483Z', 'count': 1}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T15:24:59.969997Z', 'count': 2}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T15:27:59.975368Z', 'count': 2}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T15:28:59.988535Z', 'count': 1}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:27:59.988346Z', 'count': 1}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:32:59.985861Z', 'count': 1}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:37:59.992072Z', 'count': 1}, {'kind': 'stale_invalid_or_revised_bar', 'time': '2026-10-20T17:42:59.982402Z', 'count': 1}]
+
+codex
+覆盖差异已定位：14根原始分钟线的本地接收时间比名义分钟结束早约8–42毫秒，按冻结的“已完成”门禁被拒绝。原因可能涉及时钟偏差或发布时序，目前无法确认；本轮保留拒绝结果，不倒改时间，也不放宽门禁。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import sqlite3,json
+from datetime import datetime,timezone
+from collections import Counter
+import pandas as pd
+root=Path('/Users/prts/Projects/aquant');p=root/'outputs/research/forward_observations/state.sqlite3'
+with sqlite3.connect(f'file:{p}?mode=ro',uri=True) as c:
+ state=json.loads(c.execute(\"select value from records where name='forward:2026-10-20'\").fetchone()[0]);accepted={(symbol,pd.Timestamp(b['t'])) for symbol,bars in state['bars'].items() for b in bars}
+ rows=[(seq,received,json.loads(payload)) for seq,received,payload in c.execute(\"select rowid,received,payload from observations where day='2026-10-20' and kind='b'\")]
+ rejected=[];coverage={}
+ for symbol in ['SPY','QQQ']:
+  actual=[(seq,received,payload) for seq,received,payload in rows if payload['event']['S']==symbol and pd.Timestamp('2026-10-20T13:30Z')<=pd.Timestamp(payload['event']['t'])<pd.Timestamp('2026-10-20T20:00Z')]
+  for seq,received,payload in actual:
+   b=payload['event'];t=pd.Timestamp(b['t']);delta=(pd.Timestamp(received)-t-pd.Timedelta(minutes=1)).total_seconds()*1000
+   if (symbol,t) not in accepted:rejected.append({'source_sequence':seq,'symbol':symbol,'event_t':t.isoformat(),'received_at':received,'milliseconds_after_nominal_end':delta,'reason_supported_by_evidence':'receipt_before_nominal_completion' if delta<0 else 'other_or_unknown','raw_event':b})
+  coverage[symbol]={'expected':390,'raw_unique':len({pd.Timestamp(v['event']['t']) for _,_,v in actual}),'accepted':len(state['bars'][symbol])}
+result={'at':datetime.now(timezone.utc).isoformat(),'kind':'POSTHOC_RECEIPT_TIMING_AUDIT','coverage':coverage,'rejected':rejected,'counts':dict(Counter(r['symbol'] for r in rejected)),'all_rejected_before_end':all(r['milliseconds_after_nominal_end']<0 for r in rejected),'minimum_ms':min(r['milliseconds_after_nominal_end'] for r in rejected),'maximum_ms':max(r['milliseconds_after_nominal_end'] for r in rejected),'cause':'UNRESOLVED: recorded local receipt precedes nominal minute completion. Does not identify host clock error versus publisher timing. Frozen gates and receipts preserved.','orders_authorized':False,'pnl':None}
+with Path('outputs/ml03/timing-audit-round7.json').open('x') as f:json.dump(result,f,indent=2);f.write('\\n')
+print({k:v for k,v in result.items() if k not in ['rejected','cause']})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 167ms:
+{'at': '2026-10-20T20:06:04.284028+00:00', 'kind': 'POSTHOC_RECEIPT_TIMING_AUDIT', 'coverage': {'SPY': {'expected': 390, 'raw_unique': 381, 'accepted': 373}, 'QQQ': {'expected': 390, 'raw_unique': 360, 'accepted': 354}}, 'counts': {'SPY': 8, 'QQQ': 6}, 'all_rejected_before_end': True, 'minimum_ms': -42.35500000000003, 'maximum_ms': -7.516999999999996, 'orders_authorized': False, 'pnl': None}
+
+exec
+/bin/zsh -lc "sed -n '200,305p' /Users/prts/Projects/aquant/src/aquant/reconciliation.py; sed -n '340,400p' /Users/prts/Projects/aquant/src/aquant/reconciliation.py; .venv/bin/python - <<'PY'
+import subprocess,os
+p=subprocess.run(['launchctl','print',f'gui/{os.getuid()}/com.aquant.paper-pnl'],capture_output=True,text=True)
+print('launchctl exit',p.returncode)
+for line in p.stdout.splitlines():
+ s=line.strip()
+ if any(s.startswith(k) for k in ['state =','runs =','last exit code =','run interval =','pid =']):print(s)
+if p.returncode:print('read-only service query unavailable')
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+        if fills
+        else None
+    )
+    fee_rows = [
+        a
+        for a in related
+        if a.get("activity_type") == "FEE"
+        and a.get("net_amount") is not None
+        and a.get("currency", "USD") == "USD"
+        and a.get("symbol", "SPY") == "SPY"
+    ]
+    attributed = -sum((amount(a["net_amount"]) for a in fee_rows), D(0)) if fee_rows else None
+    unclassified = [a for a in related if a not in fills and a not in fee_rows]
+    delta = amount(account["cash"]) - amount(original["account_before"]["cash"])
+    equity_delta = amount(account["equity"]) - amount(original["account_before"]["equity"])
+    return {
+        "result": "UNRESOLVED",
+        "fees_final": False,
+        "attributable_final_net_pnl": None,
+        "initial_account": original["account_before"],
+        "latest_account": {k: account.get(k) for k in ("id", "cash", "equity", "status")},
+        "gross_from_order_fills": str(gross),
+        "account_equity_change_not_attributed": str(equity_delta),
+        "account_cash_change_not_attributed": str(delta),
+        "cash_change_minus_order_gross": str(delta - gross),
+        "explicitly_linked_fee_amount": str(attributed) if attributed is not None else None,
+        "activity_fill_gross": str(fill_gross) if fill_gross is not None else None,
+        "activity_fills_match_orders": all(row["matches"] for row in per_order),
+        "activity_aggregate_matches_orders": fill_quantities == quantity and fill_gross == gross,
+        "per_order_activity_checks": per_order,
+        "original_fill_changes": [
+            {"order_id": o["id"], "field": k, "original": previous[o["id"]].get(k), "latest": o[k]}
+            for o in orders
+            for k in ("filled_qty", "filled_avg_price")
+            if amount(o[k]) != amount(previous[o["id"]].get(k))
+        ],
+        "orders": orders,
+        "related_activities": related,
+        "unattributed_activities": unrelated,
+        "linked_unclassified_activities": unclassified,
+        "positions": positions,
+        "open_orders": open_orders,
+        "open_orders_may_be_truncated": len(open_orders) >= 500,
+        "flat_observed": not positions and not open_orders,
+        "snapshot_atomic": False,
+        "possible_explanations_not_proven": [
+            "Paper accounting precision/rounding",
+            "delayed posting",
+            "unreported fees or unrelated cash flows",
+        ],
+        "reasons": [
+            "Account cash changes cannot be attributed wholesale to this round trip",
+            "Activity API does not establish final per-order fee/settlement completeness",
+            "Per-order activity amounts use exact Decimal comparison; differences may reflect "
+            "average-price precision and are not silently rounded away",
+            "CFEE is a crypto fee, not attributed to this equity trade; unclassified linked "
+            "activities require review",
+            "Account, orders and positions are sequential reads, not an atomic snapshot",
+            "Nonzero fill PnL and unchanged cash remain distinct observations; "
+            "never adjust account records",
+        ],
+        "manual_review": (
+            "Compare these order IDs and activity IDs with Paper dashboard account history; "
+            "ask Alpaca support about Paper precision and posting. "
+            "Do not reset account or submit replacement orders."
+        ),
+    }
+
+
+def check(client, plan, slot, actual):
+    source = Path(plan["source"])
+    if hashlib.sha256(source.read_bytes()).hexdigest() != plan["source_hash"]:
+        raise AcceptanceError("Original Smoke report changed")
+    original = history.read(source)
+    account = client.get("/account")
+    if account["id"] != plan["account_id"]:
+        raise AcceptanceError("Paper account identity changed")
+    originals = [original["buy"]["view"], *[s["view"] for s in original["sells"]]]
+    orders = [client.get("/orders/" + o["id"]) for o in originals]
+    for before, after in zip(originals, orders, strict=True):
+        if any(
+            str(before[k]) != str(after.get(k)) for k in ("id", "client_order_id", "side", "symbol")
+        ):
+            raise AcceptanceError("Original order identity changed")
+    ledger = activities(client, original["started_at"], stamp(actual))
+    result = calculate(
+        original,
+        account,
+        orders,
+        ledger,
+        client.get("/positions"),
+        client.get("/orders", {"status": "open", "limit": 500}),
+    )
+    return {**result, "slot": slot, "actual_check_time": stamp(actual)}
+
+
+def markdown(report):
+    return "\n".join(
+        [
+            "# Paper 收益复核（独立于历史回测及前向模拟）",
+            "",
+            f"状态：{report['result']}；实际检查：{report['actual_check_time']}",
+            f"计划：{report['slot']['due']}；第 {report['slot']['number']} 次检查。",
+            "",
+            f"订单毛收益：{report.get('gross_from_order_fills', 'N/A')} USD",
+            "账户总现金变化（不归因）："
+
+def run(client, root=DIRECTORY, actual=None):
+    actual = actual or readonly.now()
+    plan = history.read(root / "plan.json")
+    from datetime import datetime
+
+    with Journal(root / "state.sqlite3") as journal:
+        for slot in plan["checks"]:
+            target = root / f"check-{slot['number']}.json"
+            if target.exists():
+                report = history.read(target)
+                if not isinstance(report, dict) or not (
+                    report.get("kind") == "paper_pnl_reconciliation"
+                    and report.get("source_hash") == plan["source_hash"]
+                    and report.get("slot") == slot
+                    and report.get("read_only") is True
+                    and report.get("orders_authorized") is False
+                    and report.get("result") == "UNRESOLVED"
+                    and report.get("fees_final") is False
+                    and report.get("attributable_final_net_pnl") is None
+                ):
+                    raise AcceptanceError("Saved reconciliation report identity is unverified")
+                render(target.with_suffix(".md"), report)
+                continue
+            if actual < datetime.fromisoformat(slot["due"]):
+                continue
+            key = f"check:{slot['number']}"
+            try:
+                if journal.get(key):
+                    raise AcceptanceError(
+                        "Prior review was interrupted; no unbounded automatic retries"
+                    )
+                journal.put(key, {"started_at": stamp(actual)}, create=True)
+                report = check(client, plan, slot, actual)
+            except Exception as error:
+                report = {
+                    "result": "UNRESOLVED",
+                    "fees_final": False,
+                    "error_type": type(error).__name__,
+                    "slot": slot,
+                    "actual_check_time": stamp(actual),
+                }
+            report.update(
+                kind="paper_pnl_reconciliation",
+                source_hash=plan["source_hash"],
+                read_only=True,
+                orders_authorized=False,
+                delayed=(actual - datetime.fromisoformat(slot["due"])).total_seconds() > 300,
+                further_automatic_checks=slot["number"] == 1,
+            )
+            history.immutable(target, report)
+            render(target.with_suffix(".md"), report)
+    return status(root)
+
+
+def status(root=DIRECTORY):
+    if not (root / "plan.json").exists():
+        return {"configured": False}
+    plan = history.read(root / "plan.json")
+    return {
+        "configured": True,
+launchctl exit 0
+state = not running
+runs = 276
+last exit code = 0
+state = active
+state = active
+run interval = 300 seconds
+
+codex
+原 Paper 复核任务仍已加载，最近退出码为0、触发间隔300秒，10月22日计划也未改变。首次检查尚未到期；我继续等待既有任务实际生成报告，不另行触发检查或消耗检查次数。
+codex
+16:07 时，四个采集或预测归档均已完成，等待中的仅是独立 SIP 核验、账务复核和最终汇总。新增发现会保留为明确限制：最后一分钟的来源差异，以及14根略早于名义结束时间到达的分钟线。
+codex
+16:09 的 SIP 终态标签已增至612条，尚未到期的部分继续等待。原始归档、预测数量和模型版本保持一致；没有出现需要重启服务的迹象。
+codex
+正在核对参考数据报告的最后一个边界：连续16根参考线是否齐全，与是否仍处于可决策时段需要分开。即使收盘后才凑齐窗口，也不能将它计作可用于当日入场的机会。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from datetime import datetime,timezone
+import sqlite3,json
+import pandas as pd
+folder=Path('outputs/ml03/arrival-20261020');manifest=json.loads((folder/'manifest.json').read_text());close=pd.Timestamp(manifest['closing']);begin=pd.Timestamp(manifest['observe_from']);windows={}
+with sqlite3.connect(f'file:{folder}/arrival.sqlite3?mode=ro',uri=True) as c:rows=c.execute('select symbol,t,received from first').fetchall()
+for symbol in manifest['symbols'][2:]:
+ receipts={pd.Timestamp(t):pd.Timestamp(r) for s,t,r in rows if s==symbol};valid={t for t,r in receipts.items() if 0<=(r-t-pd.Timedelta(minutes=1)).total_seconds()<=90}
+ windows[symbol]={t for t in pd.date_range(begin,close,freq='min',inclusive='left') if all(x in valid and receipts[x]<=t+pd.Timedelta(minutes=2) for x in pd.date_range(t-pd.Timedelta(minutes=15),t,freq='min'))}
+common=set.intersection(*windows.values());result={'at':datetime.now(timezone.utc).isoformat(),'kind':'POSTHOC_REFERENCE_WINDOW_AUDIT','all_five_windows':[{'reference_bar_t':t.isoformat(),'implied_base_bar_t':(t+pd.Timedelta(minutes=1)).isoformat(),'earliest_base_completion':(t+pd.Timedelta(minutes=2)).isoformat(),'base_bar_in_regular_session':t+pd.Timedelta(minutes=1)<close,'completion_before_close':t+pd.Timedelta(minutes=2)<close} for t in sorted(common)],'count_all_five':len(common),'count_before_close':sum(t+pd.Timedelta(minutes=2)<close for t in common),'counts_by_reference':{s:len(v) for s,v in windows.items()},'note':'16-reference-bar windows are not full ML03 qualification. Original protocol permits reference subsets and also requires core32 plus base eligibility. No new decisions or changes to registered report.','orders_authorized':False,'pnl':None}
+with Path('outputs/ml03/window-audit-round7.json').open('x') as f:json.dump(result,f,indent=2);f.write('\\n')
+print(result)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 192ms:
+{'at': '2026-10-20T20:11:44.059118+00:00', 'kind': 'POSTHOC_REFERENCE_WINDOW_AUDIT', 'all_five_windows': [{'reference_bar_t': '2026-10-20T19:59:00+00:00', 'implied_base_bar_t': '2026-10-20T20:00:00+00:00', 'earliest_base_completion': '2026-10-20T20:01:00+00:00', 'base_bar_in_regular_session': False, 'completion_before_close': False}], 'count_all_five': 1, 'count_before_close': 0, 'counts_by_reference': {'IWM': 82, 'XLK': 1, 'XLF': 39, 'XLE': 65, 'SMH': 66}, 'note': '16-reference-bar windows are not full ML03 qualification. Original protocol permits reference subsets and also requires core32 plus base eligibility. No new decisions or changes to registered report.', 'orders_authorized': False, 'pnl': None}
+
+codex
+已确认：五只参考ETF唯一同时凑齐的16根窗口结束于15:59；按固定滞后一根的定义，对应的基础分钟已在16:00，不能用于当日正常时段决策。原协议允许参考资产子集，因此这只是完整五资产同步的限制，不等同于所有跨资产输入都不可用。
+codex
+16:12后的 SIP 标签已达627条，只剩最后一个目标对应的三个模型标签待下一次核验。16:15账务复核尚未触发；我会区分“未到触发时刻”“查询失败”和“已查询但无法最终对账”。
+apply patch
+patch: completed
+/Users/prts/Projects/aquant/.worktrees/ml03/docs/overnight/PENDING.md
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+codex
+收盘归档的两个覆盖口径已分清：SPY/QQQ原始收到381/360根，有效采用373/354根，分母均为390分钟。差额14根对应上述过早接收记录；今天的原始数据与拒绝记录都保留，后续再调查原因。
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc '.venv/bin/python -m scripts.research.market --archive outputs/ml03/arrival-gap-pages --credential-root /Users/prts/Projects/aquant --arrival-folder outputs/ml03/arrival-20261020 --audit-output outputs/ml03/arrival-gap-final-round7.json' in /Users/prts/Projects/aquant/.worktrees/ml03
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from datetime import datetime,timezone
+import json
+p=Path('/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-1.json');print(datetime.now(timezone.utc).isoformat(),'exists',p.exists())
+if p.exists():
+ d=json.loads(p.read_text());print({k:d.get(k) for k in ['result','actual_check_time','delayed','error_type','fees_final','gross_from_order_fills','account_cash_change_not_attributed','account_equity_change_not_attributed','activity_fill_gross','flat_observed']})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+2026-10-20T20:16:56.137884+00:00 exists False
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+ succeeded in 1801ms:
+ succeeded in 1398257ms:
+{"at": "2026-10-20T19:54:36.670139+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "PENDING": 3, "VALID": 73}, "sip": {"VALID": 540}, "paper": null}
+{"at": "2026-10-20T19:55:31.692868+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "PENDING": 2, "VALID": 74}, "sip": {"VALID": 540}, "paper": null}
+{"at": "2026-10-20T19:56:26.710118+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "PENDING": 1, "VALID": 75}, "sip": {"VALID": 540}, "paper": null}
+{"at": "2026-10-20T19:57:21.730071+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 540}, "paper": null}
+{"at": "2026-10-20T19:58:16.748050+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 579}, "paper": null}
+{"at": "2026-10-20T19:59:11.772757+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 579}, "paper": null}
+{"at": "2026-10-20T20:00:06.789699+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 579}, "paper": null}
+{"at": "2026-10-20T20:01:01.811282+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 579}, "paper": null}
+{"at": "2026-10-20T20:01:56.826780+00:00", "errors": [], "forward_complete": false, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 579}, "paper": null}
+{"at": "2026-10-20T20:02:51.839817+00:00", "errors": [], "forward_complete": true, "ml01_report": false, "reference_finished": false, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 597}, "paper": null}
+{"at": "2026-10-20T20:03:46.858233+00:00", "errors": [], "forward_complete": true, "ml01_report": false, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 597}, "paper": null}
+{"at": "2026-10-20T20:04:41.868721+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 597}, "paper": null}
+{"at": "2026-10-20T20:05:36.888459+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 597}, "paper": null}
+{"at": "2026-10-20T20:06:31.902710+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 597}, "paper": null}
+{"at": "2026-10-20T20:07:26.935790+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 597}, "paper": null}
+{"at": "2026-10-20T20:08:21.959656+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 612}, "paper": null}
+{"at": "2026-10-20T20:09:16.982365+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 612}, "paper": null}
+{"at": "2026-10-20T20:10:12.003956+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 612}, "paper": null}
+{"at": "2026-10-20T20:11:07.015895+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 612}, "paper": null}
+{"at": "2026-10-20T20:12:02.031761+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 612}, "paper": null}
+{"at": "2026-10-20T20:12:57.048607+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 627}, "paper": null}
+{"at": "2026-10-20T20:13:52.070591+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 627}, "paper": null}
+{"at": "2026-10-20T20:14:47.093326+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 627}, "paper": null}
+{"at": "2026-10-20T20:15:42.118450+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 627}, "paper": null}
+{"at": "2026-10-20T20:16:37.143039+00:00", "errors": [], "forward_complete": true, "ml01_report": true, "reference_finished": true, "h15": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "h30": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "sip": {"VALID": 627}, "paper": null}
+BOUNDED_LOCAL_OBSERVATION_COMPLETE
+
+codex
+16:15已到，但首次账务报告尚未生成；这仍处于原任务300秒触发间隔内，不能视为失败。我会核对任务是否已开始，以及是否实际生成报告，保持第二次检查计划不动。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import sqlite3,subprocess,os
+p=Path('/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/state.sqlite3')
+with sqlite3.connect(f'file:{p}?mode=ro',uri=True) as c:
+ print('records',c.execute('select name,value from records').fetchall())
+r=subprocess.run(['launchctl','print',f'gui/{os.getuid()}/com.aquant.paper-pnl'],capture_output=True,text=True)
+print('launchctl',r.returncode)
+for line in r.stdout.splitlines():
+ s=line.strip()
+ if s.startswith(('state =','runs =','last exit code =','pid =','run interval =')):print(s)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+records []
+launchctl 0
+state = not running
+runs = 278
+last exit code = 0
+state = active
+state = active
+run interval = 300 seconds
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc "sed -n '1088,1110p' /Users/prts/Projects/aquant/src/aquant/forward.py; .venv/bin/python - <<'PY'
+from pathlib import Path
+from datetime import datetime,timezone
+import json
+p=Path('outputs/ml03/arrival-gap-final-round7.json');d=json.loads(p.read_text());print('gaps',d['at'],d['gap_categories'],'deferred',len(d['deferred_until_16min_after_minute_end']))
+r=Path('/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation');print('stops',{str(p):p.exists() for p in [r/'STOP',Path('/Users/prts/Projects/aquant/outputs/research/forward_observations/STOP')]})
+print('now',datetime.now(timezone.utc).isoformat())
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+                launch("bootout", f"gui/{os.getuid()}/{label}", required=False)
+            result = {"stopped": True, "orders_authorized": False}
+        elif args.action == "status":
+            result = status()
+        elif args.action == "tick":
+            result = tick()
+        elif args.action == "reconcile-run":
+            if (reconciliation.DIRECTORY / "STOP").exists():
+                result = {"stopped": True}
+            else:
+                client = readonly.Client()
+                try:
+                    result = reconciliation.run(client)
+                finally:
+                    client.close()
+        elif args.action == "reconcile-status":
+            result = reconciliation.status()
+        elif args.action == "logs":
+            print("\n".join((DIRECTORY / "monitor.log").read_text().splitlines()[-100:]))
+            return 0
+        else:
+            report = summarize_days(records()[-max(1, args.days) :], policy())
+            print(markdown(report))
+gaps 2026-10-20T20:16:55.245267+00:00 {'only_ineligible_trades': 24} deferred 0
+stops {'/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/STOP': False, '/Users/prts/Projects/aquant/outputs/research/forward_observations/STOP': False}
+now 2026-10-20T20:17:21.706512+00:00
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+codex
+参考测量的最终缺柱核验已完成：24处缺柱均只包含不适用于分钟价格的成交，未决缺柱为0。账务任务已确认没有停止标记、仍按原周期运行；当前尚未开始首个检查槽位，仍在允许的触发等待窗口内。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json
+from datetime import datetime,timezone
+root=Path('/Users/prts/Projects/aquant');p=root/'outputs/alpaca/paper_pnl_reconciliation/check-1.json';print(datetime.now(timezone.utc).isoformat(),'paper_exists',p.exists())
+if p.exists():
+ d=json.loads(p.read_text());print({k:d.get(k) for k in ['result','actual_check_time','delayed','error_type','fees_final','gross_from_order_fills','account_cash_change_not_attributed','activity_fill_gross','flat_observed']})
+s=json.loads((root/'.worktrees/ml01/outputs/ml01/forward-20261020/sip/status.json').read_text());print('SIP',s['at'],s.get('canonical_status'))
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+2026-10-20T20:18:01.519986+00:00 paper_exists False
+SIP 2026-10-20T20:17:48.754186+00:00 {'VALID': 630}
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import plistlib
+p=Path('/Users/prts/Library/LaunchAgents/com.aquant.paper-pnl.plist');d=plistlib.loads(p.read_bytes());print('working_directory',d.get('WorkingDirectory'));e=d.get('EnvironmentVariables',{});print('PYTHONPATH',e.get('PYTHONPATH'),'other_environment_keys',[k for k in e if k"'!='"'PYTHONPATH'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+working_directory /Users/prts/Projects/aquant
+PYTHONPATH None other_environment_keys []
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc "tail -18 /Users/prts/Projects/aquant/src/aquant/forward.py; rg --files --hidden --no-ignore /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages -g '*aquant*' -g '*.pth' | head -25; head -42 /Users/prts/Projects/aquant/src/aquant/reconciliation.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+        return 0
+    except Exception as error:
+        log.error("%s failed: %s", args.action, type(error).__name__)
+        print(
+            json.dumps(
+                {
+                    "status": "FAILED",
+                    "error_type": type(error).__name__,
+                    "orders_authorized": False,
+                    "detail": str(error) if isinstance(error, AcceptanceError) else None,
+                }
+            )
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+/Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/_virtualenv.pth
+/Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/distutils-precedence.pth
+/Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/__editable__.aquant-0.1.0.pth
+"""Two bounded, read-only Paper cash reviews, independent of forward simulation."""
+
+import hashlib
+import os
+import sqlite3
+from datetime import timedelta
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from uuid import uuid4
+
+from aquant import history, readonly
+from aquant.alpaca import NY, ROOT, AcceptanceError, stamp
+from aquant.journal import Journal
+
+DIRECTORY = ROOT / "outputs/alpaca/paper_pnl_reconciliation"
+SOURCE = ROOT / "outputs/alpaca/reports/a3fdd43928a84b5dad188f77d0d823c2-cd788923.json"
+D = Decimal
+
+
+def amount(value, *, positive=False):
+    """Reject malformed accounting inputs without echoing the API payload."""
+    try:
+        if isinstance(value, (bool, float)):
+            raise ValueError
+        result = D(str(value))
+        if not result.is_finite() or (positive and result <= 0):
+            raise ValueError
+        return result
+    except (InvalidOperation, ValueError):
+        raise AcceptanceError("Invalid accounting amount") from None
+
+
+def unique(rows):
+    if not isinstance(rows, list) or any(
+        not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]
+        for row in rows
+    ):
+        raise AcceptanceError("Unidentifiable accounting rows")
+    if len({row["id"] for row in rows}) != len(rows):
+        raise AcceptanceError("Duplicate accounting rows")
+
+
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc "cat /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/__editable__.aquant-0.1.0.pth; PYTHONDONTWRITEBYTECODE=1 .venv/bin/python - <<'PY'
+import aquant.forward,aquant.reconciliation
+from aquant import readonly
+print('forward',aquant.forward.__file__)
+print('reconciliation',aquant.reconciliation.DIRECTORY)
+print('now',readonly.now().isoformat())
+PY" in /Users/prts/Projects/aquant
+ succeeded in 267ms:
+forward /Users/prts/Projects/aquant/src/aquant/forward.py
+reconciliation /Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation
+now 2026-10-20T20:18:41.897626+00:00
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json,importlib.util,hashlib
+from datetime import datetime,timezone
+import numpy as np
+root=Path('/Users/prts/Projects/aquant/.worktrees/ml01');folder=root/'outputs/ml01/forward-20261020';source=root/'scripts/research/verify_predictions.py';spec=importlib.util.spec_from_file_location('sip_auditor',source);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+predictions=module.read_predictions(folder);manifest=json.loads((folder/'manifest.json').read_text());finals={x['prediction_id']:x for x in (json.loads(p.read_text()) for p in (folder/'sip/final').glob('*.json'))};proofs={};failures=[];snapshots=[]
+for path in sorted((folder/'sip').glob('audit-*.json')):
+ s=json.loads(path.read_text());outcomes=s.get('outcomes',{});keys=[key for key,value in finals.items() if key in outcomes and key not in proofs and value['checked_at']==outcomes[key]['checked_at']]
+ if not keys:continue
+ bars={}
+ for page in s['pages']:
+  for symbol,rows in page['response'].get('bars',{}).items():bars.setdefault(symbol,[]).extend(rows)
+ replay=module.evaluate([p for p in predictions if p[0] in keys],bars,s['available_end'],s['at'],manifest['closing'])
+ for key in keys:
+  original=finals[key];actual=replay[key];equal=all(original[k]==actual[k] for k in actual if k"'!='"'actual_bps') and ((original['actual_bps'] is None and actual['actual_bps'] is None) or (original['actual_bps'] is not None and actual['actual_bps'] is not None and np.isclose(original['actual_bps'],actual['actual_bps'],rtol=0,atol=1e-10)))
+  proofs[key]={'snapshot':path.name,'match':bool(equal),'status':actual['status']}
+  if not equal:failures.append(key)
+ snapshots.append({'name':path.name,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'checked':len(keys)})
+result={'at':datetime.now(timezone.utc).isoformat(),'kind':'POSTHOC_SIP_LABEL_PROOF','canonical_labels':len(finals),'recomputed':len(proofs),'failures':failures,'unmatched':sorted(set(finals)-set(proofs)),'source_code_hash':hashlib.sha256(source.read_bytes()).hexdigest(),'snapshots':snapshots,'proofs':proofs,'pnl':None,'orders_authorized':False,'note':'Original received response pages matching first canonical checked_at only; not later revisions. No inference or closing claim.'}
+with Path('outputs/ml03/sip-proof-final-round7.json').open('x') as f:json.dump(result,f,indent=2);f.write('\\n')
+print({k:v for k,v in result.items() if k not in ['snapshots','proofs','note']})
+p=Path('/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-1.json');print('paper',p.exists())
+if p.exists():
+ d=json.loads(p.read_text());print({k:d.get(k) for k in ['result','actual_check_time','error_type','fees_final','gross_from_order_fills','account_cash_change_not_attributed','flat_observed']})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 427ms:
+{'at': '2026-10-20T20:19:13.558824+00:00', 'kind': 'POSTHOC_SIP_LABEL_PROOF', 'canonical_labels': 630, 'recomputed': 630, 'failures': [], 'unmatched': [], 'source_code_hash': 'ed876fe6c1304e08973a1a8125d733d0fd2bd4f0e6aa0bb460570a8519267fd1', 'pnl': None, 'orders_authorized': False}
+paper False
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+context compacted
+exec
+/bin/zsh -lc pwd in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+/Users/prts/Projects/aquant
+
+exec
+/bin/zsh -lc 'git status --short --branch' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+## research/ml03-cross-asset-20261020
+ M docs/overnight/PENDING.md
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,pathlib,datetime
+r=pathlib.Path('/Users/prts/Projects/aquant/.worktrees/ml03')
+print('now',datetime.datetime.now(datetime.timezone.utc).isoformat())
+p=r/'outputs/ml03/sip-proof-final-round7.json'
+print('proof_exists',p.exists())
+if p.exists():
+ d=json.loads(p.read_text());print({k:v for k,v in d.items() if k not in ['proofs','snapshots']})
+p=pathlib.Path('/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-1.json')
+print('paper_exists',p.exists())
+if p.exists():
+ d=json.loads(p.read_text());print(d)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+now 2026-10-20T20:21:31.458569+00:00
+proof_exists True
+{'at': '2026-10-20T20:19:13.558824+00:00', 'kind': 'POSTHOC_SIP_LABEL_PROOF', 'canonical_labels': 630, 'recomputed': 630, 'failures': [], 'unmatched': [], 'source_code_hash': 'ed876fe6c1304e08973a1a8125d733d0fd2bd4f0e6aa0bb460570a8519267fd1', 'pnl': None, 'orders_authorized': False, 'note': 'Original received response pages matching first canonical checked_at only; not later revisions. No inference or closing claim.'}
+paper_exists True
+{'account_cash_change_not_attributed': '-0.02', 'account_equity_change_not_attributed': '-0.02', 'activity_aggregate_matches_orders': True, 'activity_fill_gross': '0.000468637596', 'activity_fills_match_orders': True, 'actual_check_time': '2026-10-20T20:19:41.855004Z', 'attributable_final_net_pnl': None, 'cash_change_minus_order_gross': '-0.020468637596', 'delayed': False, 'explicitly_linked_fee_amount': None, 'fees_final': False, 'flat_observed': True, 'further_automatic_checks': True, 'gross_from_order_fills': '0.000468637596', 'initial_account': {'cash': '2000', 'equity': '2000', 'non_marginable_buying_power': '2000', 'status': 'ACTIVE'}, 'kind': 'paper_pnl_reconciliation', 'latest_account': {'cash': '1999.98', 'equity': '1999.98', 'id': 'bc8abd1e-3421-4abe-a9af-781cd5549ec2', 'status': 'ACTIVE'}, 'linked_unclassified_activities': [], 'manual_review': 'Compare these order IDs and activity IDs with Paper dashboard account history; ask Alpaca support about Paper precision and posting. Do not reset account or submit replacement orders.', 'open_orders': [], 'open_orders_may_be_truncated': False, 'orders': [{'asset_class': 'us_equity', 'asset_id': 'b28f4066-5c6d-479b-a2af-85dc1a8f16fb', 'canceled_at': None, 'client_order_id': 'aq-bde113be022a47778160577620b3ed18', 'created_at': '2026-10-19T17:33:26.084435Z', 'expired_at': None, 'expires_at': '2026-10-19T20:00:00Z', 'extended_hours': False, 'failed_at': None, 'filled_at': '2026-10-19T17:33:26.08793Z', 'filled_avg_price': '767.416', 'filled_qty': '0.013017711', 'hwm': None, 'id': 'b5892734-bae6-4394-87b2-0afc0a09edd6', 'legs': None, 'limit_price': None, 'notional': '10', 'order_class': 'simple', 'order_type': 'market', 'position_intent': 'buy_to_open', 'qty': None, 'replaced_at': None, 'replaced_by': None, 'replaces': None, 'side': 'buy', 'source': 'access_key', 'status': 'filled', 'stop_price': None, 'submitted_at': '2026-10-19T17:33:26.084435Z', 'subtag': None, 'symbol': 'SPY', 'time_in_force': 'day', 'trail_percent': None, 'trail_price': None, 'type': 'market', 'updated_at': '2026-10-19T17:33:26.088728Z'}, {'asset_class': 'us_equity', 'asset_id': 'b28f4066-5c6d-479b-a2af-85dc1a8f16fb', 'canceled_at': None, 'client_order_id': 'aq-86f6251e14474517b17789511fee36ff', 'created_at': '2026-10-19T17:33:31.461791Z', 'expired_at': None, 'expires_at': '2026-10-19T20:00:00Z', 'extended_hours': False, 'failed_at': None, 'filled_at': '2026-10-19T17:33:31.465531Z', 'filled_avg_price': '767.452', 'filled_qty': '0.013017711', 'hwm': None, 'id': '691a4a89-02fc-4575-b052-3af50141c8d5', 'legs': None, 'limit_price': None, 'notional': None, 'order_class': 'simple', 'order_type': 'market', 'position_intent': 'sell_to_close', 'qty': '0.013017711', 'replaced_at': None, 'replaced_by': None, 'replaces': None, 'side': 'sell', 'source': 'access_key', 'status': 'filled', 'stop_price': None, 'submitted_at': '2026-10-19T17:33:31.461791Z', 'subtag': None, 'symbol': 'SPY', 'time_in_force': 'day', 'trail_percent': None, 'trail_price': None, 'type': 'market', 'updated_at': '2026-10-19T17:33:31.466305Z'}], 'orders_authorized': False, 'original_fill_changes': [], 'per_order_activity_checks': [{'activity_amount': '9.989999704776', 'activity_ids': ['20261019133326087::31bd28a9-6f58-4686-b8a6-e49d5b1623d2'], 'activity_qty': '0.013017711', 'amount_difference': '0E-12', 'identity_matches': True, 'matches': True, 'order_amount': '9.989999704776', 'order_id': 'b5892734-bae6-4394-87b2-0afc0a09edd6', 'order_qty': '0.013017711'}, {'activity_amount': '9.990468342372', 'activity_ids': ['20261019133331465::eff23067-84c8-4623-9850-ed7d9746ee0e'], 'activity_qty': '0.013017711', 'amount_difference': '0E-12', 'identity_matches': True, 'matches': True, 'order_amount': '9.990468342372', 'order_id': '691a4a89-02fc-4575-b052-3af50141c8d5', 'order_qty': '0.013017711'}], 'positions': [], 'possible_explanations_not_proven': ['Paper accounting precision/rounding', 'delayed posting', 'unreported fees or unrelated cash flows'], 'read_only': True, 'reasons': ['Account cash changes cannot be attributed wholesale to this round trip', 'Activity API does not establish final per-order fee/settlement completeness', 'Per-order activity amounts use exact Decimal comparison; differences may reflect average-price precision and are not silently rounded away', 'CFEE is a crypto fee, not attributed to this equity trade; unclassified linked activities require review', 'Account, orders and positions are sequential reads, not an atomic snapshot', 'Nonzero fill PnL and unchanged cash remain distinct observations; never adjust account records'], 'related_activities': [{'activity_type': 'FILL', 'cum_qty': '0.013017711', 'id': '20261019133326087::31bd28a9-6f58-4686-b8a6-e49d5b1623d2', 'leaves_qty': '0', 'order_id': 'b5892734-bae6-4394-87b2-0afc0a09edd6', 'order_status': 'filled', 'price': '767.416', 'qty': '0.013017711', 'side': 'buy', 'symbol': 'SPY', 'transaction_time': '2026-10-19T17:33:26.08793Z', 'type': 'fill'}, {'activity_type': 'FILL', 'cum_qty': '0.013017711', 'id': '20261019133331465::eff23067-84c8-4623-9850-ed7d9746ee0e', 'leaves_qty': '0', 'order_id': '691a4a89-02fc-4575-b052-3af50141c8d5', 'order_status': 'filled', 'price': '767.452', 'qty': '0.013017711', 'side': 'sell', 'symbol': 'SPY', 'transaction_time': '2026-10-19T17:33:31.465531Z', 'type': 'fill'}], 'result': 'UNRESOLVED', 'slot': {'day': '2026-10-20', 'due': '2026-10-20T20:15:00Z', 'number': 1}, 'snapshot_atomic': False, 'source_hash': 'dc026a4a8cde6ddfa83a28c6d2f4219df22a39596a0fbe52bd5eb123b14f49f9', 'unattributed_activities': [{'activity_sub_type': 'CAT', 'activity_type': 'FEE', 'created_at': '2026-10-20T00:07:07.816962Z', 'currency': 'USD', 'date': '2026-10-19', 'description': 'CAT fee for proceed of 2 trades on 2026-10-19 by PA3RVH6BF', 'id': '20261019000000000::8aa5a143-dc5c-4749-88cf-ab913d37fc9f', 'net_amount': '-0.01', 'status': 'executed'}, {'activity_sub_type': 'REG', 'activity_type': 'FEE', 'created_at': '2026-10-20T00:17:21.079907Z', 'currency': 'USD', 'date': '2026-10-19', 'description': 'REG fee for proceed of $9.99 on 2026-10-19 by PA3RVH6BF', 'id': '20261019000000000::c25c451a-9c85-4d56-bd9e-de9c01481f1d', 'net_amount': '-0.01', 'status': 'executed'}, {'activity_type': 'JNLC', 'created_at': '2026-10-19T07:59:40.248655Z', 'currency': 'USD', 'date': '2026-10-19', 'description': '', 'id': '20261019000000000::e573a213-d685-47e4-8aa2-6efa2257aed3', 'net_amount': '2000', 'status': 'executed'}]}
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+codex
+首次账务复核已于 16:19 ET 自动执行：Cash/Equity 为 $1,999.98，流水有两笔各 $0.01 的费用，但无法逐单确认归属及最终费用，结果仍为 UNRESOLVED。630 条延迟 SIP 标签也已逐条复算一致；它们是事后核验，不能证明可执行收益。
+exec
+/bin/zsh -lc 'tail -70 docs/overnight/STATE-2026-10-21.md' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+- `outputs/ml03/input-audit-183836.json`：14:38真实截面324预测/54个SPY输入窗口、0阈值信号、0输入核验异常，2.41秒；原6模型+5代码Hash仍匹配。
+- IEX15分钟每模型20有效、17失效、17待定，RMSE M0/Ridge/LightGBM9.045/8.396/9.054bp，方向N/A/55%/35%；IEX30分钟25失效、29待定，无有效。SIP各期限25有效，和IEX共同15分钟目标仅8个，不能跨不同子集推断优势。
+- 14:41原Forward心跳18:41:41Z，connected=true、compromised=true；Phase6 cursor34474，ML01 cursor34395。旧Shadow1032条中断记录（多数盘前OperationalError）和ML01原13:42单次OperationalError均保留，未重启冻结服务。
+- 本轮自建等待汇总PID41806通过STOP退出、锁释放确认后，启动**PID42585**载入新增核验；process-round1.json保留旧记录，process.json含f7da3b4。只动自己的等待汇总程序，原arrival PID41060和冻结服务均持续运行。16:40 ET执行时间未变。
+- 收盘报告生成时间门禁未绕过；14:38输入核验明确INTRADAY_DIAGNOSTIC_SNAPSHOT，不调用build伪造收盘时刻。原Paper检查仍10-20/22 20:15Z，未消费/修改任何槽位。
+- 8项新反例测试覆盖Hash、特征、IDs、版本、接收记录、SIP替代、未来接收和源码不符；13项closing测试通过。全量**755 passed、1 skipped、1 warning，98.33秒**，Ruff/235文件格式检查通过。日志outputs/ml03/pytest-overnight-2.txt。
+- 持久证据`docs/overnight/EVIDENCE-2026-10-21-round2.json`；human/arrival-2026-10-20.md追加本轮，不覆盖旧截面；human/README同步链接；PENDING保持方向决策待人类。
+- 下一步仍是保持测量到16:03、核验16:15账务、16:36延迟标签完成后16:40收盘报告和备忘真实产物；读报告并commit后才ALL DONE。本轮未开ML04、未下单、未付费、未微信、未改launchd/.env。
+
+## 第3轮：纽约14:44–14:54，区分合法缺柱与运行故障
+
+- 开工重读总控评估及human自18:35:15Z增量，仅本线程报告，无人类未提交改动。ML03固定实验不再运行，拒绝晋级保持；原三个工作树clean。
+- 阅读Alpaca当前官方Market Data FAQ条件表发现旧history.eligibility误把L/5/6及纳斯达克Y等分钟价格条件判为不可用。仅ML03研究分支修正，未知Tape/条件保留unknown，组合取严格规则。原生产工作树和已加载冻结服务未改，不触发重启。
+- commit **9a17ff1**：修正分类并在已有scripts/research/market.py增加一次性延迟缺柱审计；复用history分页/只读Transport/不可覆盖缓存，不新增模块、核心类型或后台服务。**ffc94e6**：完善A/D/E的Tape限定。
+- 审计仅选登记以来缺失且分钟结束已超过16分钟的分钟，其他列deferred；数据kind=POSTHOC_DATA_AUDIT、used_for_live_decisions=false。不改任何first记录、bar、特征或预测。
+- 两次新增只读IEX逐笔请求（原始页outputs/ml03/arrival-gap-pages），实际证据：XLK14:23/27/29分别7/2/6笔，QQQ14:31共10笔，全含I odd-lot，符合不产生分钟OHLC的规则。不是无成交，不归为本机丢包。更新的缺口尚待延迟窗口后复查。
+- `outputs/ml03/arrival-gap-audit-round3.json`、round3b.json保留实际早期查询；`arrival-gap-audit-round3-final.json`用最终分类器离线重核4个分钟。无新网络、无历史替代实时输入。
+- 原ML03 26个SIP缺柱全部从原缓存重核：仍only_ineligible_trades26，逐条与旧报告一致；`outputs/ml03/sip-gap-reaudit-round3-final.json`保留旧报告hash/新代码hash，原结果未覆盖。未重训模型或修改协议。
+- 14:52:25截面168轮询、0失败、0>30秒间断：IWM27/27、XLK22/27、XLF26/27、XLE27/27、SMH26/27；16根资格窗口12/0/1/12/8，全五0。不能把窗口可用率等同分钟覆盖率，原协议允许参考子集，核心32线门禁仍保留。
+- 14:50最新原始bar row35415与ML01 cursor35415一致；396预测/66个SPY窗口、0阈值信号，IEX每模型15分钟32VALID、30分钟9VALID。心跳正常；没用报价等其他rowid推断bar消费落后。
+- 新增11测试：分钟条件与Tape未知、严格组合、延迟边界、登记区间、来源、不可覆盖输出和不改原始状态。全量**766 passed、1 skipped、1 warning，98.88秒**；Ruff/235格式检查通过。完整日志outputs/ml03/pytest-overnight-3-final.txt（中间763版本日志亦保留）。
+- 证据入库`docs/overnight/EVIDENCE-2026-10-21-round3.json`，新简报`human/gaps-2026-10-20.md`、human入口同步。官方规则链接保存在报告与机器证据中。
+- arrival PID41060及closing PID42585锁仍持有、运行日志无错误；arrival源码hash未变；本轮没有重启任何进程。20/22日16:15账务复核及16:40收盘汇总未改。
+- 下一轮可在15:06之后运行market的同一一次性审计，用新的audit-output文件核实后续缺柱，不要覆盖已有页/记录。收盘后仍须检查实际最终报告，并在一页decision补充“迁移不能修复合法空缺”的证据。完成实际报告和提交后才ALL DONE。
+
+## 第4轮：纽约14:54–15:17，核对跨资产输入的实际可得时刻
+
+- 开工重读总控评估及human自18:44:16Z增量；原主工作树/ML01/ML02保持clean。本轮未重训、搜参数、修改旧模型，ML03仍REJECTED。
+- 代码commit **5d7c5ea**：复用scripts/research/market.py增加本地receipt审计；直接调用冻结data.market.inputs，以原ML01基础bar实际接收时刻截断独立REST首次接收记录，先于推理完成，严格滞后/连续/新鲜度检查。未新增模块或同义核心类型，未改冻结market源码Hash。
+- 新工具仅POSTHOC_INPUT_AVAILABILITY，不推理、不用未来标签/SIP、不下单、无P&L、不宣称新独立前向Alpha；不核准基础开盘、报价/NBBO和成交资格。输出不可覆盖，原两个SQLite只读。
+- 18:58/19:05/19:10/19:15 UTC的截面依次36/45/52/56基础时点，合格0/2/7/7；初始预热33单列。最终预热后23时点、7合格，只有4个目标分钟(15:04—07)，不可当独立7样本。首批36条在最新截面逐条完全不变。
+- 15:14:55成熟50分钟，IWM50/50、XLK39/50、XLF47/50、XLE48/50、SMH49/50；连续16线35/0/4/24/19，五只同时0（原协议允许子集）。294轮询0请求失败、0>30秒间断，P95约11秒。QQQ47/50；15:07/09新缺柱，15:07原WS同样无bar，原因未提前推断。
+- 延迟一次性缺柱审计新增XLK14:56等，`arrival-gap-audit-round4d.json`共10处only_ineligible_trades，10处待延迟窗口。原始页独立缓存，无前向回填。更早round4/4b/4c报告保留。
+- 原ML01的QQQ首次真实预测15:04。15:08独立input_proof核验528条/88窗口、失败0、阈值信号0；15:15状态进一步570条/95窗口，新增部分未冒称已通过前次审计。每模型h15/h30有效IEX标签57/34，仍待收盘重核路径，不用盘中指标晋级。
+- 原Forward15:15:49心跳connected=true、complete=false、compromised=true；Phase6 cursor38241/accepted639；ML01 cursor38153与最新bar一致。arrival41060、closing42585锁持有，本轮没有重启任何服务。20/22日20:15Z账务计划Hash保存，未修改。
+- 新增4测试覆盖未来扰动、晚到过去bar、参考子集/预热/来源、只读和不可覆盖。全量**770 passed、1 skipped、1 warning，98.64秒**；Ruff/237文件格式检查通过。日志outputs/ml03/pytest-overnight-4.txt。
+- 新人类报告human/availability-2026-10-20.md，human入口和PENDING同步；机器证据docs/overnight/EVIDENCE-2026-10-21-round4.json包含实际截面与Hash。代码与报告分步commit，不推送。
+- 下一步：保持运行到原定停止时刻；16:15后检查check-1；16:17后可用market的arrival-gap审计补查所有已到延迟窗口的缺柱，使用新输出名；再次receipt审计也不构成ML03模型前向预测。
+- 16:40检查closing实际产物，必要时为最终一页decision补充合法缺柱和短暂跨输入资格证据，不能用改变门禁掩盖限制；完整核对和commit之后才ALL DONE。未下单、付费、微信、改launchd/.env或开启ML04。
+
+## 第5轮：纽约15:18–15:26，固定阈值与标签来源核验
+
+- 重读总控评估、docs/ml03.json及human自19:15:50Z增量，仅本线程报告，无用户未提交修改。ML03仍REJECTED，不重训或增加搜索；原主工作树/ML01/ML02均clean。
+- 代码commit **79fb781** 修正本轮closing工具：PENDING及未知非终态不能漏计为已完成；零预测也不能AUDITED。保留原标签，不修改冻结模型/生产采集。方向备忘模板补充迁移不能修复合法空缺/NBBO，链接现有人类审计。
+- 新增3反例测试。首次局部测试发现新增测试插入位置错误，原人类笔记保护断言落入新测试，已移回并保留；无生产代码故障。最终closing16项通过；全量**773 passed、1 skipped、1 warning，99.07秒**，Ruff/237文件格式通过。日志outputs/ml03/pytest-overnight-5.txt。
+- 本轮自建等待汇总PID42585以STOP正常退出，实际锁释放后启动PID**47073**，锁持有、runtime.log空。旧process保存为process-round2.json；仍16:40 ET运行。没有重启原Forward、Phase6、ML01、SIP auditor或arrival采集。
+- 只读重算原SIP315条canonical标签：逐条匹配其首次终态audit的checked_at和原响应页，复用原evaluate，315/315一致、缺源0、失败0。未借后来修订，未改标签；source code hash及每页快照Hash见outputs/ml03/sip-proof-round5.json。
+- `threshold-audit-round5.json` 15:22:48截面612预测/102窗口（SPY98/QQQ4）；固定5.2bp及0.55门禁逐条一致，信号0。Ridge15/30最高1.749/1.073bp，LGBM15/30最高0.387/0.594bp；四者概率最高36.16/40.91/36.68/40.73%，均未过门槛。无再次推理、阈值扫描或交易授权。
+- IEX/SIP共同有效目标h15=48、h30=25，各模型一致；指标保存机器产物，但单日重叠样本不当独立证据，最终路径核验仍等收盘。
+- `arrival-gap-audit-round5.json`先核实11处；round5b在15:24再核实17处only_ineligible_trades，包括QQQ15:07的11笔；4处尚待延迟窗口。逐笔仅事后审计，不回填。旧缓存及每次结果均保留。
+- 15:24:10截面346轮询，0失败/0>30秒间断；成熟59分钟参考IWM59、XLK47、XLF56、XLE57、SMH58，连续16线44/0/4/27/28。新receipt审计66点（预热33、合格7、其余26），原56条完全未变，不是新增ML03前向预测。
+- 15:25:21健康证据：Forward心跳19:25:06Z connected=true/compromised=true/complete=false；Phase6 cursor39303/accepted659；ML01 cursor39265与最新bar相同，每模型期限105条共630，仍0信号。arrival与closing锁持有。ps被沙箱拒绝，未据此推断服务失败，改用既有心跳、游标和锁验证。
+- 20/22日20:15Z原账务计划Hash与round4相同；15:25尚无check-1是未到时刻，未提前消费或修改计划。未改.env/launchd、未下单、付费、发消息或开启ML04。
+- 证据docs/overnight/EVIDENCE-2026-10-21-round5.json；人类availability报告追加本轮、README/PENDING同步。后续仅继续收集到原定停止时刻，16:15核查账务、16:17后补做延迟缺柱审计，16:40检查真实收盘报告/方向备忘并commit后才ALL DONE。无需为了等待追加模型实验或重复修建基础设施。
+
+## 第6轮：纽约15:27–15:51，持续核验真实标签与采集状态
+
+- 开工重读总控评估、冻结协议及human自19:25:21Z增量，只有本线程报告；原主工作树/ML01/ML02均clean。没有追加ML03实验或开发ML04，仍拒绝晋级。
+- 本轮没有改动任何Python代码、模型、汇总进程或常驻服务。已有全量773 passed/1 skipped及Ruff/237格式结果继续适用；未为未变代码重复耗时测试，提交前再做Ruff/格式与diff检查。
+- 原ML01输入门禁为t<close−35min，末根输入15:24、末次预测15:25:01；数量稳定630条/105窗口（SPY101、QQQ4）是预期，不是进程卡住。最晚未来目标15:56，需要继续收集标签。没有放宽时间或连续线门禁。
+- outputs/ml03/input-audit-round6.json重核630条的原始输入、前缀Hash、因果特征及提前commit：0失败，6模型和5源码Hash一致；保存每条预测+commit Hash。15:35及15:50再次比较，全部630条原样未改。
+- 仅在本轮交互命令中做55秒间隔的本地只读检查，未新增行情连接、调度或常驻服务。19:30:34—19:49:49Z共22点，0错误/心跳过期，每次ML01 cursor等于原最新bar rowid；19:50自动结束退出码0。原始检查日志outputs/ml03/watch-round6.jsonl。
+- 15:42每模型15分钟IEX标签全部终态：84VALID、21INVALID_MISSING_OR_TIMEOUT。15:49:49每模型30分钟68VALID、29INVALID、8PENDING；未提前归类整日完成。
+- outputs/ml03/feed-comparison-round6.json在15:43保存QQQ对照：4输入窗口×3模型的12条h15 IEX全部INVALID，但延迟SIP全部VALID；同组h30 IEX全部INVALID，SIP尚PENDING。原始预测是真正提前产生的，但完整SIP历史标签不能替换不完整实时路径，更不证明成交收益。两源均保持独立。
+- 缺柱延迟审计outputs/ml03/arrival-gap-audit-round6.json：累计20处only_ineligible_trades，包括QQQ15:09的4笔；当时XLK15:16/25两处尚待延迟窗口。新缺口可留给16:17后最终审计，不反复回填或改写旧记录。
+- 跨输入审计67时点（预热33、合格7、其余27），无模型推理。人类报告澄清7条对应15:04—07的输入K线时间，实际接收约下一分钟，不是未来收益标签时间。
+- 15:50:15参考测量488请求0失败/0>30秒间断；成熟85分钟IWM85、XLK70、XLF82、XLE83、SMH84；P95约10.8—12.1秒，16线窗口70/0/27/53/54。只代表登记以来下午实测，非全日/WS延迟或执行资格。
+- 原Phase6 15:50:24 cursor42140/accepted709；arrival及closing锁保持，closing仍PID47073、16:40 ET。Paper20/22日20:15Z计划Hash与上轮完全一致，第一次尚未到时，不提前调用或消费检查。
+- 新证据docs/overnight/EVIDENCE-2026-10-21-round6.json，human/availability追加并更新README入口。没有新需人类决定事项，PENDING既有方向/预算/迁移决定保留。
+- 下一轮：先核对16:00—16:04原进程是否按各自计划归档；16:15后检查实际check-1；16:17后补做一次最终缺柱审计；16:36 SIP结束后16:40读实际closing report与decision，补充本轮标签来源差异并commit。直到真实完成才ALL DONE。未改launchd/.env、未下单/付费/发消息，未开启ML04。
+
+exec
+/bin/zsh -lc 'cat human/README.md' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+# aquant：人类入口
+
+这里看进展、找报告、做决定；随手想法写在 [notes.md](notes.md)。
+整理日期：2026-10-20。以下状态来自仓库已有记录，本次未查询在线服务。
+
+## 两个项目
+
+**自动交易 bot（Alpaca / Paper）**
+- 面向 SPY / QQQ，包含行情、风控、Paper 订单、回测及只读前向观察。
+- 截至 10 月 19 日收盘后的报告：正式前向观察为 0 日，计划 20 日开始。
+- 尚无可靠正期望证据；IEX 不满足 NBBO 门禁，目前不能积累合格假设成交。
+- Paper 最终净收益仍未解决；运行恢复存在限制，前向监控没有策略下单权限。
+
+**BigQuant 2026 比赛**
+- 用官方分钟数据与原始标签训练模型，生成冻结预测和比赛提交材料。
+- 一月 MLP / TCN / Transformer 基线已完成；Transformer 平铺提交包已验证本地一致性。
+- 已有记录称 AIStudio 评分待返回，仓库尚无任务 ID、分数及完整判题日志。
+- 实验矩阵已就绪；跨月验证缺二、三月官方 VWAP 标签及逐日身份映射，尚未运行。
+
+## 最新报告
+
+| 内容 | 入口 |
+|---|---|
+| ML-03（2026-10-20，733 测试通过／本版拒绝晋级，未部署） | [跨资产数据审计、共同样本比较及实时状态](ml03-2026-10-20.md) |
+| ML-02（2026-10-20，726测试通过／不建议冻结） | [条件收益期限对照](ml02-2026-10-20.md) |
+| ML-01（2026-10-20，724 测试通过／不建议晋级 Shadow） | [成本感知机器学习历史探索](ml01-2026-10-20.md) |
+| 第六阶段（2026-10-20，710 测试通过／只读旁路已启动待开盘） | [三个固定假设、全部亏损结果与只读对照](phase6-2026-10-20.md) |
+| 夜间总报告（10 月 19 日） | [研究结论、证据和限制](../docs/overnight/REPORT-2026-10-19.md) |
+| Intraday 回测与后续策略研究 | [原始结果](../docs/intraday_results.md) · [后续结果](../docs/research_results.md) |
+| Forward 最近观察与运行限制 | [收盘后记录](../docs/overnight/RESULTS-12.md) · [容量故障验证](../docs/overnight/RESULTS-13.md) · [运行说明](../docs/forward.md) |
+| BigQuant 比赛与提交现状 | [状态记录](../docs/current_competition_status.md) · [提交验证](../projects/bigquant_2026/docs/flat_submission.md) |
+| BigQuant 后续实验 | [跨月验证阻碍](../projects/bigquant_2026/docs/temporal_validation.md) · [实验矩阵](../projects/bigquant_2026/experiments/README.md) |
+
+表中均为已入库文件；原始数据和 `outputs/` 运行产物不随 worktree 自动带入。
+
+## 待人类决定
+
+以下摘要来自 [PENDING](../docs/overnight/PENDING.md)，具体证据与边界见原文。
+- 数据与时间预算：取得实时 NBBO，还是另立仅信号研究协议？是否延长观察期？
+- 运行修复：如何隔离冻结研究版本与部署版本，再处理清理异常、容量、日历及报价计数？
+- 账务：原定 10 月 20 / 22 日 16:15 ET 复核；第二次仍未解时，人工核对账户及供应商依据。
+- 消息：是否授权明确收件人、频率和失败处理的微信通知？现有秘书只生成本地草稿。
+
+PENDING 的旧 Git 写入阻碍已在本整理分支解决；历史记录保留，尚未合入 main。
+比赛下一步还需取得缺失的官方标签/映射及 AIStudio 判题结果，详见上表。
+
+## 常用命令
+
+在本 worktree 根目录执行，借用已有 Python 环境；前向命令需要本目录已有观察记录。
+这些命令不发送订单；BigQuant `--dry-run` 仅检查实验声明，不训练。
+
+```bash
+# 全量测试
+PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python -m pytest -q
+# 本地前向状态
+PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python -m aquant.forward status
+# 最近十日观察摘要
+PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python -m aquant.forward report --days 10
+# 独立审计，报告写入本 worktree 的 outputs/research/
+PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python -m scripts.research.audit_forward --days 10
+# BigQuant 实验预览
+PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python scripts/research/run_bigquant_experiments.py --dry-run
+```
+
+- 2026-10-20参考ETF实时测量（进行中，747测试通过）：[REST可见性与收盘交接](arrival-2026-10-20.md)
+
+- 2026-10-20 14:41 ET更新（进行中，755测试通过）：[参考窗口与ML-01原始输入核验](arrival-2026-10-20.md)
+
+- 2026-10-20缺柱核验（盘中完成，766测试通过）：[合法空缺、分类器修正及实时资格](gaps-2026-10-20.md)
+
+- 2026-10-20 15:15 ET（盘中审计，770测试通过）：[跨资产输入的实际接收资格](availability-2026-10-20.md)
+
+- 2026-10-20 15:50 ET（盘中观察，无新增代码，最近773测试通过）：[固定阈值、输入资格与SIP/IEX标签分离核验](availability-2026-10-20.md)
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,pathlib
+r=pathlib.Path('.')
+for f in ['docs/overnight/EVIDENCE-2026-10-21-round6.json','outputs/ml03/arrival-20261020/final-200303.json','outputs/ml03/input-audit-round6.json','outputs/ml03/timing-audit-round7.json','outputs/ml03/window-audit-round7.json','outputs/ml03/arrival-gap-final-round7.json']:
+ d=json.loads((r/f).read_text()); print(f, list(d))
+ if 'round6.json' in f and 'EVIDENCE' in f: print(json.dumps(d,ensure_ascii=False)[:7500])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+docs/overnight/EVIDENCE-2026-10-21-round6.json ['at', 'kind', 'orders_authorized', 'pnl', 'artifacts', 'input_proof', 'all630_forecast_and_commit_hashes_unchanged', 'watch_summary', 'reference', 'gap_categories', 'gap_evidence', 'deferred_gaps', 'receipt_audit', 'qqq_comparison', 'ml01_status', 'sip_status', 'phase6', 'locks_held', 'closing_process', 'paper_plan_hash', 'paper_checks', 'paper_check1_exists', 'tests', 'pending']
+{"at": "2026-10-20T19:50:25.834431+00:00", "kind": "INTRADAY_ROUND6_EVIDENCE", "orders_authorized": false, "pnl": null, "artifacts": {"watch-round6.jsonl": {"path": "outputs/ml03/watch-round6.jsonl", "sha256": "1792f464174dd5b9985e4780ab5ed507d445f20179ac572fe009adf033f154c9"}, "input-audit-round6.json": {"path": "outputs/ml03/input-audit-round6.json", "sha256": "b0411b6ed78d48437acc01f9cd4ac266ff68c4d4eb636a231b846151c1443f5b"}, "arrival-gap-audit-round6.json": {"path": "outputs/ml03/arrival-gap-audit-round6.json", "sha256": "896b98e50a4d7c208efbe72cc5250958e5b9fcbddee5a28addac8e41b3e800a9"}, "receipt-audit-round6.json": {"path": "outputs/ml03/receipt-audit-round6.json", "sha256": "a1e606b19a5aa71537741a886172d6cf322627b8a2599e232fdab85793e9e52d"}, "feed-comparison-round6.json": {"path": "outputs/ml03/feed-comparison-round6.json", "sha256": "5c35794d8c56c92478c8565e65d8dc3d7365426cef18a69bfced882d878c3a84"}}, "input_proof": {"at": "2026-10-20T19:28:33.729103+00:00", "kind": "INTRADAY_INPUT_PROOF", "count": 630, "windows": 105, "symbol_forecasts": {"SPY": 606, "QQQ": 24}, "first_completed": "2026-10-20T17:08:10.725339+00:00", "last_completed": "2026-10-20T19:25:01.746922+00:00", "last_target": "2026-10-20T19:56:00+00:00", "threshold_signals": 0, "failures": [], "model_hashes": {"fold5-M0-h15": true, "fold5-M0-h30": true, "fold5-M1-h15": true, "fold5-M1-h30": true, "fold5-M2-h15": true, "fold5-M2-h30": true}, "code_hashes": {"docs/ml01-forward.json": true, "src/aquant/data/alpha.py": true, "src/aquant/models/tabular.py": true, "src/aquant/prediction.py": true, "src/aquant/signals.py": true}, "orders_authorized": false, "pnl": null, "note": "Real pre-close snapshot; immutable forecast/commit hashes for later verification. No future clock or closing claim; labels are audited after maturity."}, "all630_forecast_and_commit_hashes_unchanged": true, "watch_summary": {"count": 22, "first_at": "2026-10-20T19:30:34.323165+00:00", "last_at": "2026-10-20T19:49:49.731692+00:00", "all_errors": [], "all_cursors_match_latest_bar": true, "all_models_stayed_at105_forecasts": true, "first": {"at": "2026-10-20T19:30:34.323165+00:00", "orders_authorized": false, "forward": {"heartbeat": "2026-10-20T19:30:22.482849Z", "connected": true, "complete": false, "compromised": true}, "latest_bar": [39820, "2026-10-20T19:30:00.298388Z"], "ml01": {"at": "2026-10-20T19:30:33.467989+00:00", "cursor": 39820, "models": {"fold5-M0-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "PENDING": 12, "VALID": 72}, "threshold_signals": 0}, "fold5-M0-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 25, "PENDING": 31, "VALID": 49}, "threshold_signals": 0}, "fold5-M1-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "PENDING": 12, "VALID": 72}, "threshold_signals": 0}, "fold5-M1-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 25, "PENDING": 31, "VALID": 49}, "threshold_signals": 0}, "fold5-M2-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "PENDING": 12, "VALID": 72}, "threshold_signals": 0}, "fold5-M2-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 25, "PENDING": 31, "VALID": 49}, "threshold_signals": 0}}}, "sip": {"at": "2026-10-20T19:27:29.685067+00:00", "available_end": "2026-10-20T19:11:27.190096+00:00", "status": "AUDITED", "canonical_status": {"VALID": 375}}, "reference": {"at": "2026-10-20T19:30:31.809114+00:00", "polls": 381, "failures": 0, "gaps": 0, "coverage": {"SPY": [66, 66], "QQQ": [63, 66], "IWM": [66, 66], "XLK": [52, 66], "XLF": [63, 66], "XLE": [64, 66], "SMH": [65, 66]}}, "errors": []}, "last": {"at": "2026-10-20T19:49:49.731692+00:00", "orders_authorized": false, "forward": {"heartbeat": "2026-10-20T19:49:40.370138Z", "connected": true, "complete": false, "compromised": true}, "latest_bar": [41978, "2026-10-20T19:49:00.420591Z"], "ml01": {"at": "2026-10-20T19:49:48.740729+00:00", "cursor": 41978, "models": {"fold5-M0-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "threshold_signals": 0}, "fold5-M0-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 29, "PENDING": 8, "VALID": 68}, "threshold_signals": 0}, "fold5-M1-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "threshold_signals": 0}, "fold5-M1-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 29, "PENDING": 8, "VALID": 68}, "threshold_signals": 0}, "fold5-M2-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "threshold_signals": 0}, "fold5-M2-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 29, "PENDING": 8, "VALID": 68}, "threshold_signals": 0}}}, "sip": {"at": "2026-10-20T19:47:37.693437+00:00", "available_end": "2026-10-20T19:31:35.060582+00:00", "status": "AUDITED", "canonical_status": {"VALID": 507}}, "reference": {"at": "2026-10-20T19:49:42.637975+00:00", "polls": 485, "failures": 0, "gaps": 0, "coverage": {"SPY": [85, 85], "QQQ": [82, 85], "IWM": [85, 85], "XLK": [70, 85], "XLF": [82, 85], "XLE": [83, 85], "SMH": [84, 85]}}, "errors": []}}, "reference": {"at": "2026-10-20T19:50:15.127460+00:00", "manifest": {"calendar_hash": "adf9f4eadbd94502ce3b400ade0d52f05c9e147f7760bd28c416239b661bc085", "closing": "2026-10-20T20:00:00+00:00", "code_hash": "a0868884775d5e370d38b1d7f3c2cd0025630172bfff6d70a1156cf3ae5af598", "day": "2026-10-20", "observe_from": "2026-10-20T18:23:00+00:00", "opening": "2026-10-20T13:30:00+00:00", "orders_authorized": false, "poll_seconds": 10, "qualification": "Polling visibility only; no WS latency claim or ML03 predictions", "source": "iex_rest_poll", "started_at": "2026-10-20T18:22:14.490234+00:00", "symbols": ["SPY", "QQQ", "IWM", "XLK", "XLF", "XLE", "SMH"]}, "assets": {"SPY": {"observed": 87, "expected_completed": 87, "mature_expected": 85, "mature_present": 85, "mature_timely": 85, "mature_coverage": 1.0, "timely_coverage": 1.0, "missing_mature": [], "latency_seconds": {"p50": 6.264854, "p95": 10.9956985, "max": 12.970029}, "qualified_16_bar_windows": 70}, "QQQ": {"observed": 84, "expected_completed": 87, "mature_expected": 85, "mature_present": 82, "mature_timely": 82, "mature_coverage": 0.9647058823529412, "timely_coverage": 0.9647058823529412, "missing_mature": ["2026-10-20T18:31:00+00:00", "2026-10-20T19:07:00+00:00", "2026-10-20T19:09:00+00:00"], "latency_seconds": {"p50": 6.5501115, "p95": 11.35508775, "max": 12.241858}, "qualified_16_bar_windows": 43}, "IWM": {"observed": 87, "expected_completed": 87, "mature_expected": 85, "mature_present": 85, "mature_timely": 85, "mature_coverage": 1.0, "timely_coverage": 1.0, "missing_mature": [], "latency_seconds": {"p50": 6.264854, "p95": 10.9956985, "max": 12.241858}, "qualified_16_bar_windows": 70}, "XLK": {"observed": 72, "expected_completed": 87, "mature_expected": 85, "mature_present": 70, "mature_timely": 70, "mature_coverage": 0.8235294117647058, "timely_coverage": 0.8235294117647058, "missing_mature": ["2026-10-20T18:23:00+00:00", "2026-10-20T18:27:00+00:00", "2026-10-20T18:29:00+00:00", "2026-10-20T18:40:00+00:00", "2026-10-20T18:49:00+00:00", "2026-10-20T18:56:00+00:00", "2026-10-20T19:03:00+00:00", "2026-10-20T19:05:00+00:00", "2026-10-20T19:06:00+00:00", "2026-10-20T19:07:00+00:00", "2026-10-20T19:09:00+00:00", "2026-10-20T19:16:00+00:00", "2026-10-20T19:25:00+00:00", "2026-10-20T19:28:00+00:00", "2026-10-20T19:43:00+00:00"], "latency_seconds": {"p50": 6.
+outputs/ml03/arrival-20261020/final-200303.json ['all_five_qualified_16_bar_windows', 'assets', 'at', 'failures', 'finished', 'last_poll', 'limitations', 'manifest', 'poll_gaps', 'polls']
+outputs/ml03/input-audit-round6.json ['at', 'kind', 'count', 'windows', 'symbol_forecasts', 'first_completed', 'last_completed', 'last_target', 'threshold_signals', 'failures', 'model_hashes', 'code_hashes', 'record_hashes', 'orders_authorized', 'pnl', 'note']
+outputs/ml03/timing-audit-round7.json ['at', 'kind', 'coverage', 'rejected', 'counts', 'all_rejected_before_end', 'minimum_ms', 'maximum_ms', 'cause', 'orders_authorized', 'pnl']
+outputs/ml03/window-audit-round7.json ['at', 'kind', 'all_five_windows', 'count_all_five', 'count_before_close', 'counts_by_reference', 'note', 'orders_authorized', 'pnl']
+outputs/ml03/arrival-gap-final-round7.json ['at', 'audit_feed', 'condition_code_hash', 'condition_source', 'days', 'deferred_until_16min_after_minute_end', 'gap_categories', 'gap_evidence', 'input_feed', 'kind', 'orders_authorized', 'source_hash', 'source_snapshot', 'used_for_live_decisions']
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,pathlib
+r=pathlib.Path('.')
+for f in ['outputs/ml03/timing-audit-round7.json','outputs/ml03/window-audit-round7.json']:
+ d=json.loads((r/f).read_text());print(f,{k:v for k,v in d.items() if k"'!='"'rejected'})
+d=json.loads((r/'outputs/ml03/arrival-20261020/final-200303.json').read_text());print('reference',d['polls'],d['failures'],d['poll_gaps']);print({s:{k:v for k,v in a.items() if k in ['mature_present','mature_expected','latency_seconds','qualified_16_bar_windows']} for s,a in d['assets'].items()})
+p=pathlib.Path('/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020/report-200400800990.json');d=json.loads(p.read_text());print('ml01 keys',d.keys()); print(str(d)[:1800])
+d=json.loads((r/'outputs/ml03/input-audit-round6.json').read_text());print('hash sample',list(d['record_hashes'].items())[:1])
+print('watch sample', (r/'outputs/ml03/watch-round7.jsonl').read_text().splitlines()[-1][:1000])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+outputs/ml03/timing-audit-round7.json {'at': '2026-10-20T20:06:04.284028+00:00', 'kind': 'POSTHOC_RECEIPT_TIMING_AUDIT', 'coverage': {'SPY': {'expected': 390, 'raw_unique': 381, 'accepted': 373}, 'QQQ': {'expected': 390, 'raw_unique': 360, 'accepted': 354}}, 'counts': {'SPY': 8, 'QQQ': 6}, 'all_rejected_before_end': True, 'minimum_ms': -42.35500000000003, 'maximum_ms': -7.516999999999996, 'cause': 'UNRESOLVED: recorded local receipt precedes nominal minute completion. Does not identify host clock error versus publisher timing. Frozen gates and receipts preserved.', 'orders_authorized': False, 'pnl': None}
+outputs/ml03/window-audit-round7.json {'at': '2026-10-20T20:11:44.059118+00:00', 'kind': 'POSTHOC_REFERENCE_WINDOW_AUDIT', 'all_five_windows': [{'reference_bar_t': '2026-10-20T19:59:00+00:00', 'implied_base_bar_t': '2026-10-20T20:00:00+00:00', 'earliest_base_completion': '2026-10-20T20:01:00+00:00', 'base_bar_in_regular_session': False, 'completion_before_close': False}], 'count_all_five': 1, 'count_before_close': 0, 'counts_by_reference': {'IWM': 82, 'XLK': 1, 'XLF': 39, 'XLE': 65, 'SMH': 66}, 'note': '16-reference-bar windows are not full ML03 qualification. Original protocol permits reference subsets and also requires core32 plus base eligibility. No new decisions or changes to registered report.', 'orders_authorized': False, 'pnl': None}
+reference 559 [] []
+{'IWM': {'latency_seconds': {'max': 12.241858, 'p50': 6.310151, 'p95': 11.035897799999999}, 'mature_expected': 97, 'mature_present': 97, 'qualified_16_bar_windows': 82}, 'QQQ': {'latency_seconds': {'max': 12.241858, 'p50': 6.5501115, 'p95': 11.251140699999999}, 'mature_expected': 97, 'mature_present': 94, 'qualified_16_bar_windows': 55}, 'SMH': {'latency_seconds': {'max': 12.970029, 'p50': 6.8103305, 'p95': 12.0520775}, 'mature_expected': 97, 'mature_present': 96, 'qualified_16_bar_windows': 66}, 'SPY': {'latency_seconds': {'max': 12.970029, 'p50': 6.310151, 'p95': 11.035897799999999}, 'mature_expected': 97, 'mature_present': 97, 'qualified_16_bar_windows': 82}, 'XLE': {'latency_seconds': {'max': 12.241858, 'p50': 6.264854, 'p95': 10.9574365}, 'mature_expected': 97, 'mature_present': 95, 'qualified_16_bar_windows': 65}, 'XLF': {'latency_seconds': {'max': 12.241858, 'p50': 6.2399315, 'p95': 10.962219249999999}, 'mature_expected': 97, 'mature_present': 94, 'qualified_16_bar_windows': 39}, 'XLK': {'latency_seconds': {'max': 12.241858, 'p50': 6.1929175, 'p95': 10.91545875}, 'mature_expected': 97, 'mature_present': 82, 'qualified_16_bar_windows': 1}}
+ml01 keys dict_keys(['at', 'cursor', 'frozen_at', 'heartbeat', 'interruptions', 'kind', 'models', 'online_seconds', 'orders_authorized', 'pnl', 'rating', 'rejections', 'started_at'])
+{'at': '2026-10-20T20:04:00.804141+00:00', 'cursor': 43135, 'frozen_at': '2026-10-20T17:07:12.922823+00:00', 'heartbeat': '2026-10-20T20:03:58.747538+00:00', 'interruptions': [{'at': '2026-10-20T17:42:14.406313+00:00', 'type': 'OperationalError'}], 'kind': 'DIAGNOSTIC_FORWARD_OBSERVATION', 'models': {'fold5-M0-h15': {'correlation': None, 'direction_accuracy': None, 'first_prediction': '2026-10-20T17:08:10.725339+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}, 'last_prediction': '2026-10-20T19:25:01.736450+00:00', 'predictions': 105, 'rmse_bps': 7.127223687127553, 'threshold_signals': 0}, 'fold5-M0-h30': {'correlation': None, 'direction_accuracy': None, 'first_prediction': '2026-10-20T17:08:10.726850+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}, 'last_prediction': '2026-10-20T19:25:01.738226+00:00', 'predictions': 105, 'rmse_bps': 8.26433249474251, 'threshold_signals': 0}, 'fold5-M1-h15': {'correlation': 0.6525064451692126, 'direction_accuracy': 0.5, 'first_prediction': '2026-10-20T17:08:10.729772+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}, 'last_prediction': '2026-10-20T19:25:01.740591+00:00', 'predictions': 105, 'rmse_bps': 6.9447753528534, 'threshold_signals': 0}, 'fold5-M1-h30': {'correlation': 0.5955255083531698, 'direction_accuracy': 0.75, 'first_prediction': '2026-10-20T17:08:10.732012+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}, 'last_prediction': '2026-10-20T19:25:01.742788+00:00', 'predictions': 105, 'rmse_bps': 7.947278372875133, 'threshold_signals': 0}, 'fold5-M2-h15': {'correlation': 0.03592016032890949, 'direction_accuracy': 0.36904761904761907, 'first_prediction': '2026-10-20T17:08:10.735892+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}, 'last_predictio
+hash sample [('24080:fold5-M0-h15', '71f2271705dc657101772cd8a982cdad505146c8e8a2515bde1cb3b3a61c3184')]
+watch sample {"at": "2026-10-20T20:16:37.143039+00:00", "orders_authorized": false, "forward": {"heartbeat": "2026-10-20T20:02:00.999739Z", "complete": true, "connected": false, "compromised": true, "ended_at": "2026-10-20T20:02:00.999739Z"}, "latest_bar": [43135, "2026-10-20T19:59:00.942817Z"], "ml01": {"at": "2026-10-20T20:03:58.749095+00:00", "cursor": 43135, "models": {"fold5-M0-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "threshold_signals": 0}, "fold5-M0-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "threshold_signals": 0}, "fold5-M1-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "threshold_signals": 0}, "fold5-M1-h30": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 29, "VALID": 76}, "threshold_signals": 0}, "fold5-M2-h15": {"predictions": 105, "labels": {"INVALID_MISSING_OR_TIMEOUT": 21, "VALID": 84}, "threshold_signals": 0}, "fold5-M2-h30": {"predictions": 
+
+exec
+/bin/zsh -lc "rg -n 'record_hashes|commits|sha256' scripts/research/closing.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+28:    model = {x["id"]: x["sha256"] for x in manifest["models"]}
+76:        if hashlib.sha256(encoded.encode()).hexdigest() != p["input_hash"]:
+136:                "SELECT p.id,p.payload,c.at,l.payload FROM predictions p LEFT JOIN commits c "
+156:        name: hashlib.sha256((Path(__file__).resolve().parents[2] / name).read_bytes()).hexdigest()
+281:        item["id"]: hashlib.sha256(Path(item["path"]).read_bytes()).hexdigest() == item["sha256"]
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json,hashlib,datetime
+r=Path('.'); root=Path('/Users/prts/Projects/aquant'); out=r/'outputs/ml03'
+def read(p): return json.loads(p.read_text())
+def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+files=[out/x for x in ['watch-round7.jsonl','closing-gap-round7.json','timing-audit-round7.json','window-audit-round7.json','arrival-gap-final-round7.json','sip-proof-final-round7.json','arrival-20261020/final-200303.json']]
+forward=root/'outputs/research/forward_observations/2026-10-20/report.json'
+phase=root/'outputs/research/phase6-20261020/shadow-v1/report-20261020T200300942747.json'
+ml=root/'.worktrees/ml01/outputs/ml01/forward-20261020/report-200400800990.json'
+paper=root/'outputs/alpaca/paper_pnl_reconciliation/check-1.json'
+plan=paper.with_name('plan.json')
+files += [forward,phase,ml,paper,plan]
+watch=[json.loads(x) for x in (out/'watch-round7.jsonl').read_text().splitlines()]
+proof=read(out/'sip-proof-final-round7.json'); timing=read(out/'timing-audit-round7.json'); gap=read(out/'arrival-gap-final-round7.json'); pnl=read(paper)
+e={'at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'kind':'POST_CLOSE_ROUND7_EVIDENCE','orders_authorized':False,'artifacts':{str(p):{'sha256':sha(p)} for p in files},'watch_summary':{'count':len(watch),'first_at':watch[0]['at'],'last_at':watch[-1]['at'],'errors':[e for w in watch for e in w.get('errors',[])]},'reference':read(out/'arrival-20261020/final-200303.json'),'receipt_timing':{k:v for k,v in timing.items() if k"'!='"'rejected'},'reference_windows':read(out/'window-audit-round7.json'),'closing_gap':read(out/'closing-gap-round7.json'),'gap_categories':gap['gap_categories'],'deferred_gaps':gap['deferred_until_16min_after_minute_end'],'sip_proof':{k:v for k,v in proof.items() if k not in ['proofs','snapshots']},'ml01':read(ml),'paper':{k:pnl.get(k) for k in ['actual_check_time','result','gross_from_order_fills','activity_fill_gross','activity_fills_match_orders','account_cash_change_not_attributed','account_equity_change_not_attributed','cash_change_minus_order_gross','attributable_final_net_pnl','fees_final','flat_observed','further_automatic_checks']},'paper_unattributed_fees':[{'type':a.get('activity_type'),'subtype':a.get('activity_sub_type'),'net_amount':a.get('net_amount')} for a in pnl['unattributed_activities'] if a.get('activity_type')=='FEE'],'paper_plan_unchanged_from_round6':sha(plan)==read(r/'docs/overnight/EVIDENCE-2026-10-21-round6.json')['paper_plan_hash'],'paper_plan':read(plan),'tests':{'latest_full':'773 passed, 1 skipped, 1 warning','seconds':99.07,'log':'outputs/ml03/pytest-overnight-5.txt','no_python_code_changed_this_round':True},'pending':'Existing closing reporter remains scheduled for 20:40 UTC; final report and decision still require inspection and commit.'}
+p=r/'docs/overnight/EVIDENCE-2026-10-21-round7.json'
+with p.open('x') as f: json.dump(e,f,indent=2,ensure_ascii=False);f.write('\\n')
+print('evidence',p,'watch',e['watch_summary'],'paper_plan_unchanged',e['paper_plan_unchanged_from_round6'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+evidence docs/overnight/EVIDENCE-2026-10-21-round7.json watch {'count': 26, 'first_at': '2026-10-20T19:53:41.656124+00:00', 'last_at': '2026-10-20T20:16:37.143039+00:00', 'errors': []} paper_plan_unchanged True
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('human/archive-2026-10-20.md')
+text='''# 2026-10-20 收盘归档与首次账务复核
+
+状态：截至 16:22 ET 的已发生事实；16:40 的最终联合核验和方向备忘尚待生成。
+本轮未改变模型、门禁或生产服务。ML-03 历史结论仍为 **REJECTED（拒绝晋级）**，未启动 ML-04。
+
+## 实时采集结束情况
+
+原 Forward 于 16:02、Phase 6 Shadow 与参考测量于 16:03、ML-01 于 16:04 正常归档并释放运行锁，没有人工重启。
+Forward 保留 "'`compromised=true`、`valid_observation=false`，不能因为收盘归档成功就算完整有效观察日。
+
+| 常规时段分钟线 | SPY | QQQ |
+|---|---:|---:|
+| 原流实际收到的唯一分钟 / 390 | 381 | 360 |
+| 冻结门禁接受的分钟 / 390 | 373（95.64%） | 354（90.77%） |
+
+14 根收到但被拒绝的线（SPY 8、QQQ 6），接收记录比标称分钟结束早 7.5—42.4 毫秒；不能证明是本机时钟偏差还是发布时序问题。
+两标的 15:59 分钟线均未出现在原流，但独立 REST 测量于 16:00:02.670 收到；原流之后仍有报价。
+具体故障环节尚未定位。记录不改、不回填，不追认被拒绝样本为前向有效。
+Phase 6 压缩/动量/回归分别有 21/52/10 个原始信号、5/2/3 个数据资格信号；均无合格 NBBO，P&L 为 N/A、独立有效观察日仍为 0。
+
+## 参考 ETF 的实际可用性
+
+测量区间仅为 14:23—15:59，共 97 个分钟，559 次只读轮询、0 请求失败、0 次超过 30 秒的轮询间断。
+以下延迟是从分钟结束到 REST 首次可见，含轮询与网络影响，不能当作 WebSocket 延迟。
+
+| 标的 | 收到分钟 / 97 | 延迟 P95（秒） | 连续 16 线窗口 |
+|---|---:|---:|---:|
+| IWM | 97 | 11.04 | 82 |
+| XLK | 82 | 10.92 | 1 |
+| XLF | 94 | 10.96 | 39 |
+| XLE | 95 | 10.96 | 65 |
+| SMH | 96 | 12.05 | 66 |
+
+全五标的同时连续仅 1 个窗口，但其滞后一根的基础时刻已在收盘后，**收盘前全五同步窗口为 0**。
+原 ML-03 协议允许参考子集；这个数字既不代表全部输入都失败，也不代表任何 ML-03 推理已经发生。
+24 处 REST 缺柱的延迟逐笔审计全部只含不适用于分钟价格的成交，未决 0。合法空缺与原流最后一分钟未收到是不同问题。
+
+## ML-01：真实提前预测与事后标签分开
+
+原预测从 13:08:10 到 15:25:01，共 630 条，来自 105 个窗口（SPY 101、QQQ 4），不是 630 个独立样本。
+既定阈值信号 0，无假设成交收益；单日重叠标签不足以支持 Alpha 或自动交易。
+每个模型的 IEX 15 分钟标签为 84 有效 / 21 缺失失效；30 分钟为 76 / 29，无待定。
+630 条延迟 SIP 标签全部有效，且按首次终态时的原始响应页逐条复算 630/630 一致。
+这些 SIP 标签只用于事后核验，不替换实时 IEX 路径，不提供成交保证。最终联合指标待 16:40 原定汇总。
+
+## Paper 真实模拟订单：净收益仍未解决
+
+原任务于 **16:19:41 ET** 执行第一次只读复核（原定 16:15，300 秒调度间隔内）。
+账户 Cash/Equity 从 $2,000 变为 **$1,999.98**；没有持仓或未完成订单。
+原买卖成交与 FILL 流水一致，逐笔毛收益仍为 **+$0.000468637596**。
+另有 CAT、REG 两笔各 **−$0.01** 费用流水，没有明确订单链接；还有原始 $2,000 入金流水，不能计入本轮利润。
+两项费用金额之和与账户减少相同，但不足以证明本轮最终可归因净收益，毛收益与账面现金仍差 **−$0.020468637596**。
+因此报告保持 **UNRESOLVED、fees_final=false、最终可归因净收益 N/A**；不把“毛收益减费用”包装成已核实净收益。
+原 **10 月 22 日 16:15 ET** 第二次检查计划 Hash 未变；不提前消费、取消或重复下单。
+
+## 下一步与证据
+
+16:40 检查既定联合报告和一页方向备忘的真实产物后提交；新增数据不改变本轮历史模型结论。
+待用户决定研究方向及数据预算。若修复时钟或末分钟接收，需要新版本、模拟测试及新观察，不修改今晚记录。
+
+机器证据：[第 7 轮](../docs/overnight/EVIDENCE-2026-10-21-round7.json)，含各原始产物 Hash、标签复算及原账务报告路径。
+最新全量测试 **773 passed、1 skipped、1 warning**；本轮没有代码变化，不重复训练或全量测试。
+历史探索、实时前向观察和 Paper 订单账务三类结果分别记录，绝不相加；当前仍无充分证据支持自动 Paper 策略交易。
+'"'''
+with p.open('x') as f:f.write(text)
+with Path('human/README.md').open('a') as f:f.write('\\n- 2026-10-20 16:22 ET（收盘归档已核实，首次账务 UNRESOLVED；联合报告待 16:40）：[实时覆盖、参考 ETF 与 Paper 现金差额](archive-2026-10-20.md)\\n')
+with Path('docs/overnight/PENDING.md').open('a') as f:f.write('\\n- 2026-10-20 16:19首次账务只读检查：Cash/Equity "'$1,999.98，CAT/REG各−$0.01但未逐单关联，毛收益+$0.000468637596，最终归因仍UNRESOLVED。10-22 16:15 ET原第二次计划保留；若仍未解，由用户对照Paper账单/供应商依据，不重置账户或补交易。'"\\n')
+with Path('docs/overnight/STATE-2026-10-21.md').open('a') as f:f.write('''
+## 第7轮：纽约15:52—16:25，核实实际收盘与首次账务复核
+
+- 开工重读总控评估及human自19:50:24Z增量，只有本线程报告。原三工作树和冻结服务保持不动，ML03不重训、不搜参数，拒绝晋级结论保持。
+- 本轮交互式只读watch已退出，日志outputs/ml03/watch-round7.jsonl记录实际收盘状态；Forward/Phase6/ML01/arrival分别16:02/03/04/03归档，运行锁释放，未重启。原Forward仍compromised=true、valid_observation=false。
+- 原流raw SPY381/QQQ360，门禁接受373/354；14条接收时间早于分钟结束7.5—42.4ms。时钟偏差/上游发布原因未定，不修正旧记录。另有两标的15:59原WS缺柱、REST16:00:02.670存在；独立保存timing-audit/closing-gap-round7.json。
+- 参考最终559轮询0失败/0>30秒间断，97分钟覆盖IWM97/XLK82/XLF94/XLE95/SMH96。16根窗口82/1/39/65/66，全五唯一窗口需收盘后基础bar，收盘前全五0；原协议允许子集，不能误称所有跨输入无效。
+- 最终延迟缺柱审计arrival-gap-final-round7.json共24处only_ineligible_trades、deferred0，无回填。该结论不解释原WS末分钟丢失。
+- ML01实际终态630预测/105窗口，SPY101、QQQ4，0阈值信号；每模型IEX h15有效84/失效21，h30有效76/失效29。SIP已630VALID，sip-proof-final-round7.json逐条首次canonical响应页复算630/630一致，失败/缺源均0。未冒称独立630样本或可执行P&L。
+- 原Paper账务任务16:19:41自动完成check-1，结果UNRESOLVED；Cash/Equity1999.98，逐笔毛收益0.000468637596，两笔未关联CAT/REG费用各−0.01，最终归因净收益None、fees_final=false、无持仓/挂单。plan Hash与round6一致，10-22 16:15复核保持。没有手动触发重复检查或订单。
+- 新人类报告human/archive-2026-10-20.md；README、PENDING及机器证据EVIDENCE-2026-10-21-round7.json同步，原报告不改。无Python代码变化，最新全量773 passed/1 skipped/1 warning（99.07秒）沿用round5；提交前Ruff/格式/diff重新检查。
+- 尚待既定SIP auditor16:36自然结束、closing PID47073于16:40产生实际联合报告和decision。下一轮读取并核验，补充本轮接收时序/末分钟/全五窗口/实际账务证据后提交，才ALL DONE。未改launchd/.env、未发订单/消息/付费、未开启ML04。
+''')
+print('wrote report/index/pending/state')
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+wrote report/index/pending/state
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+codex
+收盘证据已整理入报告。新的关键限制是：14 根已收到的分钟线因接收时间早于分钟结束数十毫秒而被门禁拒绝；五只参考 ETF 唯一的同步连续窗口则已落到收盘后。这些记录均保持原样。接下来核查文档并提交，16:40 的联合报告仍由既定汇总进程生成。
+exec
+/bin/zsh -lc '.venv/bin/ruff check .' in /Users/prts/Projects/aquant/.worktrees/ml03
+ exited 127 in 0ms:
+zsh:1: no such file or directory: .venv/bin/ruff
+
+exec
+/bin/zsh -lc '.venv/bin/ruff format --check .' in /Users/prts/Projects/aquant/.worktrees/ml03
+ exited 127 in 0ms:
+zsh:1: no such file or directory: .venv/bin/ruff
+
+exec
+/bin/zsh -lc 'git diff --check' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+exec
+/bin/zsh -lc 'git status --short --branch' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+## research/intraday-20261020
+
+exec
+/bin/zsh -lc 'git diff --stat' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+ docs/overnight/PENDING.md          |  9 +++++++++
+ docs/overnight/STATE-2026-10-21.md | 12 ++++++++++++
+ human/README.md                    |  2 ++
+ 3 files changed, 23 insertions(+)
+
+exec
+/bin/zsh -lc 'git status --short --branch' in /Users/prts/Projects/aquant/.worktrees/ml01
+ succeeded in 0ms:
+## research/ml01-cost-aware-20261020
+
+exec
+/bin/zsh -lc 'git status --short --branch' in /Users/prts/Projects/aquant/.worktrees/ml02
+ succeeded in 0ms:
+## research/ml02-horizon-20261020
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc 'command -v ruff' in /Users/prts/Projects/aquant/.worktrees/ml03
+ exited 1 in 0ms:
+exec
+/bin/zsh -lc 'git status --short' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+ M docs/overnight/PENDING.md
+ M docs/overnight/STATE-2026-10-21.md
+ M human/README.md
+?? docs/overnight/EVIDENCE-2026-10-21-round7.json
+?? human/archive-2026-10-20.md
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,pathlib
+p=pathlib.Path('outputs/ml03/closing-20261020');print('closing',[(f.name,f.stat().st_size) for f in p.iterdir()]);print(json.loads((p/'process.json').read_text()))
+e=json.loads(pathlib.Path('docs/overnight/EVIDENCE-2026-10-21-round7.json').read_text());print('paper_checks',e['paper_plan'].get('checks'));print('ML01',e['ml01']['models']);print('gap',e['gap_categories'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+closing [('process-round1.json', 807), ('process-initial.json', 693), ('runtime.log', 0), ('process.json', 876), ('process-round2.json', 829), ('closing.lock', 0)]
+{'pid': 47073, 'command': ['/Users/prts/Projects/aquant/.worktrees/ml03/.venv/bin/python', '-m', 'scripts.research.closing', '--ml', '/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020', '--arrival', '/Users/prts/Projects/aquant/.worktrees/ml03/outputs/ml03/arrival-20261020', '--source-root', '/Users/prts/Projects/aquant', '--output', '/Users/prts/Projects/aquant/.worktrees/ml03/outputs/ml03/closing-20261020', '--human', '/Users/prts/Projects/aquant/.worktrees/ml03/human', '--wait'], 'started_at': '2026-10-20T19:21:59.727284+00:00', 'due': '2026-10-20T20:40:00Z', 'orders_authorized': False, 'restart_reason': 'Own post-close waiting reporter only: unfinished/unknown labels and zero forecasts cannot pass; original frozen collectors untouched', 'git_commit': '79fb781'}
+paper_checks [{'day': '2026-10-20', 'due': '2026-10-20T20:15:00Z', 'number': 1}, {'day': '2026-10-22', 'due': '2026-10-22T20:15:00Z', 'number': 2}]
+ML01 {'fold5-M0-h15': {'correlation': None, 'direction_accuracy': None, 'first_prediction': '2026-10-20T17:08:10.725339+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}, 'last_prediction': '2026-10-20T19:25:01.736450+00:00', 'predictions': 105, 'rmse_bps': 7.127223687127553, 'threshold_signals': 0}, 'fold5-M0-h30': {'correlation': None, 'direction_accuracy': None, 'first_prediction': '2026-10-20T17:08:10.726850+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}, 'last_prediction': '2026-10-20T19:25:01.738226+00:00', 'predictions': 105, 'rmse_bps': 8.26433249474251, 'threshold_signals': 0}, 'fold5-M1-h15': {'correlation': 0.6525064451692126, 'direction_accuracy': 0.5, 'first_prediction': '2026-10-20T17:08:10.729772+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}, 'last_prediction': '2026-10-20T19:25:01.740591+00:00', 'predictions': 105, 'rmse_bps': 6.9447753528534, 'threshold_signals': 0}, 'fold5-M1-h30': {'correlation': 0.5955255083531698, 'direction_accuracy': 0.75, 'first_prediction': '2026-10-20T17:08:10.732012+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}, 'last_prediction': '2026-10-20T19:25:01.742788+00:00', 'predictions': 105, 'rmse_bps': 7.947278372875133, 'threshold_signals': 0}, 'fold5-M2-h15': {'correlation': 0.03592016032890949, 'direction_accuracy': 0.36904761904761907, 'first_prediction': '2026-10-20T17:08:10.735892+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 21, 'VALID': 84}, 'last_prediction': '2026-10-20T19:25:01.744970+00:00', 'predictions': 105, 'rmse_bps': 7.1826931047481954, 'threshold_signals': 0}, 'fold5-M2-h30': {'correlation': 0.4520545829990029, 'direction_accuracy': 0.7236842105263158, 'first_prediction': '2026-10-20T17:08:10.738031+00:00', 'labels': {'INVALID_MISSING_OR_TIMEOUT': 29, 'VALID': 76}, 'last_prediction': '2026-10-20T19:25:01.746922+00:00', 'predictions': 105, 'rmse_bps': 8.24517354129101, 'threshold_signals': 0}}
+gap {'only_ineligible_trades': 24}
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc '.venv/bin/python -m ruff --version' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+ruff 0.16.8
+
+exec
+/bin/zsh -lc "rg --files --hidden -g '*ruff*' /Users/prts/Projects/aquant/.venv /Users/prts/.local /Users/prts/Projects/aquant/.worktrees/ml03/.venv" in /Users/prts/Projects/aquant
+ exited 1 in 0ms:
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc '.venv/bin/python -m ruff check .' in /Users/prts/Projects/aquant/.worktrees/ml03
+exec
+/bin/zsh -lc '.venv/bin/python -m ruff format --check .' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+All checks passed!
+
+ succeeded in 0ms:
+238 files already formatted
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json,datetime
+p=Path('docs/overnight/EVIDENCE-2026-10-21-round7.json');d=json.loads(p.read_text());d['tests']['ruff']='All checks passed; python -m ruff 0.16.8';d['tests']['format']='238 files already formatted';d['tests']['checked_at']=datetime.datetime.now(datetime.timezone.utc).isoformat();p.write_text(json.dumps(d,ensure_ascii=False,indent=2)+'\\n')
+with Path('docs/overnight/STATE-2026-10-21.md').open('a') as f:f.write('- 提交前复核：python -m ruff check通过、format --check共238文件通过、git diff --check通过。工作树无ruff启动脚本，改用已有Python模块成功运行，没有安装依赖。主/ML01/ML02工作树仍clean；本轮仅5份文档/机器证据变更。\\n')
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+exec
+/bin/zsh -lc 'git diff --check' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+exec
+/bin/zsh -lc 'git add docs/overnight/PENDING.md docs/overnight/STATE-2026-10-21.md docs/overnight/EVIDENCE-2026-10-21-round7.json human/README.md human/archive-2026-10-20.md' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+exec
+/bin/zsh -lc 'git diff --cached --stat' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+ docs/overnight/EVIDENCE-2026-10-21-round7.json | 553 +++++++++++++++++++++++++
+ docs/overnight/PENDING.md                      |   9 +
+ docs/overnight/STATE-2026-10-21.md             |  13 +
+ human/README.md                                |   2 +
+ human/archive-2026-10-20.md                    |  63 +++
+ 5 files changed, 640 insertions(+)
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+exec
+/bin/zsh -lc 'git commit -m "docs: audit closing receipts and first paper reconciliation"' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+[research/ml03-cross-asset-20261020 3cb1a3b] docs: audit closing receipts and first paper reconciliation
+ 5 files changed, 640 insertions(+)
+ create mode 100644 docs/overnight/EVIDENCE-2026-10-21-round7.json
+ create mode 100644 human/archive-2026-10-20.md
+
+exec
+/bin/zsh -lc 'git status --short --branch' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+## research/ml03-cross-asset-20261020
+
+exec
+/bin/zsh -lc "git log -1 --format='%h %s'" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+3cb1a3b docs: audit closing receipts and first paper reconciliation
+
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+codex
+已提交 `3cb1a3b` 至 ML-03 研究分支，工作区干净。
+原采集服务正常收盘归档；`compromised=true` 保留，14 根提前接收及末分钟缺失证据已记录。
+参考 ETF 完成 97 分钟测量；24 处缺柱均有合法成交条件解释。
+ML-01 共 630 条预测、0 阈值信号；630 条延迟 SIP 标签复算一致，不代表可执行收益。
+首次账务复核：权益 $1,999.98，最终归因仍 UNRESOLVED；10 月 22 日计划未变。
+[收盘归档报告](/Users/prts/Projects/aquant/.worktrees/ml03/human/archive-2026-10-20.md)已入库；Ruff、238 文件格式检查通过，最新全量测试 773 passed、1 skipped。
+尚待 16:40 ET 联合报告与方向备忘生成后核验提交；未下单、未改 launchd/.env、未开启 ML-04。
+diff --git a/.worktrees/ml03/docs/overnight/PENDING.md b/.worktrees/ml03/docs/overnight/PENDING.md
+index 1255955417ec396a7baa688928fc6b7ec5fdea2b..5b454188c491c0e664e5469635af994c57331745
+--- a/.worktrees/ml03/docs/overnight/PENDING.md
++++ b/.worktrees/ml03/docs/overnight/PENDING.md
+@@ -225,3 +225,10 @@
+ - 固定阈值盘中重核612条预测完全一致：Ridge/LightGBM各期限最高预测仅0.387–1.749bp，均未过5.2bp门槛，成本覆盖概率也未过55%。没有NBBO不是零信号的唯一原因；不以降低门槛制造交易。
+ - SIP标签首次原始响应重算315/315一致，只证明来源和计算一致，不证明可执行净收益。单日高相关或部分方向命中不能推翻原跨日探索失败结论。
+ - 原收盘报告与最终方向备忘仍待16:40真实产物；没有增加待批准交易、迁移或付费动作，没有开启ML04。
++
++### 2026-10-21 第7轮：收盘数据边界需在后续部署前解决
++
++- 原WebSocket没有保存SPY/QQQ的15:59分钟线，但独立REST于16:00:02.669884已收到；原流仍收到报价至16:01:36，16:02按计划结束。无法仅凭这些证据区分上游发布、传输或消费原因；禁止回填今天的实时流。
++- 原始收到SPY381/QQQ360根，但有效采用373/354根。差额14根均因本地接收时间早于名义分钟结束7.517—42.355毫秒而被严格门禁拒绝。时钟误差与发布时序原因未定；后续先取得时钟和到达证据，再决定新版本如何处理，不能倒改本次时间或直接放宽门禁。
++- 五参考ETF唯一完整16根窗口结束于15:59，按固定lag1对应基础bar16:00、完成16:01，已不可用于当日正常时段入场。原协议仍允许参考子集，不据此声称所有跨资产输入都不可用，也不把这一窗口当作交易机会。
++- 上述诊断不推翻ML03拒绝晋级结论；没有新自动交易授权，不开启ML04。既有方向、预算和迁移决定仍待用户。
+
+tokens used
+3,910,389
+已提交 `3cb1a3b` 至 ML-03 研究分支，工作区干净。
+原采集服务正常收盘归档；`compromised=true` 保留，14 根提前接收及末分钟缺失证据已记录。
+参考 ETF 完成 97 分钟测量；24 处缺柱均有合法成交条件解释。
+ML-01 共 630 条预测、0 阈值信号；630 条延迟 SIP 标签复算一致，不代表可执行收益。
+首次账务复核：权益 $1,999.98，最终归因仍 UNRESOLVED；10 月 22 日计划未变。
+[收盘归档报告](/Users/prts/Projects/aquant/.worktrees/ml03/human/archive-2026-10-20.md)已入库；Ruff、238 文件格式检查通过，最新全量测试 773 passed、1 skipped。
+尚待 16:40 ET 联合报告与方向备忘生成后核验提交；未下单、未改 launchd/.env、未开启 ML-04。

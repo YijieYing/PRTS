@@ -62,7 +62,7 @@ def main():
         sys.exit("keep_turns must be between 1 and turns-1")
     if a.dry_run:
         return
-    backup = f"{HOME}/PRTS/ops/backups/{a.thread_id}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+    backup = f"{HOME}/PRTS/maintenance/backups/{a.thread_id}-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
     os.makedirs(os.path.dirname(backup), exist_ok=True)
     shutil.copy2(row[0], backup)
     print(f"original rollout backed up to {backup}")

@@ -79,3 +79,59 @@
 {"t":"2026-10-23T20:07:03Z","name":"outreach-professors","event":"exit","rc":0}
 {"t":"2026-10-23T20:14:18Z","name":"ref-compression-survey","event":"exit","rc":0}
 {"t":"2026-10-23T20:23:07Z","name":"e3-tokenizers","event":"exit","rc":0}
+{"t":"2026-10-27T08:43:05Z","name":"codexbridge-record-actions","event":"start","pid":50024,"cwd":"/Users/prts/Projects/CodexBridge/app/.worktrees/record-actions","prompt":"/Users/prts/PRTS/ops/prompts/codexbridge-record-actions.md"}
+{"t":"2026-10-27T08:53:25Z","name":"codexbridge-record-actions","event":"exit","rc":0}
+{"t":"2026-10-29T17:35:00Z","name":"agentconsole-app-meta","event":"start","pid":62735,"cwd":"/Users/prts/PRTS/AgentConsole","prompt":"/Users/prts/PRTS/ops/prompts/agentconsole-desktop-metadata.md"}
+{"t":"2026-10-29T17:38:00Z","name":"agentconsole-app-meta","event":"exit","rc":0}
+{"t":"2026-10-29T19:20:49Z","name":"codexbridge-notify","event":"start","pid":66546,"cwd":"/Users/prts/Projects/CodexBridge/app","prompt":"/Users/prts/PRTS/ops/prompts/codexbridge-notify.md"}
+{"t":"2026-10-29T19:29:22Z","name":"codexbridge-notify","event":"exit","rc":0}
+{"t":"2026-10-30T02:45:43Z","name":"aquant-lit-survey","event":"start","pid":87621,"cwd":"/Users/prts/Projects/aquant","prompt":"/Users/prts/PRTS/ops/jobs/aquant-lit-survey.md"}
+{"t":"2026-10-30T03:07:56Z","name":"aquant-lit-survey","event":"exit","rc":0}
+{"t":"2026-10-30T09:06:34Z","name":"aquant-e1-earnings","event":"start","pid":3344,"cwd":"/Users/prts/Projects/aquant","prompt":"/Users/prts/PRTS/ops/jobs/aquant-e1-earnings.md"}
+{"t":"2026-10-30T09:14:46Z","name":"aquant-e1-earnings","event":"exit","rc":0}
+{"t":"2026-10-30T09:16:22Z","name":"aquant-earnings-alert","event":"start","pid":4558,"cwd":"/Users/prts/Projects/aquant","prompt":"/Users/prts/PRTS/ops/jobs/aquant-earnings-alert.md"}
+{"t":"2026-10-30T09:24:29Z","name":"aquant-earnings-alert","event":"exit","rc":0}
+{"t":"2026-10-30T09:29:33Z","name":"ops-wake","event":"start","pid":6461,"cwd":"/Users/prts/PRTS","prompt":"/Users/prts/PRTS/ops/prompts/wake.md"}
+{"t": "2026-10-30T09:32:40.548652+00:00", "event": "wake_schedule_failed", "id": "20261030T1834-verify-dry", "name": "verify-dry", "target": "11111111-1111-4111-8111-111111111111", "mode": "resume", "rc": 1, "error": "[Errno 1] Operation not permitted: '/Users/prts/Library/LaunchAgents/com.prts.wake.20261030T1834-verify-dry.plist'"}
+{"t":"2026-10-30T09:36:20Z","name":"ops-wake","event":"exit","rc":0}
+{"t": "2026-10-30T09:37:22.693638+00:00", "event": "wake_scheduled", "id": "20261030T1839-drytest", "name": "drytest", "target": "01a18c2b-79bd-7281-818a-2e18b7be958e", "mode": "resume", "when": "2026-10-30T18:39:00+09:00", "cwd": "/private/tmp/claude-501/-Users-prts/443fe3e6-c58a-4fdd-b783-6c6ffe590e05/scratchpad/wake-test", "dry": true}
+{"t": "2026-10-30T09:37:22.752838+00:00", "event": "wake_scheduled", "id": "20261030T1840-realtest", "name": "realtest", "target": "01a18c2b-79bd-7281-818a-2e18b7be958e", "mode": "resume", "when": "2026-10-30T18:40:00+09:00", "cwd": "/private/tmp/claude-501/-Users-prts/443fe3e6-c58a-4fdd-b783-6c6ffe590e05/scratchpad/wake-test", "dry": false}
+{"t": "2026-10-30T09:39:00.217466+00:00", "event": "wake_fired", "id": "20261030T1839-drytest", "name": "drytest", "target": "01a18c2b-79bd-7281-818a-2e18b7be958e", "mode": "resume", "delay_minutes": 0.004, "dry": true}
+{"t": "2026-10-30T09:39:00.298172+00:00", "event": "wake_result", "id": "20261030T1839-drytest", "name": "drytest", "target": "01a18c2b-79bd-7281-818a-2e18b7be958e", "mode": "resume", "rc": 0, "delay_minutes": 0.004, "dry": true}
+{"t": "2026-10-30T09:40:04.605797+00:00", "event": "wake_fired", "id": "20261030T1840-realtest", "name": "realtest", "target": "01a18c2b-79bd-7281-818a-2e18b7be958e", "mode": "resume", "delay_minutes": 0.077, "dry": false}
+{"t": "2026-10-30T09:40:15.608578+00:00", "event": "wake_result", "id": "20261030T1840-realtest", "name": "realtest", "target": "01a18c2b-79bd-7281-818a-2e18b7be958e", "mode": "resume", "rc": 0, "delay_minutes": 0.077, "dry": false}
+{"t":"2026-11-01T14:49:49Z","name":"nothuman-content-w2","event":"start","pid":69413,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-content-w2.md"}
+{"t":"2026-11-01T14:49:49Z","name":"nothuman-content-w7","event":"start","pid":69410,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-content-w7.md"}
+{"t":"2026-11-01T14:49:49Z","name":"nothuman-content-w6","event":"start","pid":69419,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-content-w6.md"}
+{"t":"2026-11-01T14:49:49Z","name":"nothuman-content-w4","event":"start","pid":69415,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-content-w4.md"}
+{"t":"2026-11-01T14:49:49Z","name":"nothuman-content-w3","event":"start","pid":69412,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-content-w3.md"}
+{"t":"2026-11-01T14:49:49Z","name":"nothuman-content-w1","event":"start","pid":69420,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-content-w1.md"}
+{"t":"2026-11-01T14:49:49Z","name":"nothuman-content-w5","event":"start","pid":69417,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-content-w5.md"}
+{"t":"2026-11-01T14:55:45Z","name":"nothuman-content-w7","event":"exit","rc":0}
+{"t":"2026-11-01T14:56:09Z","name":"nothuman-content-w3","event":"exit","rc":0}
+{"t":"2026-11-01T14:56:20Z","name":"nothuman-content-w4","event":"exit","rc":0}
+{"t":"2026-11-01T14:56:39Z","name":"nothuman-content-w1","event":"exit","rc":0}
+{"t":"2026-11-01T14:56:50Z","name":"nothuman-content-w2","event":"exit","rc":0}
+{"t":"2026-11-01T14:57:22Z","name":"nothuman-content-w5","event":"exit","rc":0}
+{"t":"2026-11-01T14:57:34Z","name":"nothuman-content-w6","event":"exit","rc":0}
+{"t":"2026-11-01T15:00:08Z","name":"nothuman-backend","event":"start","pid":72046,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-backend.md"}
+{"t":"2026-11-01T15:01:54Z","name":"nothuman-backend","event":"exit","rc":143}
+{"t":"2026-11-01T15:01:57Z","name":"nothuman-backend-fast","event":"start","pid":72327,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","resume":"01a197a0-0342-70d0-ba43-5ce16d3bec26"}
+{"t":"2026-11-01T15:04:49Z","name":"nothuman-frontend","event":"start","pid":72772,"cwd":"/Users/prts/school/26秋速通作业/类型安全/NotHuman","prompt":"/Users/prts/PRTS/ops/prompts/nothuman-frontend.md"}
+{"t":"2026-11-01T15:05:40Z","name":"nothuman-frontend","event":"exit","rc":143}
+{"t":"2026-11-01T15:15:02Z","name":"nothuman-backend-fast","event":"exit","rc":0}
+{"t":"2026-11-02T03:02:05Z","name":"nothuman-style-w1","event":"start","pid":98738,"resume":"01a19796-a417-77d1-a168-984c82932cda"}
+{"t":"2026-11-02T03:02:05Z","name":"nothuman-style-w2","event":"start","pid":98747,"resume":"01a19796-a595-7442-8aaa-4b0708fb4d99"}
+{"t":"2026-11-02T03:02:05Z","name":"nothuman-style-w3","event":"start","pid":98756,"resume":"01a19796-a5a5-77e3-b487-f6d735713b01"}
+{"t":"2026-11-02T03:02:05Z","name":"nothuman-style-w4","event":"start","pid":98765,"resume":"01a19796-a599-75b3-8172-0eb38c00a93e"}
+{"t":"2026-11-02T03:02:05Z","name":"nothuman-style-w5","event":"start","pid":98774,"resume":"01a19796-a596-7141-b758-9ce726500bc1"}
+{"t":"2026-11-02T03:02:05Z","name":"nothuman-style-w6","event":"start","pid":98783,"resume":"01a19796-a597-7033-a273-a3f145e84ffc"}
+{"t":"2026-11-02T03:02:05Z","name":"nothuman-style-w7","event":"start","pid":98792,"resume":"01a19796-a595-7b32-ab75-59245dceb416"}
+{"t":"2026-11-02T03:04:27Z","name":"nothuman-style-w7","event":"exit","rc":0}
+{"t":"2026-11-02T03:05:07Z","name":"nothuman-style-w3","event":"exit","rc":0}
+{"t":"2026-11-02T03:05:19Z","name":"nothuman-style-w6","event":"exit","rc":0}
+{"t":"2026-11-02T03:05:26Z","name":"nothuman-style-w2","event":"exit","rc":0}
+{"t":"2026-11-02T03:05:29Z","name":"nothuman-style-w4","event":"exit","rc":0}
+{"t":"2026-11-02T03:05:44Z","name":"nothuman-style-w1","event":"exit","rc":0}
+{"t":"2026-11-02T03:05:49Z","name":"nothuman-style-w5","event":"exit","rc":0}
+{"t":"2026-11-07T14:02:15Z","name":"naturecalls-dedicated-server","event":"start","pid":85669,"cwd":"/Users/prts/Projects/NatureCalls-server","prompt":"/Users/prts/PRTS/ops/prompts/naturecalls-dedicated-server.md"}

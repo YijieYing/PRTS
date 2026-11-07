@@ -1,0 +1,3765 @@
+Reading additional input from stdin...
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant-overnight
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/prts/Projects/aquant/.git, /Users/prts/Projects/aquant/data] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a15551-3249-7ff3-9b2b-9ab9a75ba894
+--------
+user
+你是 aquant 夜间研究 worker（由 PRTS 总控 Claude 派发，第 1 轮，纽约时间 13:59，收盘 16:00 ET）。
+
+## 工作区与硬边界（违反任一条即停止本轮并在 STATE.md 记录原因）
+- 只在当前 worktree `~/Projects/aquant-overnight`（分支 overnight/2026-10-19）内修改与提交。**绝不修改 `~/Projects/aquant`**（另一个 Codex 正在那里跑前向观察）。
+- 数据目录：`AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data` 只读复用；新产物写到本 worktree 的 `overnight/` 与 `AQUANT_OUTPUT_DIR`（已设为 worktree 内 outputs）。
+- **禁止任何下单**（含 Paper）：不调用 submit_order / paper / schedule 模块的下单路径，不改 launchd，不改 `.env`。只允许 `aquant.history` 现有的只读 GET（行情须满足项目已有的 16 分钟延迟限制）。
+- 用 `.venv/bin/python`，并设置 `PYTHONPATH=$PWD/src` 以使用本 worktree 代码。
+
+## 研究目标
+在模拟/回测中提高 aquant 日内策略（见 docs/intraday.md、docs/intraday_results.md：ORB+VWAP 基线在 validation/locked_test 均亏损）的**样本外、扣成本后**风险调整收益。"利益最大化"按此解释，不是在历史上拟合出最大数字。
+- 选择与调参只用 development / validation；`locked_test` 只在最终报告里各候选**最多评估一次**；今日（2026-10-19）数据作为额外的新鲜样本外观察，不参与调参。
+- 每个结论报告交易数、净收益、PF、最大回撤、成本敏感性；交易数太少要明说。允许结论是"没有找到稳健改进"。
+
+## 本轮流程（控制在约 25 分钟内）
+1. 读 `overnight/STATE.md`（不存在则创建：目标、假设清单、已做实验表、下一步）。
+2. 选**一个**最有信息量的实验做完（新特征/过滤器/出场规则/仓位/成本模型等），代码改动要小且有测试或可复现命令。
+3. 把结果追加进 STATE.md 实验表（含命令、输出路径），更新"下一步"。
+4. `git add` 本轮相关文件并 commit（信息以 `overnight:` 开头）。
+5. 最后输出 ≤8 行摘要：做了什么、结果、是否遇到需要人类判断的问题（遇到则不要自行越界，写进 STATE.md 的"待人类决定"）。
+codex
+我先核对 worktree、研究状态和回测入口，再选一个仅用 development/validation 的实验；不会触碰下单路径或主工作区。
+
+exec
+/bin/zsh -lc "pwd; git status --short; git branch --show-current; rg --files -g 'AGENTS.md' -g '*intraday*' -g 'STATE.md' -g 'pyproject.toml' -g '*overnight*'" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+/Users/prts/Projects/aquant-overnight
+?? .venv
+overnight/2026-10-19
+pyproject.toml
+
+exec
+/bin/zsh -lc 'printenv AQUANT_DATA_ROOT AQUANT_OUTPUT_DIR; cat overnight/STATE.md docs/intraday.md docs/intraday_results.md' in /Users/prts/Projects/aquant-overnight
+ exited 1 in 0ms:
+/Users/prts/Projects/aquant/data
+cat: overnight/STATE.md: No such file or directory
+cat: docs/intraday.md: No such file or directory
+cat: docs/intraday_results.md: No such file or directory
+
+exec
+/bin/zsh -lc 'ls -la; git log -5 --oneline; git ls-files; ls -l .venv; cat pyproject.toml' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+total 272
+drwxr-xr-x@ 26 prts  staff    832 Oct 20 02:58 .
+drwxr-xr-x  16 prts  staff    512 Oct 20 02:58 ..
+lrwxr-xr-x@  1 prts  staff     14 Oct 20 02:58 .env -> ../aquant/.env
+-rw-r--r--@  1 prts  staff    479 Oct 20 02:58 .env.example
+-rw-r--r--@  1 prts  staff     68 Oct 20 02:58 .git
+-rw-r--r--@  1 prts  staff   1100 Oct 20 02:58 .gitignore
+-rw-r--r--@  1 prts  staff     22 Oct 20 02:58 .shellcheckrc
+lrwxr-xr-x@  1 prts  staff     15 Oct 20 02:58 .venv -> ../aquant/.venv
+-rw-r--r--@  1 prts  staff  85330 Oct 20 02:58 NOTES.md
+-rw-r--r--@  1 prts  staff  20356 Oct 20 02:58 README.md
+drwxr-xr-x@ 10 prts  staff    320 Oct 20 02:58 configs
+drwxr-xr-x@  6 prts  staff    192 Oct 20 02:58 data
+drwxr-xr-x@ 13 prts  staff    416 Oct 20 02:58 docs
+drwxr-xr-x@  3 prts  staff     96 Oct 20 02:58 notebooks
+drwxr-xr-x@  4 prts  staff    128 Oct 20 02:58 outputs
+drwxr-xr-x@  2 prts  staff     64 Oct 20 02:58 overnight
+drwxr-xr-x@  3 prts  staff     96 Oct 20 02:58 platform
+drwxr-xr-x@  4 prts  staff    128 Oct 20 02:58 projects
+-rw-r--r--@  1 prts  staff    802 Oct 20 02:58 pyproject.toml
+drwxr-xr-x@  3 prts  staff     96 Oct 20 02:58 references
+-rw-r--r--@  1 prts  staff     10 Oct 20 02:58 requirements-dev.txt
+-rw-r--r--@  1 prts  staff    391 Oct 20 02:58 requirements-macos.lock.txt
+-rw-r--r--@  1 prts  staff      5 Oct 20 02:58 requirements.txt
+drwxr-xr-x@ 11 prts  staff    352 Oct 20 02:58 scripts
+drwxr-xr-x@  3 prts  staff     96 Oct 20 02:58 src
+drwxr-xr-x@ 15 prts  staff    480 Oct 20 02:58 tests
+31d47f2 docs: clarify aquant project boundaries and artifact lifecycle
+acaf7a6 feat(submission): generate verified flat text packages from frozen checkpoints
+4f6ce21 docs(bigquant): reconcile communications evidence and current competition status
+a806bf7 feat(research): add reproducible January BigQuant baseline protocol
+1b57c33 feat(data): integrate E2E provenance and numeric section supervision
+.env.example
+.gitignore
+.shellcheckrc
+NOTES.md
+README.md
+configs/README.md
+configs/baseline.yaml
+configs/competition/bigquant_baseline.yaml
+configs/competition/bigquant_candidate.yaml
+configs/mlp.yaml
+configs/projects/bigquant_2026/baseline_mlp.yaml
+configs/projects/bigquant_2026/baseline_tcn.yaml
+configs/projects/bigquant_2026/baseline_transformer.yaml
+configs/projects/bigquant_2026/candidate.yaml
+configs/projects/bigquant_2026/debug.yaml
+configs/projects/bigquant_2026/legacy_baseline.yaml
+configs/projects/bigquant_2026/protocol.yaml
+configs/projects/bigquant_2026/sanity.yaml
+configs/research/bigquant_debug.yaml
+configs/research/community_transformer_reference.yaml
+configs/research/mlp.yaml
+configs/research/smoke.yaml
+configs/research/tcn.yaml
+configs/research/transformer.yaml
+configs/tcn.yaml
+configs/transformer.yaml
+data/README.md
+data/inbox/bigquant/.gitkeep
+data/processed/.gitkeep
+data/processed/bigquant/.gitkeep
+data/raw/.gitkeep
+data/raw/bigquant/.gitkeep
+docs/ai_usage_log.md
+docs/architecture.md
+docs/bigquant_communications_evidence.md
+docs/bigquant_gap_analysis.md
+docs/competition_contract.md
+docs/competition_pitfalls.md
+docs/current_competition_status.md
+docs/data_pipeline.md
+docs/instrument_identity_migration.md
+docs/repository_audit.md
+docs/source_manifest.md
+notebooks/README.md
+outputs/.gitkeep
+outputs/data_reports/.gitkeep
+platform/bigquant/README.md
+platform/bigquant/export_baseline.py
+platform/bigquant/inference.py
+platform/bigquant/loader.py
+platform/bigquant/main.py
+platform/bigquant/predict.ipynb
+platform/bigquant/requirements.txt
+projects/__init__.py
+projects/bigquant_2026/README.md
+projects/bigquant_2026/__init__.py
+projects/bigquant_2026/data.py
+projects/bigquant_2026/docs/first_submission.md
+projects/bigquant_2026/docs/flat_submission.md
+projects/bigquant_2026/docs/january_baseline.md
+projects/bigquant_2026/research.py
+pyproject.toml
+references/bigquant/README.md
+references/bigquant/communications/README.md
+references/bigquant/communications/evidence.json
+references/bigquant/communications/review.json
+references/bigquant/communications/sources.json
+references/bigquant/community/README.md
+references/bigquant/community/transformer_train_example.py
+references/bigquant/official/e2e_20261008.md
+references/bigquant/official/rules_20260928.md
+references/bigquant/official/rules_20261009.md
+requirements-dev.txt
+requirements-macos.lock.txt
+requirements.txt
+scripts/competition/flat.py
+scripts/competition/package_bigquant.py
+scripts/competition/smoke_bigquant.py
+scripts/competition/validate_submission.py
+scripts/data/align_bigquant.py
+scripts/data/build_bigquant_supervised.py
+scripts/data/build_processed.py
+scripts/data/compare_bigquant.py
+scripts/data/extract_bigquant.py
+scripts/data/ingest_bigquant.py
+scripts/data/inspect_bigquant.py
+scripts/data/smoke_bigquant.py
+scripts/data/status_bigquant.py
+scripts/data/validate_bigquant.py
+scripts/evaluate.py
+scripts/inspect_data.py
+scripts/predict.py
+scripts/remote/bootstrap_remote.sh
+scripts/remote/check_remote.sh
+scripts/remote/common.sh
+scripts/remote/fetch_results.sh
+scripts/remote/smoke_remote.sh
+scripts/remote/sync_code.sh
+scripts/remote/train_remote.sh
+scripts/remote/worker.sh
+scripts/research/bigquant_baseline.py
+scripts/research/community.py
+scripts/research/evaluate.py
+scripts/research/predict.py
+scripts/research/train.py
+scripts/smoke_test.py
+scripts/train.py
+src/aquant/__init__.py
+src/aquant/cli.py
+src/aquant/competition/__init__.py
+src/aquant/competition/validator.py
+src/aquant/config/__init__.py
+src/aquant/data/__init__.py
+src/aquant/data/adapters/__init__.py
+src/aquant/data/adapters/base.py
+src/aquant/data/adapters/bigquant.py
+src/aquant/data/adapters/local.py
+src/aquant/data/canonical/__init__.py
+src/aquant/data/canonical/schema.py
+src/aquant/data/dataset.py
+src/aquant/data/ingestion.py
+src/aquant/data/paths.py
+src/aquant/data/pipeline.py
+src/aquant/data/preprocessing.py
+src/aquant/data/processed.py
+src/aquant/data/schemas.py
+src/aquant/data/sections.py
+src/aquant/data/splits.py
+src/aquant/data/synthetic.py
+src/aquant/data/validation.py
+src/aquant/evaluation/__init__.py
+src/aquant/evaluation/evaluator.py
+src/aquant/evaluation/ic.py
+src/aquant/evaluation/sharpe.py
+src/aquant/evaluation/turnover.py
+src/aquant/inference/__init__.py
+src/aquant/inference/predictor.py
+src/aquant/models/__init__.py
+src/aquant/models/base.py
+src/aquant/models/mlp.py
+src/aquant/models/tcn.py
+src/aquant/models/transformer.py
+src/aquant/training/__init__.py
+src/aquant/training/checkpoint.py
+src/aquant/training/losses.py
+src/aquant/training/seed.py
+src/aquant/training/trainer.py
+src/aquant/utils/__init__.py
+src/aquant/utils/artifacts.py
+src/aquant/utils/device.py
+tests/competition/test_chunked.py
+tests/competition/test_flat.py
+tests/competition/test_loader.py
+tests/competition/test_package.py
+tests/competition/test_runtime.py
+tests/competition/test_submission_validator.py
+tests/competition/test_text_checkpoint.py
+tests/conftest.py
+tests/data/test_adapter.py
+tests/data/test_e2e.py
+tests/data/test_ingest.py
+tests/data/test_manifest.py
+tests/data/test_processed.py
+tests/data/test_real_schema_contract.py
+tests/data/test_section_alignment.py
+tests/data/test_sessions.py
+tests/data/test_validation.py
+tests/data/test_vwap_alignment.py
+tests/pipeline/test_community_reference_equivalence.py
+tests/projects/test_bigquant_baseline.py
+tests/test_boundaries.py
+tests/test_config.py
+tests/test_data_pipeline.py
+tests/test_end_to_end.py
+tests/test_metrics.py
+tests/test_models.py
+tests/test_remote.py
+tests/test_splits.py
+lrwxr-xr-x@ 1 prts  staff  15 Oct 20 02:58 .venv -> ../aquant/.venv
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aquant"
+version = "0.1.0"
+description = "Portable, offline-first A-share alpha research"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26,<3", "pandas>=2.2,<3", "PyYAML>=6,<7", "torch>=2.6,<3", "pyarrow>=15,<24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+markers = ["integration: optional local data read; skip explicitly when absent"]
+
+[tool.ruff]
+extend-exclude = ["references/bigquant/community/transformer_train_example.py"]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+exec
+/bin/zsh -lc 'find .. -name AGENTS.md -print' in /Users/prts/Projects/aquant-overnight
+ succeeded in 4074ms:
+../octopus/AGENTS.md
+../octopus/frp-service-contribution/AGENTS.md
+../frozen_Chronos/AGENTS.md
+../NatureCalls/AGENTS.md
+
+exec
+/bin/zsh -lc 'git worktree list; git branch -avv; rg --files src docs tests configs; ls -ld /Users/prts/Projects/aquant/docs/intraday.md /Users/prts/Projects/aquant/docs/intraday_results.md /Users/prts/Projects/aquant/src/aquant/intraday /Users/prts/Projects/aquant/src/aquant/history /Users/prts/Projects/aquant/data/intraday; cat .gitignore; cat src/aquant/data/paths.py' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+/Users/prts/Projects/aquant           31d47f2 [main]
+/Users/prts/Projects/aquant-overnight 31d47f2 [overnight/2026-10-19]
++ main                 31d47f2 (/Users/prts/Projects/aquant) docs: clarify aquant project boundaries and artifact lifecycle
+* overnight/2026-10-19 31d47f2 docs: clarify aquant project boundaries and artifact lifecycle
+tests/test_boundaries.py
+docs/ai_usage_log.md
+docs/bigquant_communications_evidence.md
+docs/bigquant_gap_analysis.md
+docs/instrument_identity_migration.md
+docs/data_pipeline.md
+docs/current_competition_status.md
+docs/competition_contract.md
+docs/source_manifest.md
+docs/competition_pitfalls.md
+docs/architecture.md
+docs/repository_audit.md
+configs/mlp.yaml
+configs/competition/bigquant_candidate.yaml
+configs/competition/bigquant_baseline.yaml
+configs/baseline.yaml
+configs/transformer.yaml
+configs/README.md
+tests/data/test_e2e.py
+tests/data/test_vwap_alignment.py
+tests/data/test_ingest.py
+tests/data/test_manifest.py
+tests/data/test_adapter.py
+tests/data/test_sessions.py
+tests/data/test_processed.py
+tests/data/test_real_schema_contract.py
+tests/data/test_section_alignment.py
+tests/data/test_validation.py
+tests/projects/test_bigquant_baseline.py
+tests/test_splits.py
+tests/test_metrics.py
+tests/test_data_pipeline.py
+tests/conftest.py
+src/aquant/data/validation.py
+src/aquant/data/processed.py
+src/aquant/data/splits.py
+src/aquant/data/pipeline.py
+src/aquant/data/preprocessing.py
+src/aquant/data/schemas.py
+configs/projects/bigquant_2026/baseline_transformer.yaml
+configs/projects/bigquant_2026/sanity.yaml
+configs/projects/bigquant_2026/protocol.yaml
+configs/projects/bigquant_2026/debug.yaml
+configs/projects/bigquant_2026/candidate.yaml
+configs/projects/bigquant_2026/baseline_tcn.yaml
+configs/projects/bigquant_2026/legacy_baseline.yaml
+configs/projects/bigquant_2026/baseline_mlp.yaml
+configs/tcn.yaml
+tests/competition/test_submission_validator.py
+tests/competition/test_runtime.py
+tests/competition/test_flat.py
+tests/competition/test_chunked.py
+tests/competition/test_loader.py
+tests/competition/test_package.py
+tests/competition/test_text_checkpoint.py
+tests/test_remote.py
+tests/test_models.py
+tests/test_config.py
+tests/test_end_to_end.py
+tests/pipeline/test_community_reference_equivalence.py
+src/aquant/data/adapters/base.py
+src/aquant/data/adapters/bigquant.py
+src/aquant/data/adapters/__init__.py
+src/aquant/data/adapters/local.py
+src/aquant/data/dataset.py
+src/aquant/data/__init__.py
+configs/research/smoke.yaml
+configs/research/bigquant_debug.yaml
+configs/research/community_transformer_reference.yaml
+configs/research/transformer.yaml
+configs/research/mlp.yaml
+configs/research/tcn.yaml
+src/aquant/utils/artifacts.py
+src/aquant/utils/__init__.py
+src/aquant/utils/device.py
+src/aquant/data/ingestion.py
+src/aquant/data/synthetic.py
+src/aquant/__init__.py
+src/aquant/evaluation/evaluator.py
+src/aquant/evaluation/ic.py
+src/aquant/evaluation/sharpe.py
+src/aquant/evaluation/turnover.py
+src/aquant/evaluation/__init__.py
+src/aquant/data/canonical/schema.py
+src/aquant/data/canonical/__init__.py
+src/aquant/data/paths.py
+src/aquant/data/sections.py
+src/aquant/competition/__init__.py
+src/aquant/competition/validator.py
+src/aquant/inference/__init__.py
+src/aquant/inference/predictor.py
+src/aquant/config/__init__.py
+src/aquant/cli.py
+src/aquant/training/checkpoint.py
+src/aquant/training/__init__.py
+src/aquant/training/seed.py
+src/aquant/training/trainer.py
+src/aquant/training/losses.py
+src/aquant/models/base.py
+src/aquant/models/transformer.py
+src/aquant/models/mlp.py
+src/aquant/models/__init__.py
+src/aquant/models/tcn.py
+ls: /Users/prts/Projects/aquant/data/intraday: No such file or directory
+ls: /Users/prts/Projects/aquant/src/aquant/history: No such file or directory
+ls: /Users/prts/Projects/aquant/src/aquant/intraday: No such file or directory
+-rw-r--r--  1 prts  staff  8426 Oct 19 21:07 /Users/prts/Projects/aquant/docs/intraday.md
+-rw-r--r--  1 prts  staff  2027 Oct 19 21:14 /Users/prts/Projects/aquant/docs/intraday_results.md
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+.env
+.env.*
+!.env.example
+/data/**
+!/data/README.md
+!/data/raw/
+!/data/processed/
+!/data/raw/.gitkeep
+!/data/processed/.gitkeep
+/data/inbox/**
+/data/inbox/*
+/data/raw/**
+/data/processed/**
+!/data/inbox/
+!/data/inbox/bigquant/
+!/data/inbox/bigquant/.gitkeep
+!/data/raw/bigquant/
+!/data/raw/bigquant/.gitkeep
+!/data/processed/bigquant/
+!/data/processed/bigquant/.gitkeep
+/outputs/**
+!/outputs/.gitkeep
+!/outputs/data_reports/
+!/outputs/data_reports/.gitkeep
+/.venv-bigquant/
+*.pt
+*.parquet
+.ipynb_checkpoints/
+build/
+dist/
+
+# Official archives and Feather are never source-code artifacts.
+*.feather
+*.tar.gz
+*.zip
+# Synthetic fixtures may be tracked explicitly in this dedicated directory.
+!tests/fixtures/**
+# Documentation belongs in docs/ or this optional data schema directory.
+!/data/schema/
+!/data/schema/*.md
+!/data/schema/*.json
+# Private communications: originals and local reading derivatives never enter Git.
+/references/bigquant/communications/group_chat/
+/references/bigquant/communications/training_meeting/
+"""Portable data locations; the repository owns code, not a machine's data disk."""
+
+import os
+from pathlib import Path
+
+
+def data_root() -> Path:
+    # AQUANT_DATA_DIR is compat for existing configs/workers. Remove after their migration.
+    value = os.environ.get("AQUANT_DATA_ROOT") or os.environ.get("AQUANT_DATA_DIR")
+    return (
+        Path(value).expanduser().resolve()
+        if value
+        else Path(__file__).resolve().parents[3] / "data"
+    )
+
+
+def data_path(layer: str, *parts: str) -> Path:
+    if layer not in {"inbox", "raw", "processed"}:
+        raise ValueError("Unknown data layer")
+    root = data_root() / layer
+    result = root.joinpath(*parts)
+    if not result.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Data path escapes layer")
+    return result
+
+exec
+/bin/zsh -lc 'env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 AQUANT_OUTPUT_DIR="$PWD/outputs" .venv/bin/python -c '"'import os, sys, importlib.util, aquant; print(\"python:\", sys.executable); print(\"aquant:\", aquant.__file__); print(\"intraday:\", importlib.util.find_spec(\"aquant.intraday\")); print(\"history:\", importlib.util.find_spec(\"aquant.history\")); print(\"data:\", os.environ.get(\"AQUANT_DATA_ROOT\")); print(\"output:\", os.environ[\"AQUANT_OUTPUT_DIR\"])'" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+python: /Users/prts/Projects/aquant-overnight/.venv/bin/python
+aquant: /Users/prts/Projects/aquant-overnight/src/aquant/__init__.py
+intraday: None
+history: None
+data: /Users/prts/Projects/aquant/data
+output: /Users/prts/Projects/aquant-overnight/outputs
+
+codex
+当前分支和路径正确，但该提交没有 `aquant.intraday`、`aquant.history` 或指定的两份文档；主工作区里能看到文档。另外，`AQUANT_OUTPUT_DIR` 实际未设置，我已在检查命令中显式限定到本 worktree。接下来只读核对缺失内容的来源，判断能否在不干扰前向观察的情况下继续。
+
+exec
+/bin/zsh -lc 'cat /Users/prts/Projects/aquant/docs/intraday.md /Users/prts/Projects/aquant/docs/intraday_results.md; ls -l /Users/prts/Projects/aquant/src/aquant/intraday.py /Users/prts/Projects/aquant/src/aquant/history.py; git ls-tree HEAD src/aquant/intraday.py docs/intraday.md; ls -la overnight' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+# 历史行情与固定参数日内回测
+
+本阶段使用独立的只读历史数据能力，不改变 `alpaca` / `paper` / `risk` / `journal`
+订单边界，也不读取或修改 `schedule` 的授权。没有 Paper 下单入口。
+领域名称沿用 `history`（历史档案）、`backtest`（分钟回放）、`evaluation.intraday`
+（日内实验分析）；没有新建 Broker、账户服务或同义执行层。
+
+## 运行
+
+在项目根目录、现有 `.venv` 中执行：
+
+```bash
+# 两源同时获取；相同命令再次运行直接复用不可覆盖的原始页，并续传未完成分页。
+.venv/bin/python -m aquant.history download
+
+# 固定参数完整实验；不访问 API，结果写入一个新的目录。
+.venv/bin/python -m aquant.evaluation.intraday
+
+# 可独立运行缺失分钟逐笔核查；只读 API，已有证据页会复用。
+.venv/bin/python -m aquant.evaluation.intraday --verify-gaps --quality-only
+
+# 或把缺口核查与回测合并为一条命令：
+.venv/bin/python -m aquant.evaluation.intraday --verify-gaps
+```
+
+数据默认保存在 `data/raw/alpaca/history/`，沿用 `AQUANT_DATA_ROOT` / `data_path`。
+完整请求是 2024-10-01 至 2026-10-16（纽约日期，含两端），SPY、QQQ、1Min。
+原始页包含全天返回行情；只有 Calendar 常规时段用于信号和回测。
+采集保留 UTC 时间、feed、`adjustment=raw`、`asof=-`、请求窗口、分页 token、获取时间和重试。
+raw 价格适用于单日内的实际价格模拟；本研究不把跨日除息收益当作持仓收益。
+
+`.env` 仍要求 `ALPACA_PAPER=true` 和既有 `ALPACA_DATA_FEED=iex`；历史下载的 feed
+在请求中单独明确指定，因此无需改变现有执行系统配置。仅接受 Paper Key 格式，SDK 的交易
+客户端始终 `paper=True`，且历史 transport 只允许固定地址的 calendar/bars/trades GET。
+不允许 Live 地址、任何 POST/DELETE、重定向或最近 16 分钟的数据。
+
+## 采集可靠性与质量
+
+按月分块，官方 SDK `get` 每页最多 10,000 条；总条数限制跨标的共享，必须跟随 token
+至末页，不能因为某页只含 QQQ 就漏掉 SPY。请求内容哈希确定档案目录；页文件先 fsync，
+再通过不能覆盖已有目标的原子链接发布。已有页是断点，不修改原始页；损坏、请求链不符、
+token 循环会拒绝继续。源数据后续修订需要新的有版本档案，不静默覆盖原始证据。
+
+基础请求节流为 0.35 秒；网络错误、429、5xx 最多五次指数退避，429 至少等待 30 秒，
+尊重数字 Retry-After（每次最多 60 秒）。权限错误不重试或回退 IEX，记录 HTTP/code 与
+白名单错误说明。日志不包含凭据或任意服务器响应正文。下载命令返回非零表示未全部完成。
+逐笔缺口审计使用三个隔离 SDK 连接，每个请求至少间隔 1.05 秒，合计低于每分钟 172 次；
+没有后台服务或跨任务共享 Session。
+
+Calendar 由 Paper 只读 API 获取；纽约时区处理 DST、非交易日与提前收市。
+质量报告检查重复、非有限/非正值、OHLC 关系、分钟对齐、交易量/笔数，以及常规时段缺口；
+盘前盘后行情单独统计，不当成常规时段异常或回测填补。
+
+缺失分钟不能直接当作零成交。逐笔核查区分：
+
+- `no_reported_trades`：同 feed、同分钟历史逐笔请求没有返回成交。
+- `only_ineligible_trades`：仅有不满足分钟 OHLC 条件的成交，例如 odd lot。
+- `eligible_trades_without_bar`：有满足条件的成交但 bar 缺失，需要继续调查。
+- `unknown_conditions`：规则表未覆盖的条件，保留未知，不声称已证明。
+
+这些证据说明 Alpaca 当次历史响应，不能独立证明交易所原始数据绝对无遗漏。
+bar 不存在、未知条件、数据请求失败均不会通过向前填充来制造成交机会。
+
+## 固定基线与因果顺序
+
+规则在查看收益前冻结于 `outputs/backtest/specification.json`，再次运行校验其与代码一致。
+该文件和 JSON 报告有规格 SHA-256。禁止删除冻结文件来伪装同一次实验的参数改动。
+下次若提出新策略版本，应明确承认已查看本轮测试集，并另设未来样本外评估。
+
+`backtest.Rules` 是显式可配置的不可变参数对象；`replay(..., rules=Rules(...), cost=Cost(...))`
+可用于合成测试和未来独立实验。本轮批量报告始终使用同一组固定值，不执行参数搜索。
+
+- 首 15 个正常交易分钟构成 Opening Range，即 09:30–09:44，不是盘前 09:15–09:29。
+- 完成的 bar close 上穿区间最高价，并高于累计 VWAP，VWAP 高于五分钟前，才产生信号。
+- 最早下一连续分钟 open 买入；每标的每天最多一次尝试，开盘后两小时内入场。
+- 初始现金 $2,000，每标的每次最多 $1,000（含费用），只用可用现金，不借款、不做空。
+- 止损 0.3%，止盈 0.6%。这是一套简单的 2:1 名义盈亏比基线，并非历史寻优结果。
+  选择窄而非微小的阈值使正常摩擦相对可见，但不声称适合所有波动环境。
+- 两小时入场限制聚焦开盘效应；收盘前五分钟按预先确定的时间退出，留出常规交易余量。
+- 若同根 bar 同时触及止盈和止损，采用止损；止损跳空按更差 open，止盈不获取有利跳空改善。
+- 假设保护单在入场后立即有效，允许入场 bar 触发；每次完全成交，不模拟队列或路由。盘中保护单退出时间记作所在分钟的开始，
+  持仓时间只有分钟精度，无法恢复 bar 内的真实成交顺序。
+- `day_hold` 基线观察第一根 bar 后于 09:31 买入，在相同预定退出时刻卖出；`cash` 不交易。
+
+累计 VWAP 使用官方分钟 `vw` 与 `v`，日内常规时段重置，不用 HLC3 代替 VWAP。
+Alpaca 的分钟 VWAP 与 volume 的逐笔条件口径可能不同；这里遵循分钟聚合加权口径，
+不能宣称等于覆盖全部逐笔成交的精确日 VWAP，更不能把 IEX VWAP 当作全市场 VWAP。
+
+完整分钟模式在回放前拒绝不完整交易日，绝不跳过缺失分钟到未知成交价。
+主对照使用两源、双标的共同完整日期，另外输出各 feed 完整日期的全部策略与成本档位结果。
+这是一种事后质量筛选，会带来样本选择偏差；它不是已经能在任意缺口环境实时执行的策略。
+如果连预定平仓分钟都缺失，不生成假平仓或有效收益结果。
+
+## 成本与指标
+
+每边费用假设（bps，1 bps = 0.01%）：
+
+|档位|半点差|滑点|独立费用|
+|---|---:|---:|---:|
+|zero|0|0|0|
+|base|0.5|1|0.1|
+|stress|1|4|0.2|
+
+这些是固定敏感性假设，不是 Alpaca 的实际历史收费表。买价上调点差/滑点、卖价下调，
+独立费用按成交金额另扣。费用没有再次包含已经进入成交价的摩擦。
+Decimal 记录现金、碎股数量和金额，数量向下截断到 1e-9；未模拟碎股平台的实际成交精度。
+
+指标定义沿用 [准备文档](alpaca_backtest.md)：净收益核对到现金变动；胜率只计净盈利完整往返；
+无亏损的 PF 使用 null 和明确状态；最大回撤含初始资本，采用分钟收盘盯市；平均持仓按分钟。
+日收益是日末权益对前一可用交易日权益变化，月收益为复利乘积；缺失日期不伪装成零收益样本。
+每个固定切分独立以 $2,000 开始，不把开发集收益滚入验证集或锁定集。
+
+- 开发：2024-10-01 至 2025-12-31。
+- 验证：2026-01-01 至 2026-06-30。
+- 锁定测试：2026-07-01 至 2026-10-16，仅用冻结规则评估。
+
+JSON 包含每笔平均净收益、PF、最大回撤、持仓时间、日/月分布、逐日/月收益和分组结果；
+Parquet 保留每分钟现金/权益/持仓、订单、成交及交易日志。市场条件分组仅作事后解释，
+使用当日 SIP 涨跌幅 ±0.5% 和日内实现波动率 1.5% 分界，不进入信号或参数选择。
+
+## 官方依据
+
+- [Market Data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq)：延迟历史 SIP 权限、成交条件、VWAP 和无 bar 的原因。
+- [Historical bars](https://docs.alpaca.markets/us/reference/stockbars)：分页、feed、raw adjustment、包含式 end。
+- [Stock minute bars](https://alpaca.markets/learn/stock-minute-bars)：分钟聚合定义。
+# 第三阶段结果记录
+
+本轮没有发送 Paper 订单，也没有更改 launchd 预约。
+
+数据为 2024-10-01 至 2026-10-16 的 SPY/QQQ：SIP 901,603 行、IEX 400,452 行，覆盖 513 个交易日。
+SIP 正常时段完整；IEX 有 13,370 个缺失分钟，其中 780 个有合格逐笔成交却无 bar。
+2025-03-10 单日 bars 复查仍为零，未修补或伪造数据。两源双标的共同完整日期仅 96 天。
+
+固定基线为首15分钟 ORB + VWAP，止损 0.3%、止盈 0.6%。以下为完整 SIP 样本、基础成本、每段初始 $2,000：
+
+|区间|交易|净收益 USD|收益率|PF|最大回撤|
+|---|---:|---:|---:|---:|---:|
+|development|410|43.52|2.18%|1.065|3.71%|
+|validation|174|-68.04|-3.40%|0.793|4.92%|
+|locked_test|93|-75.31|-3.77%|0.588|4.22%|
+
+验证集 6 个月中仅 1 个月盈利，锁定集 4 个月全部亏损；即使零成本，两段仍亏损。
+开发集的轻微盈利对成本敏感：压力成本下净亏 $282.75。不能据此认为策略具有稳定正期望。
+
+IEX 日成交量仅约 SIP 的 1.55%（QQQ）和 2.22%（SPY），为每日比值中位数。
+仅比较两源共同完整的标的交易日，在任一源出现信号的分钟内，不一致比例为 QQQ 31.69%、SPY 36.79%。
+SIP 历史回测不能直接代表 IEX 实时执行；分钟聚合 VWAP 也不能冒充逐笔精确的全市场 VWAP。
+
+完整结果包括 108 个固定实验组合及逐日、逐月、市场条件、成本敏感性和基线对照：
+
+- [Markdown 报告](../outputs/backtest/20261019T120659Z-54ff92be/final.md)
+- [JSON 报告](../outputs/backtest/20261019T120659Z-54ff92be/final.json)
+- [运行与假设](intraday.md)
+
+完整原始数据和运行产物由 Git 忽略，仅在本机保存；本文件保存可纳入版本管理的结果摘要。
+下一步应核实供应商缺口、设计严格的稀疏行情执行规则及真实成本假设，再提出新策略假设。
+本轮测试集已经被评估，后续不得通过反复优化该区间把它继续当作未见样本。
+ls: /Users/prts/Projects/aquant/src/aquant/intraday.py: No such file or directory
+-rw-r--r--  1 prts  staff  19819 Oct 19 23:04 /Users/prts/Projects/aquant/src/aquant/history.py
+total 0
+drwxr-xr-x@  2 prts  staff   64 Oct 20 02:58 .
+drwxr-xr-x@ 26 prts  staff  832 Oct 20 02:58 ..
+
+codex
+当前 overnight 分支停在 31d47f2，缺少日内回测代码；主工作区文档也注明旧 locked_test 已被评估。总控是否有应使用的日内代码提交或冻结快照？我继续只读核查依赖，若无法取得一致快照，会记录阻塞，不动主工作区。
+exec
+/bin/zsh -lc "sed -n '1,220p' /Users/prts/Projects/aquant/src/aquant/backtest.py; sed -n '1,200p' /Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py; rg -n '"'^from |''^import |''^def |''^class |data_path|output|parquet|load_'"' /Users/prts/Projects/aquant/src/aquant/backtest.py /Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py /Users/prts/Projects/aquant/src/aquant/history.py" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+"""Causal minute replay with Decimal cash, explicit costs and immutable experiment rules.
+
+This module cannot construct an API client or submit a broker order.
+"""
+
+from dataclasses import asdict, dataclass
+from decimal import ROUND_DOWN, Decimal
+from itertools import groupby
+
+import numpy as np
+import pandas as pd
+
+D = Decimal
+ZERO = D("0")
+SPLITS = {
+    "development": ("2024-10-01", "2025-12-31"),
+    "validation": ("2026-01-01", "2026-06-30"),
+    "locked_test": ("2026-07-01", "2026-10-16"),
+}
+
+
+@dataclass(frozen=True)
+class Rules:
+    capital: str = "2000"
+    allocation: str = "1000"
+    opening_minutes: int = 15
+    entry_minutes: int = 120
+    exit_minutes: int = 5
+    stop: str = "0.003"
+    target: str = "0.006"
+    vwap_lookback: int = 5
+    quantity_step: str = "0.000000001"
+
+    def __post_init__(self):
+        if any(
+            not D(x).is_finite()
+            for x in (self.capital, self.allocation, self.stop, self.target, self.quantity_step)
+        ):
+            raise ValueError("Rules must be finite")
+        if not (D(self.capital) > 0 and 0 < D(self.allocation) <= D(self.capital)):
+            raise ValueError("Invalid capital/allocation")
+        if not (0 < D(self.stop) < 1 and 0 < D(self.target) < 1):
+            raise ValueError("Invalid stop/target")
+        if not (
+            0 < self.opening_minutes < self.entry_minutes
+            and self.exit_minutes > 0
+            and self.vwap_lookback > 0
+            and D(self.quantity_step) > 0
+        ):
+            raise ValueError("Invalid timing/quantity step")
+
+
+@dataclass(frozen=True)
+class Cost:
+    name: str
+    half_spread_bps: str
+    slippage_bps: str
+    fee_bps: str
+
+    def __post_init__(self):
+        if any(
+            not D(x).is_finite() or D(x) < 0 or D(x) >= 100
+            for x in (self.half_spread_bps, self.slippage_bps, self.fee_bps)
+        ):
+            raise ValueError("Costs must be finite and in [0, 100) bps")
+
+    def price(self, reference, side):
+        bps = (D(self.half_spread_bps) + D(self.slippage_bps)) / D(10000)
+        return D(str(reference)) * (1 + bps if side == "buy" else 1 - bps)
+
+    def fee(self, notional):
+        return notional * D(self.fee_bps) / D(10000)
+
+
+COSTS = (
+    Cost("zero", "0", "0", "0"),
+    Cost("base", "0.5", "1", "0.1"),
+    Cost("stress", "1", "4", "0.2"),
+)
+RULES = Rules()
+
+
+def specification(rules=RULES):
+    return {
+        "version": 1,
+        "rules": asdict(rules),
+        "costs": [asdict(x) for x in COSTS],
+        "splits": SPLITS,
+        "strategies": ["orb", "day_hold", "cash"],
+        "selection": "fixed before returns; no parameter search",
+        "opening_range": "first 15 regular-session bars, not premarket",
+        "signal": "close crosses OR high AND close > cumulative VWAP AND VWAP > 5min ago",
+        "fill": "next consecutive minute open, stops first if stop and target both touched",
+        "exit": "precommitted session close minus 5 minutes at minute open",
+        "vwap": "sum(bar.vw * bar.v) / sum(bar.v), RTH reset daily",
+        "cost_status": "hypothetical sensitivity assumptions, not historical broker fees",
+        "capital": "shared 2000 USD; at most 1000 USD all-in per symbol entry",
+        "quality_selection": "ex-post full RTH completeness; coverage bias disclosed",
+    }
+
+
+def features(frame, calendar, rules=RULES):
+    """Every signal uses only bars whose end precedes its possible fill."""
+    groups = []
+    for (_symbol, day), data in frame.groupby(["symbol", "day"], sort=True):
+        data = data.sort_values("t").copy()
+        opening, closing = calendar[day]
+        offset = (data.t - opening).dt.total_seconds() / 60
+        data["offset"] = offset
+        data["vwap"] = (data.vw * data.v).cumsum() / data.v.cumsum()
+        first = data[(offset >= 0) & (offset < rules.opening_minutes)]
+        # Opening levels are unavailable until the first 15 minutes have completed.
+        high = first.h.max() if len(first) == rules.opening_minutes else np.nan
+        low = first.l.min() if len(first) == rules.opening_minutes else np.nan
+        ready = offset >= rules.opening_minutes
+        data["or_high"] = np.where(ready, high, np.nan)
+        data["or_low"] = np.where(ready, low, np.nan)
+        consecutive = data.t.diff() == pd.Timedelta(minutes=1)
+        lookback = data.t.diff(rules.vwap_lookback) == pd.Timedelta(minutes=rules.vwap_lookback)
+        data["signal"] = (
+            ready
+            & (offset < rules.entry_minutes - 1)
+            & (data.t < closing - pd.Timedelta(minutes=rules.exit_minutes + 1))
+            & consecutive
+            & lookback
+            & (data.c > high)
+            & (data.c.shift(1) <= high)
+            & (data.c > data.vwap)
+            & (data.vwap > data.vwap.shift(rules.vwap_lookback))
+        )
+        groups.append(data)
+    return pd.concat(groups, ignore_index=True).sort_values(["t", "symbol"])
+
+
+def replay(
+    frame,
+    calendar,
+    strategy="orb",
+    rules=RULES,
+    cost=COSTS[1],
+    *,
+    signal_frame=None,
+    delay_minutes=1,
+    signal_feed=None,
+    price_feed=None,
+):
+    """Only complete sessions admitted. Missing/duplicate/invalid bars are a hard error.
+
+    day_hold buys the 09:31 open (after observing one completed bar), sells at the
+    same precommitted exit as ORB. It is an intraday benchmark, not overnight B&H.
+    """
+    if strategy not in {"orb", "day_hold", "cash"} and signal_frame is None:
+        raise ValueError("Unknown strategy")
+    if delay_minutes not in {1, 2}:
+        raise ValueError("Only predeclared 1/2 minute delay scenarios supported")
+    if frame.empty:
+        raise ValueError("No eligible sessions")
+    from aquant.history import quality
+
+    regular, check = quality(frame, calendar)
+    if (
+        check["invalid_rows"]
+        or check["duplicate_rows"]
+        or check["missing_minutes"]
+        or len(regular) != len(frame)
+    ):
+        raise ValueError("Replay requires complete valid RTH data for both symbols")
+    data = features(regular, calendar, rules)
+    data["exit_signal"] = False
+    if signal_frame is not None:
+        if signal_frame.duplicated(["t", "symbol"]).any():
+            raise ValueError("Duplicate external signals")
+        data = data.drop(columns=["signal", "exit_signal"]).merge(
+            signal_frame[["t", "symbol", "signal", "exit_signal"]],
+            on=["t", "symbol"],
+            how="left",
+            validate="one_to_one",
+        )
+        if data[["signal", "exit_signal"]].isna().any().any():
+            raise ValueError("Missing external signal observations")
+        if any(data[c].dtype != bool for c in ("signal", "exit_signal")):
+            raise ValueError("Signals must be explicit booleans")
+        data = data.sort_values(["t", "symbol"])
+    cash = D(rules.capital)
+    positions, pending = {}, {}
+    exits = {}
+    attempted = set()
+    fills, orders, trades, equity = [], [], [], []
+    last_day = None
+
+    def sell(symbol, time, reference, reason):
+        nonlocal cash
+        position = positions.pop(symbol)
+        price = cost.price(reference, "sell")
+        value = price * position["qty"]
+        fee = cost.fee(value)
+        cash += value - fee
+        fill = {
+            "symbol": symbol,
+            "time": time,
+            "side": "sell",
+            "qty": position["qty"],
+            "price": price,
+            "fee": fee,
+            "reason": reason,
+            "reference": D(str(reference)),
+        }
+        fills.append(fill)
+        orders.append(
+            {
+                "symbol": symbol,
+                "time": time,
+                "side": "sell",
+                "status": "filled",
+                "reason": reason,
+                "qty": position["qty"],
+            }
+        )
+        pnl = value - fee - position["debit"]
+        trades.append(
+"""Reproducible historical study: quality, paired-feed diagnostics and fixed replay."""
+
+import argparse
+import hashlib
+import json
+from datetime import UTC, datetime
+from decimal import Decimal
+from uuid import uuid4
+
+import numpy as np
+import pandas as pd
+
+from aquant import backtest, history
+from aquant.alpaca import ROOT, stamp
+
+
+def serial(value):
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return stamp(value)
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, np.generic):
+        return value.item()
+    raise TypeError(type(value).__name__)
+
+
+def save_json(path, value):
+    history.immutable(path, json.loads(json.dumps(value, default=serial, allow_nan=False)))
+
+
+def table(path, rows):
+    frame = pd.DataFrame(rows)
+    for column in frame:
+        if any(isinstance(x, Decimal) for x in frame[column]):
+            frame[column] = frame[column].map(lambda x: str(x) if isinstance(x, Decimal) else x)
+    frame.to_parquet(path, index=False)
+
+
+def compare(sip, iex, calendar, destination):
+    left, right = backtest.features(sip, calendar), backtest.features(iex, calendar)
+    joined = left.merge(right, on=["symbol", "t", "day"], suffixes=("_sip", "_iex"))
+    metrics = {"matched_minutes": len(joined), "by_symbol": {}}
+    daily_rows = []
+    for symbol in ("SPY", "QQQ"):
+        x = joined[joined.symbol == symbol]
+        volume = x.v_iex / x.v_sip
+        info = {
+            "minute_volume_ratio": backtest.distribution(volume),
+            "ohlc_absolute_bps": {
+                k: backtest.distribution((x[k + "_iex"] / x[k + "_sip"] - 1).abs() * 10000)
+                for k in ("o", "h", "l", "c")
+            },
+            "cumulative_vwap_absolute_bps": backtest.distribution(
+                (x.vwap_iex / x.vwap_sip - 1).abs() * 10000
+            ),
+        }
+        complete = set()
+        for day, (opening, closing) in calendar.items():
+            expected = int((closing - opening).total_seconds() / 60)
+            if len(x[x.day == day]) == expected:
+                complete.add(day)
+        valid = (
+            x.or_high_sip.notna()
+            & x.or_high_iex.notna()
+            & x.day.isin(complete)
+            & (x.offset_sip < backtest.RULES.entry_minutes - 1)
+        )
+        mismatch = x.signal_sip != x.signal_iex
+        union = (x.signal_sip | x.signal_iex) & valid
+        info.update(
+            signal_mismatch_per_eligible_minute=float(mismatch[valid].mean())
+            if valid.any()
+            else None,
+            signal_mismatch_per_signal_union=float(mismatch[union].mean()) if union.any() else None,
+            signal_union_minutes=int(union.sum()),
+        )
+        info["signal_comparison_complete_symbol_days"] = len(complete)
+        info["signal_eligible_minutes"] = int(valid.sum())
+        first_sip = (
+            left[(left.symbol == symbol) & left.signal & left.day.isin(complete)]
+            .groupby("day")
+            .t.first()
+        )
+        first_iex = (
+            right[(right.symbol == symbol) & right.signal & right.day.isin(complete)]
+            .groupby("day")
+            .t.first()
+        )
+        first = pd.concat([first_sip.rename("sip"), first_iex.rename("iex")], axis=1)
+        info["first_signal_day_disagreement"] = (
+            float((first.sip != first.iex).mean()) if len(first) else None
+        )
+        info["signal_days_union"] = len(first)
+        for day in calendar:
+            a = left[(left.symbol == symbol) & (left.day == day)]
+            b = right[(right.symbol == symbol) & (right.day == day)]
+            opening_a, opening_b = a[a.offset < 15], b[b.offset < 15]
+            row = {
+                "symbol": symbol,
+                "day": day,
+                "sip_volume": float(a.v.sum()),
+                "iex_volume": float(b.v.sum()),
+                "volume_ratio": float(b.v.sum() / a.v.sum()) if a.v.sum() else None,
+                "sip_minutes": len(a),
+                "iex_minutes": len(b),
+                "opening_complete": len(opening_a) == len(opening_b) == 15,
+            }
+            if row["opening_complete"]:
+                row.update(
+                    or_high_bps=float((opening_b.h.max() / opening_a.h.max() - 1) * 10000),
+                    or_low_bps=float((opening_b.l.min() / opening_a.l.min() - 1) * 10000),
+                )
+            daily_rows.append(row)
+        local = [r for r in daily_rows if r["symbol"] == symbol]
+        info["daily_volume_ratio"] = backtest.distribution(
+            [r["volume_ratio"] for r in local if r["volume_ratio"] is not None]
+        )
+        for field in ("or_high_bps", "or_low_bps"):
+            info[field] = backtest.distribution([r[field] for r in local if field in r])
+        metrics["by_symbol"][symbol] = info
+    table(destination / "feed-days.parquet", daily_rows)
+    # Full minute differences retained for downstream reproducibility.
+    table(
+        destination / "feed-minutes.parquet",
+        joined[
+            [
+                "symbol",
+                "t",
+                "day",
+                "v_sip",
+                "v_iex",
+                "vwap_sip",
+                "vwap_iex",
+                "o_sip",
+                "o_iex",
+                "h_sip",
+                "h_iex",
+                "l_sip",
+                "l_iex",
+                "c_sip",
+                "c_iex",
+                "signal_sip",
+                "signal_iex",
+            ]
+        ],
+    )
+    return metrics
+
+
+def regimes(sip):
+    result = {}
+    for (symbol, day), data in sip.groupby(["symbol", "day"]):
+        data = data.sort_values("t")
+        change = data.iloc[-1].c / data.iloc[0].o - 1
+        volatility = np.sqrt(np.square(np.log(data.c / data.c.shift(1)).dropna()).sum())
+        direction = "up" if change > 0.005 else "down" if change < -0.005 else "flat"
+        result[(symbol, day)] = (direction, "high" if volatility > 0.015 else "low")
+    return result
+
+
+def breakdown(result, conditions):
+    groups = {}
+    for trade in result["trades"]:
+        direction, volatility = conditions[(trade["symbol"], trade["day"])]
+        keys = (
+            "month:" + trade["day"][:7],
+            "direction:" + direction,
+            "volatility:" + volatility,
+            "symbol:" + trade["symbol"],
+        )
+        for key in keys:
+            groups.setdefault(key, []).append(float(trade["net_pnl"]))
+    return {
+        key: {
+            "trades": len(pnl),
+            "net_pnl": sum(pnl),
+            "mean_net_pnl": float(np.mean(pnl)),
+            "win_rate": sum(p > 0 for p in pnl) / len(pnl),
+        }
+        for key, pnl in groups.items()
+    }
+
+
+def study(verify=False, quality_only=False):
+    spec = backtest.specification()
+    spec_path = ROOT / "outputs/backtest/specification.json"
+    if not spec_path.exists():
+        history.immutable(spec_path, spec)
+    if history.read(spec_path) != json.loads(json.dumps(spec)):
+        raise ValueError("Frozen specification changed; refuse silently optimizing the experiment")
+    destination = (
+        ROOT
+        / "outputs/backtest"
+        / (datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8])
+    )
+    destination.mkdir(parents=True)
+    report = {
+        "started_at": stamp(datetime.now(UTC)),
+        "provider": "Alpaca Markets",
+        "bars_url": "https://data.alpaca.markets/v2/stocks/bars",
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:3:import argparse
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:4:import hashlib
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:5:import json
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:6:from datetime import UTC, datetime
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:7:from decimal import Decimal
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:8:from uuid import uuid4
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:10:import numpy as np
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:11:import pandas as pd
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:13:from aquant import backtest, history
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:14:from aquant.alpaca import ROOT, stamp
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:17:def serial(value):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:27:def save_json(path, value):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:31:def table(path, rows):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:36:    frame.to_parquet(path, index=False)
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:39:def compare(sip, iex, calendar, destination):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:121:    table(destination / "feed-days.parquet", daily_rows)
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:124:        destination / "feed-minutes.parquet",
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:150:def regimes(sip):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:161:def breakdown(result, conditions):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:184:def study(verify=False, quality_only=False):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:186:    spec_path = ROOT / "outputs/backtest/specification.json"
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:193:        / "outputs/backtest"
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:208:        "output": str(destination),
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:281:                                table(folder / (field + ".parquet"), result[field])
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:313:def markdown(report):
+/Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py:500:def main(argv=None):
+/Users/prts/Projects/aquant/src/aquant/backtest.py:6:from dataclasses import asdict, dataclass
+/Users/prts/Projects/aquant/src/aquant/backtest.py:7:from decimal import ROUND_DOWN, Decimal
+/Users/prts/Projects/aquant/src/aquant/backtest.py:8:from itertools import groupby
+/Users/prts/Projects/aquant/src/aquant/backtest.py:10:import numpy as np
+/Users/prts/Projects/aquant/src/aquant/backtest.py:11:import pandas as pd
+/Users/prts/Projects/aquant/src/aquant/backtest.py:23:class Rules:
+/Users/prts/Projects/aquant/src/aquant/backtest.py:54:class Cost:
+/Users/prts/Projects/aquant/src/aquant/backtest.py:83:def specification(rules=RULES):
+/Users/prts/Projects/aquant/src/aquant/backtest.py:102:def features(frame, calendar, rules=RULES):
+/Users/prts/Projects/aquant/src/aquant/backtest.py:135:def replay(
+/Users/prts/Projects/aquant/src/aquant/backtest.py:373:def distribution(values):
+/Users/prts/Projects/aquant/src/aquant/backtest.py:390:def metrics(result):
+/Users/prts/Projects/aquant/src/aquant/history.py:3:import argparse
+/Users/prts/Projects/aquant/src/aquant/history.py:4:import gzip
+/Users/prts/Projects/aquant/src/aquant/history.py:5:import hashlib
+/Users/prts/Projects/aquant/src/aquant/history.py:6:import json
+/Users/prts/Projects/aquant/src/aquant/history.py:7:import os
+/Users/prts/Projects/aquant/src/aquant/history.py:8:import time
+/Users/prts/Projects/aquant/src/aquant/history.py:9:from concurrent.futures import ThreadPoolExecutor
+/Users/prts/Projects/aquant/src/aquant/history.py:10:from contextlib import contextmanager
+/Users/prts/Projects/aquant/src/aquant/history.py:11:from datetime import UTC, date, datetime, timedelta
+/Users/prts/Projects/aquant/src/aquant/history.py:12:from datetime import time as wall_time
+/Users/prts/Projects/aquant/src/aquant/history.py:13:from urllib.parse import parse_qs, urlsplit
+/Users/prts/Projects/aquant/src/aquant/history.py:14:from uuid import uuid4
+/Users/prts/Projects/aquant/src/aquant/history.py:16:from alpaca.common.exceptions import APIError
+/Users/prts/Projects/aquant/src/aquant/history.py:17:from alpaca.data.historical import StockHistoricalDataClient
+/Users/prts/Projects/aquant/src/aquant/history.py:18:from alpaca.trading.client import TradingClient
+/Users/prts/Projects/aquant/src/aquant/history.py:19:from requests import Session
+/Users/prts/Projects/aquant/src/aquant/history.py:20:from requests.exceptions import RequestException
+/Users/prts/Projects/aquant/src/aquant/history.py:22:from aquant.alpaca import NY, AcceptanceError, credentials, require_paper_key, stamp
+/Users/prts/Projects/aquant/src/aquant/history.py:23:from aquant.data.paths import data_path
+/Users/prts/Projects/aquant/src/aquant/history.py:27:ARCHIVE = data_path("raw", "alpaca", "history")
+/Users/prts/Projects/aquant/src/aquant/history.py:30:def encode(value):
+/Users/prts/Projects/aquant/src/aquant/history.py:34:def immutable(path, value):
+/Users/prts/Projects/aquant/src/aquant/history.py:51:def read(path):
+/Users/prts/Projects/aquant/src/aquant/history.py:56:class Transport(Session):
+/Users/prts/Projects/aquant/src/aquant/history.py:89:def clients():
+/Users/prts/Projects/aquant/src/aquant/history.py:104:def failure(error):
+/Users/prts/Projects/aquant/src/aquant/history.py:127:def request(client, route, params, sleep=time.sleep):
+/Users/prts/Projects/aquant/src/aquant/history.py:148:def pages(client, route, params, root=ARCHIVE):
+/Users/prts/Projects/aquant/src/aquant/history.py:186:def months(start, end):
+/Users/prts/Projects/aquant/src/aquant/history.py:195:def parameters(feed, start, stop):
+/Users/prts/Projects/aquant/src/aquant/history.py:209:def calendar(client, start, end, root=ARCHIVE):
+/Users/prts/Projects/aquant/src/aquant/history.py:225:def download(start=START, end=END, feeds=("sip", "iex"), root=ARCHIVE):
+/Users/prts/Projects/aquant/src/aquant/history.py:246:def load(start=START, end=END, feed="sip", root=ARCHIVE):
+/Users/prts/Projects/aquant/src/aquant/history.py:266:def actions(root=ARCHIVE, offline=False):
+/Users/prts/Projects/aquant/src/aquant/history.py:301:def sessions(raw):
+/Users/prts/Projects/aquant/src/aquant/history.py:313:def quality(frame, calendar_days):
+/Users/prts/Projects/aquant/src/aquant/history.py:373:def eligibility(trade):
+/Users/prts/Projects/aquant/src/aquant/history.py:410:def verify_gaps(client, report, feed, root=ARCHIVE):
+/Users/prts/Projects/aquant/src/aquant/history.py:474:def verify_feed(report, feed, root=ARCHIVE):
+/Users/prts/Projects/aquant/src/aquant/history.py:498:def main(argv=None):
+
+exec
+/bin/zsh -lc "sed -n '246,372p' /Users/prts/Projects/aquant/src/aquant/history.py; sed -n '390,475p' /Users/prts/Projects/aquant/src/aquant/backtest.py; sed -n '208,286p' /Users/prts/Projects/aquant/src/aquant/evaluation/intraday.py; ls /Users/prts/Projects/aquant/data/raw/alpaca/history" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+def load(start=START, end=END, feed="sip", root=ARCHIVE):
+    """Load only complete page chains for the exact requested archive."""
+    import pandas as pd
+
+    class Offline:
+        def get(self, *args):
+            raise AcceptanceError("历史下载不完整：请先运行 download 续传。")
+
+    rows = []
+    for begin, stop in months(start, end):
+        for record in pages(Offline(), "/stocks/bars", parameters(feed, begin, stop), root):
+            for symbol, bars in (record["response"].get("bars") or {}).items():
+                rows.extend({**bar, "symbol": symbol} for bar in bars)
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        raise AcceptanceError(f"{feed} 没有返回历史行情。")
+    frame["t"] = pd.to_datetime(frame.t, utc=True)
+    return frame.sort_values(["t", "symbol"]).reset_index(drop=True)
+
+
+def actions(root=ARCHIVE, offline=False):
+    """Archive retrospective action evidence; this is NOT a point-in-time action feed."""
+    from alpaca.data.historical.corporate_actions import CorporateActionsClient
+
+    params = {
+        "symbols": "SPY,QQQ",
+        "start": "2024-09-01",
+        "end": str(END),
+        "limit": 1000,
+        "sort": "asc",
+        "data_quality": "all",
+    }
+
+    class Offline:
+        def get(self, *_):
+            raise AcceptanceError("缺少公司行动档案；先运行 history actions。")
+
+    client = Offline()
+    if not offline:
+        client = CorporateActionsClient(*credentials(), raw_data=True)
+        client._session.close()
+        client._session = Transport()
+        client._retry = 0
+    result = []
+    try:
+        for record in pages(client, "/corporate-actions", params, root):
+            body = record["response"].get("corporate_actions", {})
+            for kind, values in body.items():
+                result.extend({"kind": kind, **value} for value in values)
+    finally:
+        if not offline:
+            client._session.close()
+    return result
+
+
+def sessions(raw):
+    import pandas as pd
+
+    return {
+        day["date"]: (
+            pd.Timestamp(day["date"] + " " + day["open"], tz=NY).tz_convert("UTC"),
+            pd.Timestamp(day["date"] + " " + day["close"], tz=NY).tz_convert("UTC"),
+        )
+        for day in raw
+    }
+
+
+def quality(frame, calendar_days):
+    """Never infer zero trading volume from the absence of a bar."""
+    import numpy as np
+    import pandas as pd
+
+    frame = frame.copy()
+    frame["day"] = frame.t.dt.tz_convert(NY).dt.strftime("%Y-%m-%d")
+    numeric = frame[["o", "h", "l", "c", "v", "vw", "n"]]
+    invalid = (
+        ~np.isfinite(numeric).all(axis=1)
+        | (numeric <= 0).any(axis=1)
+        | (frame.l > frame[["o", "c"]].min(axis=1))
+        | (frame.h < frame[["o", "c"]].max(axis=1))
+        | (frame.t.dt.second != 0)
+        | (frame.t.dt.microsecond != 0)
+        | (frame.v % 1 != 0)
+        | (frame.n % 1 != 0)
+    )
+    duplicates = frame.duplicated(["symbol", "t"], keep=False)
+    report = {
+        "rows": len(frame),
+        "invalid_rows": int(invalid.sum()),
+        "duplicate_rows": int(duplicates.sum()),
+        "days": [],
+        "non_session_rows": int((~frame.day.isin(calendar_days)).sum()),
+        "gap_policy": "unknown until trade evidence; no forward-fill",
+    }
+    good = frame[~invalid & ~duplicates]
+    groups = {(symbol, day): values for (symbol, day), values in good.groupby(["symbol", "day"])}
+    regular = []
+    for day, (opening, closing) in calendar_days.items():
+        expected = pd.date_range(opening, closing, freq="min", inclusive="left")
+        for symbol in ("SPY", "QQQ"):
+            values = groups.get((symbol, day), good.iloc[:0])
+            values = values[(values.t >= opening) & (values.t < closing)]
+            missing = expected.difference(values.t)
+            regular.append(values)
+            report["days"].append(
+                {
+                    "day": day,
+                    "symbol": symbol,
+                    "expected": len(expected),
+                    "bars": len(values),
+                    "early_close": len(expected) < 390,
+                    "missing": [stamp(t) for t in missing],
+                    "complete": len(missing) == 0,
+                    "open_utc": stamp(opening),
+                    "close_utc": stamp(closing),
+                }
+            )
+    report["regular_rows"] = sum(len(x) for x in regular)
+    report["extended_rows"] = len(good) - report["regular_rows"] - report["non_session_rows"]
+    report["missing_minutes"] = sum(len(x["missing"]) for x in report["days"])
+    report["complete_symbol_days"] = sum(x["complete"] for x in report["days"])
+    report["invalid_examples"] = (
+        frame.loc[invalid | duplicates].head(20).astype(str).to_dict("records")
+    )
+    return pd.concat(regular, ignore_index=True), report
+
+
+def metrics(result):
+    trades = result["trades"]
+    pnl = [float(x["net_pnl"]) for x in trades]
+    wins, losses = sum(x for x in pnl if x > 0), -sum(x for x in pnl if x < 0)
+    capital = float(result["initial_cash"])
+    eq = pd.DataFrame(result["equity"])
+    eq["equity"] = eq.equity.astype(float)
+    values = np.r_[capital, eq.equity.to_numpy()]
+    daily = eq.groupby("day").equity.last()
+    prior = daily.shift(1).fillna(capital)
+    daily_return = daily / prior - 1
+    monthly = (1 + daily_return).groupby(daily_return.index.str[:7]).prod() - 1
+    net = float(D(result["final_cash"]) - D(result["initial_cash"]))
+    if abs(sum(pnl) - net) > 1e-7:
+        raise AssertionError("Round trips must reconcile to cash")
+    return {
+        "trades": len(trades),
+        "win_rate": sum(x > 0 for x in pnl) / len(pnl) if pnl else None,
+        "average_net_pnl": float(np.mean(pnl)) if pnl else None,
+        "net_pnl": net,
+        "return": net / capital,
+        "profit_factor": wins / losses if losses else None,
+        "profit_factor_status": "defined" if losses else "no_losses" if wins else "undefined",
+        "max_drawdown": float(np.max(1 - values / np.maximum.accumulate(values))),
+        "average_holding_minutes": float(np.mean([x["holding_minutes"] for x in trades]))
+        if trades
+        else None,
+        "daily_distribution": distribution(daily_return),
+        "monthly_distribution": distribution(monthly),
+        "daily_returns": daily_return.to_dict(),
+        "monthly_returns": monthly.to_dict(),
+        "final_cash": result["final_cash"],
+        "unclosed_positions": 0,
+        "equity_observation": "minute-close marks with realized exits; not tick-level drawdown",
+    }
+        "output": str(destination),
+    }
+    calendar = history.sessions(
+        history.read(history.ARCHIVE / f"calendar-{history.START}-{history.END}.json")["calendar"]
+    )
+    frames = {}
+    for feed in ("sip", "iex"):
+        try:
+            frame = history.load(feed=feed)
+            frames[feed], report["quality"][feed] = history.quality(frame, calendar)
+            if verify:
+                history.verify_feed(report["quality"][feed], feed)
+            save_json(destination / f"quality-{feed}.json", report["quality"][feed])
+            print(
+                json.dumps(
+                    {
+                        "quality": feed,
+                        "rows": len(frame),
+                        "missing": report["quality"][feed]["missing_minutes"],
+                    }
+                ),
+                flush=True,
+            )
+        except Exception as error:
+            from aquant.alpaca import error_message
+
+            report["failures"][feed] = error_message(error)
+            save_json(destination / f"failure-{feed}.json", report["failures"][feed])
+    if not quality_only and len(frames) == 2:
+        report["comparison"] = compare(frames["sip"], frames["iex"], calendar, destination)
+        available = {}
+        for feed, quality in report["quality"].items():
+            clean = {}
+            for d in quality["days"]:
+                if d["complete"]:
+                    clean[d["day"]] = clean.get(d["day"], 0) + 1
+            available[feed] = {d for d, count in clean.items() if count == 2}
+        paired = available["sip"] & available["iex"]
+        report["coverage"] = {
+            "calendar_sessions": len(calendar),
+            "paired_sessions": len(paired),
+            "feed_sessions": {k: len(v) for k, v in available.items()},
+            "excluded_paired_days": sorted(set(calendar) - paired),
+            "warning": "complete-session selection is ex-post and can bias returns",
+        }
+        conditions = regimes(frames["sip"])
+        for sample in ("paired", "feed_available"):
+            for feed, frame in frames.items():
+                days = paired if sample == "paired" else available[feed]
+                for split, (begin, end) in backtest.SPLITS.items():
+                    selected = {d: calendar[d] for d in sorted(days) if begin <= d <= end}
+                    subset = frame[frame.day.isin(selected)]
+                    for strategy in ("orb", "day_hold", "cash"):
+                        for cost in backtest.COSTS:
+                            name = f"{sample}-{feed}-{split}-{strategy}-{cost.name}"
+                            if not selected:
+                                report["failures"][name] = "no eligible sessions"
+                                continue
+                            result = backtest.replay(subset, selected, strategy, cost=cost)
+                            summary = {
+                                "name": name,
+                                "sample": sample,
+                                "feed": feed,
+                                "split": split,
+                                "strategy": strategy,
+                                "cost": cost.name,
+                                "days": len(selected),
+                                **backtest.metrics(result),
+                                "breakdown": breakdown(result, conditions),
+                            }
+                            folder = destination / name
+                            folder.mkdir()
+                            for field in ("fills", "orders", "trades", "equity"):
+                                table(folder / (field + ".parquet"), result[field])
+                            save_json(folder / "metrics.json", summary)
+                            report["results"].append(summary)
+                            print(
+                                json.dumps({k: summary[k] for k in ("name", "trades", "net_pnl")}),
+                                flush=True,
+009abd120d081e68d70c08903ae4ff0ef43054c77d5fa43a969dc99f7a908354
+01ca5c49302634d1c2ac5e113c8baf6b19725444fc7b14735e1b83cfa638f14a
+027956758e870f9bda9eac22e6f445407f597a0c2176f92cc179e1f436f383a6
+0285860bdd49cc81e0f9a332a19808e7d3abc5b5cd294e9ebc33291aefcf134f
+03032cde0e6c2979ee29da4d2953bd06acfe84092d7f51e6f1509f6ea1e91414
+0309c476c7781666c14fc96c54e4c9f6bd352b5a77c2311d24d1934a76985a77
+039a58c0ef03b25c3bbfa31ac3f9fc5f4bac19dcaf4fa712b2aa14ec965e69f8
+046d76262861d05e37d1d7bb223f2dec148ff4f306ed25c749c92bc6ce5d4479
+04d483fe58c5525da2e816a1744f0003eec19124799d5b7e33abde89b525e2fd
+051aabb5ed89f14da247714344072c3b7e7b2735b9c5bfc4be4ce1e17baf336b
+057ba04b74daf9f735db38798e5aaa25b42d2e69dedd7d7837c22c82b3c4ab56
+05bcb8ceee061e0748c7b07bad4f75ca111b7ba8fa0c94b7f8cdbceb7f0cbe8e
+063be22e30bb1d48206af6bd592f1f8f0a1b9630c1b0c9740e84bb2d3268ce95
+064fb59646a3bc60d7085cba93ee7ba7283b57652847ccdbfe16dbb95d5dcc33
+069fd518d0642350e75e65374f0ee43a804697e094a1463ca5328abcfbfca7a5
+0742eaea7c40bc601e921fd93a3bf8dc99a6dc41562d3d3480d3c964598808d5
+0761ba42c6556dfa08b86bcac1f322a289364acf507115ed6b4554960c24f637
+0792e7aa6c8971094865687f61d5bb2b7e97ef53b267a3e043d3c1eea5b1dd5f
+07e44c6aeaff56459f42f2c8d1eb78784f990449d07511452621c7eac7e29d4b
+0815c5fada19f9370405702fad32d99ddb90a1761bed6a84b8799e9ff6a90b6e
+08396b4c2fa2c770d3ac8b23b0ce4c6dd8983e59324901be683ec84237af91d3
+08c89b2b6b82cd9a3645c13d4a6f28843d7841d86b965296c966c9a0d57eb829
+08ff9502fd5b69a31922aacb0a4512fa0fcbf8635219f6456fe1c8261982727e
+09978efe31e436cc13601fd5f77c9e4de0eb2f1f53932cde7890459c602d1d2e
+09d4ed85c035d62f8edf5e3cbda54b0c44717ff1d2069491be491c56e37bdf70
+09e07bccba54323f9fd9ce62d369c72a79e2aec710db9ce78481a54751d8808c
+0b36e60a2ddc9519b81389710b93187003993957ad726543ed193879d1c6465d
+0bb2e3dacc9e04856e8c66c18c4b2de58aae6c5370f749ca2700db08166f3ed4
+0bd61ecc1ea1dc004fe32a0a78646895723c709033e35271694b0bf377b06a77
+0c120a9ffcc52633157d6b0f881ea9fa982e8f2777b9e5a9ed5b6a1023eeef61
+0d128a01269479854d8792cea7946dd89fc2913fbd06e6f235317ad9e2c81b08
+0d6f6c1677723b878ae4d28b9da38719b540dad01d4b3baa640bf2946ce818df
+0da2a46bbcb83be2591ab3e56969a44664b3df04fffb2c1cc3939fd5c135571d
+0ea63d2d7a175d2b6f9a44f5b2a223e8adc83b0216239c2a1aef7d035131904f
+0fc8d80d1642c296341b83fcf404c0f1b0ebdd7c2d4d6c72de5c0fbd0f68eac5
+0fd901fc42d2211f3a39b188ddb5cd2856d851237a1815d0976960acf9367300
+0ff2f43945b5f51abc9cf6bba1efb02edc338e5f2e9cfd9894d651b6c313d416
+1036b34fc0e1454a9acce61d73cadec38fbc8b0e2e66828991d3dbfd9b0c4c2f
+10489a0c88058e59fe40d3f39592fccceb6408264f7cc947f2972e7a9f0486ec
+10e79495743a30341a2aafc74c9cf8911f293d4364cfb317f831aa7efbe730ee
+10f3b1b2804b1899053c955c21f9d7144e6b41b80faebdfd36d8b839f24d0d18
+1156fc6c3a6c5196970f1c43a257e5e680f3e406b5c55bde21eccadad4a28bd4
+1202a2a0bfacba62bc3e0e63f29bf631054c55f67062473668dd877f13b6f541
+1242322305c6161b26126b572eb0f93c402c7458949ed7d533568b0ce2b1ee24
+1252ad7afe227b436aebd63f03a884900609cfc66f4902fb651a638887c22724
+126f9480eb2a23b9f4a6588ab979a98aecb83ff7a5442455bdf309a670076adc
+128e9763695940602d4201436c61e26b1ea1bd30b58392c65b7f958cc95ed065
+132b1a2f28c4146e0f8168e37ba8a843c7ad43573952098da087294f018022a4
+132cc109a5269af9da92ec4d3e1c302895e69c2001f816c5a461215759d911f3
+135eee6e5524269b5a66bba8c4d481e12995808b38956b26c948b209be6073eb
+137a51d3f55d82220e1c46f17f830ea1ec685baad97fc96b84ea2ea1d35b013c
+14086d8ca162e3c1d57d6c63d1c15a0b17238f8f58e3ba9b81a3e773b2b38d57
+14597e6b085c3c9e72d98c912f37133b583e1648cc08229390760ff4b0f39952
+1464674ecd0a067d5005271bad8847a350ac51648a4cb0c833f4ce802640cec5
+1477a58e98b7177a5531e5536e75e991829d6f1aa9f219d85eea9b919fac7ea5
+148b3d100423d2ad127c7f075589299430249130b1f53c59a4b6598d7250dc54
+14b0ed228e1007a839cf4ce170818cf4579a18d4ab3f67ba5470b13e6006b532
+14bccecc05792bc3c36d7a12143ea61cfd00f7590885df25316cdeefaf3f3be3
+1514ab0b82f58bf883d4c1343a54dd9d75111395f7c45562c5dccc33e796f5db
+153731f72169711988a9a29688fa6e0e0e92dbba3871ef1733361e755d60558d
+153fe414ee06c1b5182601e1c90ed697f25d639a31bf8e9339f33f61cf1e0bcf
+1591bdffeed02deda7974dba07684575e38b2201fa0e2c968f008337bb407cd8
+15cd7ccbae9435505f9e42826ce482f3004ea28325ff6c316e9989d6f5951ffa
+1611a0aa840f3b1ce472ccf2d8a848499bee1ed54226974878d9ece266d4a958
+1666a6e13ae278c471076706860fb56c46cba2e22f948ce653f73ca330b431bf
+16961276f6a24e70519e6e56fba82b0c7427f3edb39c2e360283b704f61f91a7
+16f004e5dd1927883c008a455bf0c089caaa1ac978242bffd3eae62ff96314fa
+16f390b50a559c2c960604c2c6d745f94d0034f30067645adb761ee6b799f976
+187ee7738da06f731f72eb28fa2bf8ffc21d72ec8d3b8994de6801572f492510
+18ba357710cb0b883f93ac084ca2e2a1cd66003a9f3a1cfa7ef8db8b9882c0ce
+194670323352349bd6ac56062caa1b0a23a91af4e417ec150dc5cd32579f1c28
+194f45288799a4805bc75bf8d298f81d477fcb24ab6aab88f0573b1d5c9d85ff
+1968f387c6053699e7f99a0e45af2ad9bd58acac5a27f71ac8c39671cb414a8f
+1994057efea66d80baa566c2adf70a327960ad4ad755ed0ba7bf961dd96085ff
+1a34bda94809ca69875a0760afc82b8595b39e88bacd7793c1187e1df6c75d37
+1a3720a2f468adc1fb2beeb17f1b57131b5cf81e552334b166699e03e4a95365
+1a68bad1a3a7b9ce3e6c29d234dfea1ed87ac2775b1cc9e4985658be9c55e2ea
+1ab9c441303728194a8e9c4eed932913b889c25fa1eb45e0fc4d78e5e51eecf2
+1ac6c6c21fe2642b9781bfe0eb3527a646801a8cbc47f8f7184758927d293929
+1b18dbb0633ec1fa0740cc804361638bda1ccf585b8406708f6dc6bd37cf5c5e
+1b4a77aa11f5f8f6b1f905290bbf50f329d07eff00433e01a8acbf91b1356f61
+1b67df604bd7fd9353560b97fda7d946b5656afc726d11196b682d7315d425c8
+1c05a39a1a69bf68ef40019f600f604b221cbfba12cef0479c6c7480af8d8fba
+1c15366580dd7882a6a3f4b0212329df7a5de3996ffa08c4f1ef8ec6241752c6
+1c65d6198fe320192143b3f28e9acf072fb4bae31733a5b9d6e7c7369a5e600a
+1c9d51154c8d874432ad799cf24791e0442ac0906d2ad1d558555451cb4724f3
+1ccec85d48b823a31b629943a3e629108039e4ff8dd4296a51b33beb0a67795c
+1d42ce41312849c714075eafe536092b2965f1ab99eb0d56dbee397f8ae77a09
+1d5dffb5e539944889101f5bf23c1bfb16e5f90685f419af5c495ba2c8b2bb94
+1d9768171c70c4e6ac26dcabda3eb2e4c2337846af30800355fb77838db2e41f
+1db1ed02638e86b44575b365db69d873ca1b0d1c4706f18c4340ae714da8afd1
+1dd6311190f94d1279f8f231fda917b23555c1c81b2e897036606931e22965dc
+1df1d118e3a157dc113b4065a3a0055708186eec599f4bdef1ecae8dc900e608
+1e1dbb20fe02c05478442f3b84f46f6c45b15afc58ee0805702a8443f5af3b80
+1ef823052dda5eec8cb410e7bf49e2ce2b541cc7d9780a3c71b8f2ee515100f0
+1f6a78d97f23c9fa12822f5bef37c4c5c550f00cc2c460ae7d108c2157b1c4a0
+1f9593ddf96881a36e7c8230b0b5bca249022ee059262eac43bb0579d13b75a5
+1fd243d26246d8069bfbb4ff0d2bf3e8eda6ee7e6c159e48777b3fc1f06f64cd
+205e7301a0eabc0ade12f798c816cf5c535d4434d76cf7f381ee2ab25980cbb7
+211157c674c58f73bdbd025321e9e69475f22eee97931a90c37b09dd3f6c4f98
+21636d9d35eba86c68f3652ee14badcc8906bc420e813e1ff8b51d2abb024855
+216783b0633781a2e213c530e3140e8e7fb1aab9c40b6e1c42c65372b57becd5
+218846b86368b292c8f51b01c79737948a1079287fcb9be4446f20f51cd58f20
+21ba0fa85e2f5b1d93a59b93bbb0675d0307d629e8c95f73c8811e49f3771ec1
+21fe355124c7345ebbfa278db3ab99b6032d7c20a5ebdc2b195b675f82bcea36
+22544c19407590b41a3c64afb933a393eb62735e5c81589590d6b6e685bc77b2
+227e3ad63bf7723f79a9acec9636371fdd6fef16c675e68571d0b21ac810f90a
+22aa17c17b581c8057cf149061cbec3810c287f3d47e6a3fb05e844cdf920a95
+23c77671906105272179a9ba6ecb5558be183e27df6d65b3e58cd1b25826bcd4
+23f8b20a08b86484178a26c82ce7891bf6b2812886d22ca995e0d3be2cf5d26f
+24da60350249872c082915a1981e64c43e0074eae7dc546005bc5c7f7fd990ac
+24df7fb12d9c45f8fc6e4a6c766a021c81caa84c3a74225fc86f6318698bc83d
+2534d17cf62e40b7933e7b1534e9c0744e175abf8313d6030c5594f43bbd1785
+254d44be618d052cb0031caa1357a8c2fed5bba5fae8960e993b99fe8a6748ea
+26177f1f3c61c780a387d4d58d4167428e1b234e63bd6286a53c864acd88cf26
+262d9dd8b08d44367da2c4cd34ff1519582bed4dc3d808ef02882890fe89be68
+269a4f7e3dc9691e5680619f0c30b358d7ea5a9db13cd0fa0023d417e0455391
+2714aac2565098d32ca7898f0ebef0bc95ed3e1d5082e230a25085b2e1c5a136
+288d9322de301d0a644b2b0c15c59bfae35964aaa155be7872ad6c4ddc8d2292
+291143b473dbf06088d0e276f80b0a16a3e3ef4054b89b893e1fea05b20a8a4e
+2933bd28eba47237f2ed38569b2bc42807032a2781084c20eb2391ca011c8816
+2975df47d3d8cd700bf8946da9c99631fdc29f7ad3ea2242eb87a760dde6e3d2
+2a3168bb356c23e7ea38c8d1536463625b51756281cf8fdf625cedeae3a85506
+2a4105930b480310ef6e138e77c17b41c4e29496662673ce14691f2593574927
+2a52717f0af30d060a0b8eba21ddc6539433b1dc37224867bf7589b6970b01e8
+2a652ff031d024c917e7558b3b20296cd1549df00c34dab35f12b4f5562a7fbd
+2a9514849109410112b2986dc46dd0639cb213e44d1e139a5ee28d32bda87256
+2b64bd0a041b180126c90850258ec3374593195805b9fe2d0360736cd3664a81
+2ba3471d3fe6ea3faf080d14d70aa0c49b73f07490a143c55b3884b353ed78dd
+2c3153ec1edeb228f3e649fe7faa3ad5976ae2e96ab1bde97c66929fd6b2e058
+2c32d087c75039812a480b7e8247085a96a37cd68c2307c4d8d78fd98eb3011a
+2d5ea3e852d1235c567a7b49b42e0eb41eeada80bb1c00fc690982aae2a2070f
+2db5c2bc73e2b46bb9121eee76a631e491056c42ac41937d3e2791b95c8cc7bf
+2dc53a68071cd5f81d221600e65a1cf7477c96784bba44e427e24bb05c5fa19d
+2df6be5f494a04a53add1630687b27e91b00cdc8b89ff4bf4ddba71834a5aa0b
+2e668549e661586019ae89f74a9b3a1e27dcc54b137c2a83a04ed804d4f7f24a
+2e903f1ca819b855b15303545c5f34ba4e8f37d2d2a567a0dcecf69d777c1ea0
+2e9f03566ea77064a3c5b8699d33bb980ea96077434bd67114be5cb879681ac1
+2fc3d5965c6c940e6f60cac421c35110f472f8b927906bad3b076f614376f44c
+31a728681f512904648873a3386efb75e1cc08f7afb55f4781bf3902c51bdae4
+31d67cb6f2902ee457d5fb26b76320669f25dc1576fe4daa326d6d3a4025d90b
+31ed550dfb466869129712fe798cbfda29806d7d69b62c21bbe5b9aa6e7fc9e0
+3227c7e92525f808d3fdf90d978313d3e8f06843d60dcc91dee965ca57e1eff0
+32d5be7faaaee3f38f7b2c8006437376fe89d492b811a23a2a9d72d30996898e
+338e0891ef3bf21c39c6cf4a537a91e5bac985d4e1617f2176abef62119a3eac
+339c81e7c94d716205ebb225b601f805d0f0ee2dca62b07853ed5fccb1e988b4
+342565034609b5e1cc494360727421e3cc4269fedfb707c343c4c91d246e97e0
+3437284df3141bb01c70140e6e5654958c555b91000aa94f21c86f2667ab2871
+343e6c4fe9cf9f79c10c16abb5bb5bd94587da0cef5c5f031f503b8c57aa36a0
+34496a454ee98d210ecf941b8198135595ef6e27954a99ef844e532ba4f98d0a
+351ae00b3306a44886d08bc2ab05eee16e5d063ca389dd690450a649bb20f564
+352f9d0dd426602d100f3e4f6a8b6752f1b41b4fc03c60fed0e8ab62e15bdd2d
+35538aef66da77805316687908f86e3e252b51483b6be74eb65865d9c7b0ac23
+36c9c6f56962a11679b756a7ebfd1b073ffa8bf0f6b61b54e8026ae63f2bb08b
+378a7829e84db90839746c7a5a3bbf6308ce1d42f2b3ca55d294be01af522c5d
+382d2220909c18d431fe378ecb259440e0b5704b59f8dceecd442b524fe2393d
+38c30493f0cd7af5627cfae6a9f4287966819c684624ee419a4ccaf266438c90
+395f6e003b780678cd8613d88d52be681c1bf2ee088eb822a3e809b68006910e
+396250c2be1bdff4fdf70313bbce32d99519ab38b78e1799de7c34b51a2e41a1
+3a0b187cc1916196d3b0daa34226ec46444fbb9a3c7ef33faead34f74bf5db67
+3a44eeacca90152ba64b0ec52ad414cc6120197ad7847eded030bd3bf1e48696
+3ad058246f9db94b52e2dd4ab75a3790214e74f97c1a757c9b6cecbffa682b38
+3ae969b06ee981e4f6ecc6510798fe91dbb354ecc551ebe74d9482e03c34e369
+3b007587e9c6d2c2b6d281370c40757219754900d7b4ecb6738ec942934a6731
+3b343c844851aaa2e4a5e9a112eb83d47c8137659c77a0ddb5ffc87dac901d0f
+3b393f592ddc387b93c22102d15959409e6fa7938d259dc59abc5156f212b5ff
+3bea961b1b2e6e2691c7435511b4e925a9e0167aa9929a3631742dc3a84e84cb
+3c341afdeade970351ee681c67894868b105882fbdf320662d27b8da1fed1a4b
+3c4109fe31a4342f19c3f4f663620006b802d5d51d0d4b080447104edf22c909
+3c679c32edfa836da91284e1c727cd10a73fe300c68e55522ab78a7e73076d6e
+3c857fac207bf6ed444cb17562c35edcce36c1f17b3c74691f6fa4ec8be31f63
+3c92671d973c981ce68e11175f38b2b04a92bfe9439f029bc4cb98afd08a78b9
+3cf27e04a5ee00f4d7ece0ca58717741069a53b8b4bcd6e794b0fe9f22e53e91
+3d0a56563eb6bdfbc9de9f35a805dc21a53fe3cf331ce64380ccf2630a717ae6
+3d1ddff60abd7baaa60d2c5184436ff81f399ae4a06ac5b1f5e3b5d7e507e73e
+3d919533a47cf2790b4e87f93dc8f73824c14698553df3685cfccd8ce3927314
+3e6a0541027e276cde5a40010e1aca782abb4b19fc5d589153d71fcaaf7ee270
+3e92f31f796cd7ffd08b17c07b896c8951d6c9e4669dd6f18a5d8b0da591612a
+3eaba2e81325b8811c9504e4b6de38d6f0073a3766cee8030b15864bf2c56fe9
+3ee5cf7e2981f080f8c6bec66843ee0af70fc263ab847a4ec4682e460219bdf9
+3f10b2ee8b508a26072e80bd9bda685075c4b05feffded14c82341032d5952f8
+3f3bc81a897245500e90c461f9d3f082b7ada6998c0af76dd38125c390353e25
+3fb6a0ea97ebeb664060d0ed2eccd366d9c9b42ca6492958898c6dc0e3e3a68c
+3fde85cfbe1b9af056567249efe0d43e4427828f1605c78334fa131d3f3389ef
+3ff6b90b0e59b059fe4436215bef2fef60d201b197934829d9374acb2f6c7a27
+40106ab1a60e9aa817844aa98fd84c2bf3dc225e6e9401805549e529ce84bf68
+403353f8e2357ccab25e0e68cf34a47743a7d454511513e30c84123e93e82076
+40cd442e294645d4093a4d2fc47ff184e32f664bb296d08ca551973859f0c222
+40ecb74bc7593e1222ffe38d3f4c26fba2c75d0acd304c9451ad98d909e1f109
+4108de27844887bec8aaf4e8430eb30363d9275051816bd76917472974fb23b7
+410d852332247c97403d0b26729936603ac15330f29222311013a401cf0d3297
+41440945a6c71c439fe9eb409346c440c9160bb17c19b89ce7d90813bcf8d4e4
+415283a8445020f5c689654f930daf7f6891a56d7b13f3a5c340a0ae926e280f
+41f63bb72b76bc584d091179a4230cd67e2c95536bbc474cadb5d6829423cbe7
+42382a0f19f900b491d684650f6797c27efd90090634ce9901634fbe02bc2e68
+42397502d6d8f958d8e9580c39346b2140934c2e3d71072ed17fe8b94088fa66
+425ac6b5c1522322113c66b3fe708703916783f17eaf2b3254a8aafc2d49510e
+428f2132519acc1ed10650681c872b68c449e23ac64ad983bf55c4c87a9d5228
+42dd8840e45f57327f6ae8a997117ddeca29712a67dbcac5ac56dc75f2654320
+435ec0d5125b4733573fafc022adc0853256588743c2d7c5df531b20c265526d
+439cd53a787ecaa27f11eacec6ff0eca351592b3b5c2952d2bdd6aff4b56bafe
+43dbc42c1724d8a925df8cbec21551e2faa2b426e1e07526d1206c6afd2b3730
+443de3d4f80519e6a212ba610bf1b3bc6ee2bcacb54618991b5b18f0db2671cc
+44810dcef14a446ff1e429afb98cff474debf1efa4c13f241d4ab44ad9656593
+44991c2d5827156b5648a669d747137ecd6364f07897667c7b4500ee83313e61
+44a6d5f2d0c42f4dd390b51f3dfc768282b2a3f5ff90674221911f833bdace61
+44d4b8ce6185284f239c854d28040c48c1ef2364d3e4acb81bcc031ded97c793
+4548e84bb4425cc06dd7ee32e93de08141ac728c99c6017f4b61fe2316c1d262
+454d55795bf732335e584d75caa8be122e126d6c387571ffcf8c9499d25eb3b3
+4573dee2f3d3ffe49228b93afa45b07368844780dc478896fdb03a089ff2ca95
+46b94f4b9e6addff1e255d63c46ae8a4402362d332ee3e5194b2a330e9a3bafd
+478420f320f53b3fbe2a4a136c85e8daefe847206e08f6973a99cfb4af1a137e
+49831b2e7c5dda66c5c59dc60b8f6bb6a7ef1f4895c329d412b7fcfd9ae25cbe
+49a221f2545e387613d33b12d6af5325915b69b44b1c5bd57a9cd37cbd094ef6
+49b75bad6703ed0cf4e73e29724b82d772750632f8b1f4f7acc0525bdfcbae0e
+4a11438be86ceefd2553b8376359c98a265e76d3c07eee67bc8d7cf6145bbf92
+4a8a3d401965e91a2b1315ab564a94d64494df2c0289b0b4fad22ed31b40a23e
+4aaf9769fee35fc4061d435777079e526affd0e53663cd25f8f8973f6d1cefe0
+4be2ff587c2bc871ba67b77c9b1a35b4a6dbc0f7178abc461d6d375c0f9b33eb
+4c8b4fab6e94d24b0b224150d103f2c6f6f95770ba70129a41fcd3a322732966
+4d1b1e73a8265bb1179064694ae0189177d10a106deeed82476cca6569d1daa3
+4d2d38ea18ef997d84200ce13d951ddb7a5d61444410f0e8d893dfcea658514b
+4d3ff1217ec142d70b6a697efced79d14a9defeb555454398dd27845729b52c4
+4d53e75bd463889f97b9cffde5cb03928a43718ce026231af581ba4cc088aeab
+4d9ec7ba8a5939a3bc4158e84831e0c3727ad9cdecc66eceed6bf1e3fb348564
+4dcd007b241345f69b0f68cf2db5b28fc0b3e88bfe05073bedf715c3619a427d
+4df77bb523abf56b11290ce146fdb4fb2edb8ab8f67bac8019b92d776f1e50de
+4e09d6f1535c6e2714e9d641f38e877005d36e6a0ddde3c0fad73644e66afe01
+4e148401a47ed3e67f4d671b3025e64a47f37d559d0cb4659637f5772580b9f9
+4e2ecc47f2ffdff25f7e4a1e47d8f92e7a6b1fe91ba09f7e3fde86a68c117608
+4e6be8fc22a08800e9d3dc09ca41bb6528772543f42e08bfb1f2dcf44aebef8e
+4ee5c6ff91b31c55ad2bfa71a4eefd201c79b490fc3f577cc1582033cd2cb926
+4f2b1e0c0c49b33a0b455bced1d440404f8c68edf4f4de03f1a791e46937e166
+4f3e1e8f0943fae0729a065f4b133f3d03eda01ab3314cebd790df1bf5b37c66
+4ffa01bd4fcafdf9a8b0cc97b216f3850398b125238d39989bfb8af0722d4ae1
+502857fabe920a570ca7d36406cd2a5a5b4be21d544929a6e0829d4c951f8c30
+50d1e852bd9b992bf654f7097ac389871c753618947b54dc8b9bec284d5b9737
+50d5c186aba2be67890a86a1c6ffa2244e15617b4a839d4daa62466db916753f
+50dc9a845042f0646d34cc7797f8d821fa1cfa8f5fac59d5d9a9d34ae8358a74
+50fd4658a054eb0655cdb530b2b759155b8638db2c2fac1bedb43ef7c7bcfea4
+513000660a41ce5a6f3d44e0075bf40800e6ff18bb170bd9ca11f06f0f6ccc68
+5188dbbb50fc6f8d09665ecbd1f318dfcfafb61d7b797a4bba826e7113952dca
+519c0c5881bdf096df2290f69f6dcc883a788097b7fd8150f9378329ca03fa70
+51e8110cd64a7a58c92f5edbcb4ae6a543aeee6d5afa387c30838ebb098837be
+52027e0e81b9daa648a3f653167479db74b201319378fc70086ea96e2248dfac
+52a4ab408b8827ba9328ec328460ffaad9fddea6001e34c6d4947135b31963f5
+52f869d57d766555ba2cc1c161c39670855ca04db5dea89b1a40d1b49506ec2c
+532af245b9fcb4dc00a7bb7ece0abfea5e796601850c46439f696f0dafed069e
+5336335a1ca39adf612b8012e69c3a768fe11f107470c5c811c29fca94e89b22
+53990c6e999d862323e7dbcd09651a840b15938fa9334daddb24dbcc19428d77
+539b823553a1735e6563958c723d789556b5fed20caa3950d11a4e823df6205a
+54af66919aa302103a9b7c81c2ee4d444df7db29da80470367a65df1decb4b43
+54f32af9cc25bda001bfa89b0d6db5dffacaf9cbc6cc204b78d15a0e98504aca
+55331e7b14f49cb30b8395c22c4bfb8cbc479992786021dba0d468e10d1f5951
+563ca9669a6c58b2eef9e4e29b8f781722aaf347e14e52704d98c70fb2ff591c
+56765b864a839692cdf59073e45e4b57430f76083f69da3e291f89007ff8464f
+56b0c0b9f97a1068f3b3de6fed2b55195ab85fd1add6fc6580b4a08a498e8a61
+56db162d772ac1021d0ab394393d79849e61e32423ebaf5ab4093bbbbe046680
+56f223ceff22c5634af5c09e6321b82806f8fd1e4bd3a8163a0f806dce313347
+57283e480e40af5b42cd476274b6b1d6b117a7df894fa76c5c642f61cb7ac908
+57a59acb7d0ab656388fc96c7b54a5ba810d10b0387c1878dc98b730432d372d
+57ab181907a67952145b553d467f9abd7a352cf25663b93fcb90bee12896bfb8
+58f8c9987661b0b33a666bfdfcb5fb6a1800e5732faffd5f951079b36bae3323
+590a7f81e88f94154d7421e5c12c9286cf27be2b89deafea6f8a8ae00986d36e
+59629e4517592b92f7e628de1dea7ebb6b85ca8d5d2f09b5dd858ee7b34f0c80
+598051a104460c1ebae9d922ebc4f0b4d64a9fd4b1a5ae9b0b60d9cc4e17a5ee
+59b5feeafeadd0ab8090386b90f3987731e04921792da3f6e86fecd18a11931a
+5a5cc47ba6ef7f660d04808586e456a3cfd78061039311063fb68931f187a3bb
+5aa29077d3ebca8bb84d80429dcdcd2992928ef89ce393bbe0bdee41cb6ceb20
+5b9ff95fbffdaba25d2f1b5c9883dcceeba5f3b95c2e8f46b4f7d2dbb06e8345
+5c89d8adad5afc42772dca37e9a4caaa91c25820b49de17bb922ccdc5d1e0fe6
+5ca8e50501ec8cd32aa4a304b038e98ad01e72a915ae7c96722b64e773978b99
+5cca9dffd1bef3bbf7a65d0da63bc52ab5f9f8b8bcac89fa317d7ef16fd062cb
+5d34ce774730b0ed0a9dfdba00e457b22796c109507ed58b4769ba169f350dc0
+5d6457307f91edfb6c6be0482ce03f2d827e745363785e6fa82a86969b7e3407
+5dacdfc457771a61b07e1c39aa0a369953d1a6d123ccfeacd1f24409badd0084
+5db7d477e6eb7716db787eaf7df5d57e2c12e396f819844a49a450e7eca4534e
+5dfedb5b7f9f40efacbc88fe58d456974f769c9a0f9cfa1b4a8e29fc15eab620
+5e69d9767e4f28a775d75d37e669a6faffd45b5d1f4dd0f79f6d7231c559c6a8
+5edc6c69c292d341adab16a0ce20655aeb0e661d3404df20336a273a91b5fb23
+5f0e2b48bdd102b204fb55d865eb6b039fe78f24d0e614d93310193a850047d6
+5f681e183cdf8e098efd2092f896149abc537a2e012d1daceac50734909a9187
+5fc88c37f74ea2fb3d556116bcd51ea6e99225d8abb459b071d3777cc48a7529
+5fed1ae24e22a3e41cbe75bea31e29f85f865d6bc8d2fca2bcb31e152bd242a9
+5ffb8e30d411ac8ae8185877d1c0641ed82c4e5675614f0b150e69a1d82dea1c
+600c4033bb0c364af4d2b47e3a734e253a675187f16f47e1710f4c1f944cc79f
+602a309766f314227ce6e28cf223043cc31e27dc4ae68e7d0643887328a7a78b
+60d2183ad99164780fef7799258bfcd4f62857ba677e70a486f8ca27c4e2f969
+61048d886a7a07fe23911f0025aefa1c271ccf565b0a2a53ac3050dcedf58b1c
+611bc8c66702f3cb876a8a95af2251b531f2d40edf1f9b573c11f4b48b6a022e
+617f5bdad5fd2af7c23600c6cff8b088d2ca45b6f05f18165edf283a85af7737
+61fc2e7dae9970b7448f67efe2e1ca384265ecace60326ece869b1f9012fc9a7
+6224ffd0fae2d90607d74e9c5dca4c98f09b56d942be2387a0fa3a95efd44246
+626820a1afb5220d8ada302e1173d7a2449bd701512295b6a76215ed11bb9d45
+627604bad5bb714bd85350ec1899945daa9d8a312f92a5fcdd0831c65ce3ece8
+62d28dd747fc5c346efd16533aff750047134ade4ac2acc493fefcf50eeef657
+638649134b8c7e9eae98122658625d1be103e7ceb4fea1b6f572545c2e96c302
+644bded97a3b33da46785dc53aa8879e10be2d3d9bd9c33d8e6acd817a97ea5c
+646f99c04e88882c0bd50b5acaf2d34f59b6e2223892b4d17c0b4650ab03df2b
+6499229769be79c857aeace6c75f0e953e62a601efe017379ed193d167bf0441
+656dc90337ae377d552774af54713563a018c86f687ffcfbbba958284d159ba6
+658fe190dea41c75c7489009e10c616a07f027713824f947d3323926bfeb6a20
+65d353b0fd3317fe405c5ad6c35fe149d6423283270bc669ce074a3406fed31d
+65df259813debde9cb3ab05ceb6ca2ce972ff1ca887495ba018c73b1795126b1
+6670a25f2bb1c7f8dfb4247e18e1ee2732b809eed3d1faf77f0f3e718dcc8fb0
+667d25d8e03c0c3df13fb9bbc3ffc5613fad4131a912426ed2aae02a4b884bb3
+66873925d815bf71d2811a7cab447ef9f40d97f559f308f9479d5553af19f3ff
+6775d05f21700818cf36e8ede264fcf55eafd6104b54c633478c3f15f5982598
+67c971a4d6600692e3e710f4fcdbd43965fe85ec741545258f99f639af22da56
+680417e26f1096060b5ce780c37bad30211d0e9cbf90b68d3fe74c58f4520179
+68ce916d093051f6b8fe91c0f22ef5d28816d5328db9cfed87ddd2815caef1e6
+68ed5fa75d8923db2bf3c1aefa7ffbc9a98dc049e79b1062040ac48764545658
+69c476a5fa85eecc7dad50b77ebd7d23100497ca9fc5d8817320b8b0d39ef722
+69d2a2807838cdabc87c8b436c82fe0fb877dad655bed651f833fabb5ddedb73
+6a1700dada452b62e922683d31c6de6d442f045c959b33e685d125db65892d8e
+6ab6d3afbb2b07c3d7348ba1728bab81520e79dae9a06214678b9037a7bd6e5c
+6acf5836cf6b2adafcbfee22edefbd8783dcce1f05e81d671fd1a2b64ab91915
+6b072ede05152288bd557db0673089780eff7314473f022a0a5631490ca4bf2f
+6b0c72168d4ffd0444bad96868055f3afe17f079b8c885aba51f4e48d17c99bd
+6b12ef71af85577c55aff3a4632a4c83e7d8f1ad01c5ade35f4208e7b5f1d491
+6b2f1a181d03e3a3f5a2f19acb764b7543895d78db766c5f2ffda59a5734695d
+6b48ddee5dabdd7fcfff4dee34364396dc81f2814490bb55f27c1eb0eb1c1e19
+6bb4cf7741d3247c1e929e8785a8233e62292b19c0d70cddae66a4aeb4ed8cd2
+6bbc3232f8407b6723958c431b709791f54081b29be64975ee7d587cc028c9ef
+6c018c451483a3a75a13950883b3bd86abb0a66c780d25b74022e991d42b57d9
+6c0f6474fbdb6a7624086aa2bac6b2aef29153443c5a23d813bf6316b581fd6e
+6c467278b9d8ffec8f05dfdb03170577dbb725dc5b30b19c08e2aaaef1a40675
+6c609bb6562a209717597a1dcc5de3b6caab2c30d30902aeb2c5777077b4d596
+6c6be146b646a0d70751fbdbdcee0a79835ac56c81c72153a4a06fcd1c45238a
+6c82a5a721a6e8397cd9cf3cbd17f783959e655b33ce5d8f73de7b0afccd655f
+6d5abeef818a51ed986675c927c1c7ef80261518fc273e0f615fa96b2f3f7663
+6d97e72fed9ca796b8f2d23c4cda0712151aef72392b6352b88ba86f50d7c812
+6df5f6784260427bae8aeeef221ac5a1e57f907a9f16ca040edfb0bbbd4b84f3
+6ec34988cb986183952b16a0eea1c585d8d9dec21f083df5fc1a7a1cc76bf151
+6f501a6e26e572d18049437264ee3b553bf0cf47fd95139344717e263549b732
+6f9065d4923dce3e56b67be48bb7bef18ffd2d5b840ed28f51b112cbcebb3eaa
+6fb6eb8859f2decb899124e197d80b7262b94f8e1ba3e3add0699222e738eb51
+6fb7509922a9d7ef72ae64d15f5995573de53b6504ead767792d9378c5e6254f
+6ffcc6d43b296429583cdcad8961221e249960286f54ae978d917e8648afd172
+71135df9feb513aa3f0e2321340fd2ce31d7c1bb545fe8d4ea0262f57b46c2d0
+71340e61b1b6fcce951c06ed3bfa3ef5b55d73868036589588ffd2416dce53f3
+713fb071917a3d3adf6789721efa30cce10c3bc397a8abc6298e886b615bf35d
+7156fc63080511585e00370757afe8489aac941b8cc4062e4ee7eae4a0a7d5e1
+72568132235c228108c69a1423724fc7bc8cd063335058ba79a89b6d2eda388c
+72e6f8bc987ac6d2dc9513fa3bbdef57379ed3dad6dc98b7fb0114b47409e6bb
+72fd16fa5543672a16a286bcac1d17dae6afa28b16c391dfa14c270d8bd3eb0c
+733b7b8a43e9da8d9b8d523ad836312945f7ad0a85deab69bfb8949ed9a6feb5
+739668729da47848b36ab8b8f0de3b6c0620153cb90e71addce405bb389db79b
+73c35b1e5f95d509a2f9f7068ef4462451a3c1b4f3f89871d3cb5d11f3226f00
+73e22a24c7238b6f1cee2d3327ef23db7d3c414b5a7e1032af0f104408669e73
+73e311e02128817673cb5dc0588bc70105e9b9a83990d576c7830c0043d1594b
+73ff48d2271b6ca4758d9dad65f2aa7c3e14c6d0b23f183d789b61a1870eec28
+74110a50923fa6e45e533302fe5aaf6b8bc4b8a09d7dbf941c7a0e44f7e6aa99
+74c1546f13f1a24229b303f3450ebe8d17af0f8c121e299f0654cfe54d77dd9f
+74ddc4a7650dfeb975fd0a0752e90622e6eac00bedfbed7280b3dac86f0dd36e
+753ca72bd78405f2b9da8740dfbdd62b3d93ad4f64558486b6dce000fe9f59a6
+760d058642358f1d9d5802f43821782e3f68639801fda2c2c4cc41aed955118f
+761f5085a62058f1f16c3a5f034dbc963a9ff687bb504687471cab52417983cd
+764e58da97f590f87d36bffc02e88ec79bb8b4387cba63daf2eecd9d745c4bea
+765caeb5cf0ccaf61688dafeb9d5d49c9b6319c87d9a0b3e61a16fbd12a50975
+76822206f78f813617bafc7819c495810300a2ccb549cbe737b132ecf6a439f9
+769eb9f68d7bac5a15e5f1e7304ffe7e8e9e6e83a403dd6bd8061396dd615d18
+7703e91155eb76f6406ff773ee5848e06dc469672ff9746396c01db5e943d2c8
+770e5cf2964fe07ba7a89230c098a726d2b380f144a596c659e408b53013735c
+779994f21f741606d9d27b856c0a23050851dff299ac4fe10e6d8fe4aef16249
+77f6cfac46ac156c45d11c220cb7553d3e6cc2cccc8582dfe962363dd2a1cf0f
+78493009cf5c20e46c2b41f20485a2f1b7c9f2c2e6db27e23c1c72b2080af9a7
+78cde71bfce1cc4f78837367bd52c1a8b617dd77aa6827242e408c41cbed95f4
+794ecd3e6f9654bb09bc0790001f8602712f7eda0d2cb5a3d9c6a7a2026ff891
+7983140fd4d077c6698c67a1b0ade9f78e20c7d584c4390553a2c774c804ee8b
+798e1f684de82de3b4ae49f834a54583c4152b7d4095d2d8b6d219f89376232d
+7997a24866f02bb4019b6c757a63affbe5ba7a8b5a1df1868ffbcfad83ed605b
+79d4b7055cd036192cf78a2b3982f0a08103439c24c99db98e21a0a3f60d03af
+79fda772c3932f3ae4c0c5687e2d09241b8d05eca2155be2a0c258b424f80315
+7a08674e6363f36546e9dc8a6f4f5f4a27ce654da6607dc6fbcdceb08e18e47e
+7a242c73286d25daf3db68ae215ce6bf01d3f926d658e4c3f8285c5da4a188ef
+7af6ab2d49b4274c1d47af105e003ff0dabebd295c5ef9fa4dcd9a133cb1790b
+7b65b4f46396a4358bfe5bcbf6591ae2efc10bc0fa07bafdb4b9e5027fbd8a20
+7b867118283df06f84ca05d9eac6d6002ecda8401c2624a8d60e7c5c2581a0f2
+7bc8a75af958e732fd0c6e27dd9fca482dc5fa57512a91a080e0b565b7b41c3f
+7bcafb2d64ab3d83f9877a545c6048bd34ca2239646a5bb8094efe5b43c6b486
+7cc9e840c91eb047d16cabbd4854eb2e75bdcf745fd6df5fd602a4fcfaddba54
+7d201e39b9f358d16166eeb009e1af5955be2cc1e59788d98caddc6b11adfff1
+7d60a579cb53b9fb2e943b6c77e3c667f22aea9a608df03237b01feb6ba59d61
+7d8b714f4912acffd28cec8b3b44c6fea22099c61c82fc40e71651f5f0a1448f
+7e119de08543d9c96150f176a15b38ffb524d69c5ea627a00ebd5b3b544b1cce
+7e856ca767344fd7e77e728fac1f6c1172924528ae31120ffe01c22d86653f71
+7ea0e0ee8ecbd276c62f3b05826ffd3cab8c61f67d00eb3017382f36bd8b1b64
+7ecb504e058197cb0c011d7a7aed6fa0dc0e3b9b68e2bf54efd50698d8dd068f
+7ef3e230b74927a02ecd3084db3a415a1317c29b7115e347724608f1944b25b6
+7f0a4e405d3dac73fa03be75a428b81dcd267921530a555070dd0ab95aecbf2d
+7f0b135ad1c807f7a23419bfbce1d52a8d22f7a335e79c89eb9583c564d652af
+7f314e03bf0a11e7d8fe0c24f2c449b0ea96d7fd5a161a74da83db1bb381a44c
+7f315d950548b43784b90adae488252eb8eb00b74fc8194011dc48448ade90bf
+7f4a57fda357fb59e1b45d9c2217e9d14359e6bddf9074433a06d1ac4e35a303
+7f93850c2c6feef79292fbd9a9c86c31ff56f644c6b323402e8436a4380e3e54
+8011772d05415a3eef321860c536ac678d9d9b1005f280f540167db78323f0bc
+805be86bb905aeb61d54c3eb7a63f2a7e8b05fdb81688b511a0c83b36b0db7c3
+8085688042eea219dddc531761c9ad92544de96d55a60c070ed43b050c7b491f
+80c4c1dbd91bdf63cb3f1c1fe0be158a81b63c6d4a9b7428f0e13f76cf7ab460
+811adab01d30e4410f5f24ae31bc58352d6f7f63a9f1fe98a0aa18c9c4e78c41
+8153f60e4fa6df4e9c872cfdde147584d2722743d0ceb5449cefdda343bd64fa
+8169422c27af585bd80d0f648918d3eb131a12798d83e1257a7f87c474812299
+81925d43ca51c5619b43a8cc3259b8f4e5e9b623809123b3f713a9a5956a12a4
+81e30ae418c32e9a8e90b731c93c1d5a5e16d616da1f91812d6f1e220c6e9e03
+81efc7b4d8be47e0b8980245e3bb92e5f95e78c15e7871a6a7920f911012afa7
+82184474af5ebb39196085d6c56e2bbca3772bd3271d21178cd5b398e63e25e5
+821cead4d960948136fb79f4dec4c8b96bc49f0af3fe2ccdd1e6b8b375b21391
+8279b0e78d6089419353f8b77c6d807cfd70f13610f0ce3b53e165171005acc7
+828e078c90b074c431c8df385d2b94c96c164e3f408ccd5d92ec3f1a0352f5c2
+8375128da7dcee692669fc0405bc4b98619c88503e93573e3c2440b4ea86fbf4
+83873319258e1a124b16861b74aea00c9b2968e1de9773fbabf86667ab1e22b6
+839c7213f88f5c089616a6a02018e085da3a6dca13e162d9ebddb510c112d1da
+84168e5c646aa6d8adfe03be8971dbd5d9b31cc0ecb516bec0a9ed20efd09ad8
+84972b97be5fb94b62b2551c7bc60d2666a4d650261687f48537da162375bbdd
+8524a207622cf9252627f3e89fa192a86c60d6a69b79733701a191f29fe63277
+85654774b45f2c8d2373a062494ee7c90618d74a2b3a0d59aa8c372137ea514a
+85b0c332c51c2474c1ef81d1bd0fdd8bd62889e8e5f85afee2d99c70001ff1ad
+85f7280dae91371841596a20c12d874c6eb07ec34802a9b979c85365157124f5
+85fbb5cabef6569b5b4a1e2111e02e8310507caf99612fc616a6e67ed9b72349
+865d6019caa738e0873cc411c346b001969cd6ed28e235aa10c0939bfebd0c6e
+867d9f6fe5b63d57b1b1fb9f9a972a4be87389eab014336557e3fb59dac3e56a
+8707d6c432b7fe8265ead1c7deb6d2bde81ad24830325e1c1b482e440f3a35c0
+872ee1e73d761b2dcb9c410760874f86504d1ffeb3e6e5416a4e4d223897f9e2
+874533544ce837144f6a24e573ad661f0073bccb006ef7d810d36526b144054d
+87ca77f304854d91046f495d7189469705f0f3e5eca4372cf791038dd14911fc
+8874c72dc7c9c11f4ae4c83aa5af67a331eaa70ec6576dbaf16f07c977fa7a2d
+889cb550ed4e90f1775d2b79bbc1fd11f0fab907c12bcb7904112ae976a8e3ae
+88b907962d25b2851785055048421d8cc23f739d4032e1973791ebb8f256907e
+88c1791fdb89acc136c0420142bb765f5950b466180923d0e7553d223ad113cd
+89a07698d838ba0b9f4e68b10f013c05e66ac1df8b367365afa54a448776de66
+89add75fd72d922b242bac91a3524b7c133dc84c5ecdc78527a5debda6403805
+89b6a82607ce2e5a56f951c294ac26482f2a98e2575543db318e9939a6e35755
+89d45af6489bb887e4d54197ad4d6bbfd62006ae57361dda5f0c02ef60dba99b
+8a1d361bd074bab8c50cb5aae2938b9e2d88dfebf72efb632fbed8fcdcb975f2
+8abce27bdd316b416f4cd0e814b0d070ac5fc18961a131e0631de9e68af44e06
+8ace2cf6c6b5bb721f9c9e4c8baf58ca397b5606f4047072b659c12bce04af7e
+8b12ce611ec766887ac1a2f06cde1e831fd2e7aac3edf41b7e991354fcf85dac
+8b37a4bbf18230121322d5b2f262570dbc5e8ebb71dfc79597832469ccbf6741
+8b82acbe410c1b36c0b6163d5e382c0c88a419ba6deb72586975f8d6f640f885
+8bd58c440f98ae855e921e130d42e8384dd5f2d15831d6b9ebdf912e4a2d4919
+8c7b5a02179af72ad23516a68e9d01b41f6d2ad471a12a9c229d718c530c48ac
+8ce72814bf40cde1843c1e3d7947a97d258988ad18c20bc02906bb9c52f99e0a
+8cfc332f1292fa0a01f9771812bc8665b9d907ac006202a6ee2b541f5c4200bf
+8d0ea0141645ba2b9625a8455147fceb0d9ddf1191cda1953622fceba9791d26
+8d17b2a079602cf6cb0325d085ef96b1a0a494985dc38fbc51f20722d2702f43
+8d188b033043b42a3028d46fea94f1dd88ea22234b5c3e9255982f4d258429eb
+8dc715d4a8ab5c0570c8dcac5218ae2732ad989a7095364e1251a9eba9a9d1dd
+8df2736239f402647a68db45522aa5c177955be82e07bd55818318d52fbee869
+8e27b1ba65ec9530fc0dde5178e25c9634a9e9735133bc2f5c8ee840bf72c29b
+8e4929bf68e988b36e3faa77f814fe4f36dee19b7f397cb8205aac78b138ae90
+8e7bac26e1f1f3193cad52178e7a9f54c4275838ac7c33a0bc18f481ad6d3652
+8ea02acac02ab5264d2201520e1826bb46d687f93b4c4b116e0a40d2b0c7994d
+8ed913f936343bb0e26b11869d2c140dcfdf57284b877fa976ccc91d6539b13c
+8ee9aa845f6fac566b707f791f68e1ba8f9f2da2e44a4195f2639b348481bad6
+8f0b72cc9e702d98ebdbd46066b7e32cd9bdcf1a52fcd164e06c4f0267d32e15
+8f273a3a63b84786c69dc88b48f4a8f0da3c875c46827f122796cf95415ef505
+8fcd94469f4c1a111085b816a508b29d8d2183e654510b756abc43195e9edc1c
+90323a630453ba70d00000b24856802ba6ba10bfd70948e332a58bb027dba83d
+905624c6ad9331d11e3ed7ab1510589676899cfd19b9d438330a3b5902d0f159
+908e14a05a6d8645c746ef3a1db5099a21e4bfb6760d673904bf74c1c0e01eea
+90c5ad8f0022b3789cf90c6e26c12cfb773d3545baae2fd3e540082df04bde0a
+91c01d9012ac294cf7d83acd909d57402e6a520c750d1d823e24967b1023bd34
+91cd09d750277e463b13e5cba402f08214697075a242455e4ca4a28e8887f90f
+922cc7f1b4c76095794f49e02ea16e3c20b07d838a93252b17feaef4d24fb498
+9325c3008f21a7e52320bfab4b450593c3698088ef2a4cfeb3eefa1dfec5ef59
+934a3a19f6114f90dc5dca1da78d0787201c25086481d2007ee2dc9f0f55fcea
+9367c55fe24a7289d189169fc2fa0c6cf445c48463a35ec63021fd75c2195de5
+93a406daee7b0a306ae7180d7b89793a148585cbe0124ec54f7e6679f0ea434b
+93faeee0a4b45abb4426c18cd540debf9b1180f495ac8c771775036f634edc99
+946b2f6246abdfb1507538a3b0d4fe9e1d835fb12ca9a69064fa7d3f7569ee47
+94721a5fd4ce4f12132f0e4c46377ec7ff3beae5de38bdd6e8f139566467ee8c
+947847c045f6af506a6ad1c12568d1884dd8b8e86f91f004433828e67c177899
+94bc3c79a9bc60e37531dd50ca0e64436ad8cc01fd673a5b79d06b9fe4e213aa
+9642860a2a67156ad8853e6b01d3f6433cecc1547c58dc4fd7b70a6b5ece9f6d
+968f2abeb79dde164c5c1e79822a2fd97c38ccc40b587b8c89473c15a596240c
+96d3ba9338e651471fc10a565bda73444f724dfb852b28bddf0b3d0d3a029be3
+96dd678b3aba52c952bd73849ee7b565dd252c61dcd7735e265c6bb9e436e79e
+9701cf37ad3ad71902edb6d27da6038c319c0b100867c99dec95a902bb51d9ac
+977ba315f58fad1110bbdaacc61d2148ebf1aa0f7adb3ad0bb57acccfc63e158
+979eaade3b37921b34568391430ecb09173b9cfe9dc4563c1de0e16afebafe6c
+97e2a333ed318a5491a3870b7ca923021904a76a24e344928d8bb6cd7bd7ccd2
+9807dbc4c3159f1ccdfb672f2aa7f240f8757348b9ce830a541724042e0c4bc6
+987ccd28462c6078dfd18903f472b0ed78828fc5129ff9c4dec7cf2360f01dda
+9898e717ee806a53980a4b96afa9b16600fd7f2481ae175f71cf8ddf5783fd5c
+98fd71979d912ccbb7d00dc02c5770952ade1af4dc93369418edd30dcb7e3044
+993ccffe715cd564367126c9d25d8e0b11d8733371aeb6337afcaa0c78c52c0b
+9a24415205a626d63a5dacded5350a7bb65a6204afdb31e0936cd62cfb987565
+9a2fbfc8c6e5e06df7afd3f5e37500193ad9d062b62eeec0d5794cf78b956fc5
+9a6823dc3bbd18dc0d3908278a884aa9bb5ff698b714fa7ca4f38a491bc2ad78
+9abdb55febdcb25bd2b1eb005145f882b3894b28d3c4a544baf58c320d75389f
+9adbb44243be6c21a334217f10a147bb6be2c96f89fa3116ddf04260f81a0060
+9b524f3e299e1eb79b7b6654569eb06ba7d9a7555b8728c7a5a645c82824b4c5
+9c1b4e088a82e51a1a9c2a1dd3cf80b27a43aba8d54ce04be472c327fa890328
+9c6059310fcb1989c80ec528a2142a4a7291e5fadab2952f7049d0ce3740421f
+9ccafa27ad6c098e43008d8aa46bc6c475a040bef8db39b06d2a46f33606c408
+9dc6de7487a9d193e1ad572925a34a6a3b098b04cb220c4f374584a4eca8f589
+9df248001cb8097fc788971ee43a8c4adcb60948c3511ef0ebd6d348786b096f
+9e8e5b940620523a0153d1a54bed4253d24d0017c187c55da3a401efad36707a
+9f494e80ab4333b99ab5272c46d97d9d809997b11ffeed2555bd8a2f5a8f027c
+9f61931f00f63fe698d136d028a33dbf0940e3b10a099ab27e8512a4d2c1dc1e
+9fad5bb27d18d4ecf195dc8d725aa4cd0f48a63b9fee7e732e46683fe44f8132
+a092d3f5820a0bec483eacb9d447ce2990b8dad327676a1c07cea2512d5ef290
+a0995f51a4f5115c5e134ee029523284d397bb36f265ad0d99aacc7137636297
+a1179ac54db8e722fa8dfb1c04321faf736a7d015342b225ecb600455b00035e
+a146f77f41849da045721bccacd0b1e7171f0850655ba8ef03e906f4740a21de
+a152d8f6fd3816349563e368d9498e508a8e4181583d7dbadcd5f308a88474e1
+a1832054943dfc5461d82805dba6513731bd7648999b220865345ebb06b194bf
+a19da0ce84d2bb1e1f55de665850ce0ae723e12a1ea0d8654b393788921ea09d
+a19f0362f707d58de06898bcb36ec04172941238e54d963e4d9e63e40e00e4e1
+a22660b937cfbd3bb95c572e0c6cd1af60f5d65b7ff149759879a81f2ed09536
+a232c586541d484f5b5f476a80218a2dc31192b695ce9767a34e34e29af7a1b1
+a29a30390e5cd3b8fb9acf586f1caadf32fbe28a0f71e5b8098835e3d643910f
+a3350e5e668eeff50d2b35149e1cf47a4e069fbfffa5407822477fbf62992be3
+a360b1ebba36299ed9c234ae683a299f3430afbccb1a3f446d157adca51a1bc9
+a393d07183ad0b7b35e877337e7a1f5f1eeed79262f1faf40dc9c9352c6c424a
+a3a4b0dfc29bb53189073c4c0615204eeb8bbf021349f08cbc9bc2eea6b9f425
+a3d758289bdd9c256f27223c7050046203c178b73c7009232fd23d783d3933f6
+a44bae1aa40e96f45de44bd024363812937d04d0404917b40dacfcf9cf9c2539
+a497862ac716f266fa0bcbe1a79754b3e48fcc81d9cd322e932ec7a90cb084f1
+a540752f738d6cfd29ac11baf2d700b505bc235a45b8ef9bb7d43f195a289bb1
+a55efff94a7c99c6cf927e4468db251e1655efc34f3e4a81caf4c317da67ac71
+a621a61691db3c29b79211bee1972cc8141d222948488d415eded82c91bb798c
+a6a97c81bfac60e8fbba18d69714dca49408ebaed371857b59ab92be1d8f9764
+a7c37fbc6a209d4561996a747d51ce2f4534f291e9656b0d2eb54c0686a20ca7
+a84030a13e7c21d4d98d3fcc3fb43f65823ca98dc2ad8d157de6b7ef0ad03cac
+a92cc845530f00db9c05b5e8ccf72b7d422bf6409121da804c66ae28470632c7
+a9df7600f11f73976a77c886e9c4c9b72ae982c70e635beba1308c241578fa14
+aa299857d93f9e4ccb554ea6c8aa0be82dd672d72a693919ba96a6e3f5183ec5
+aa6067fbb368d4282a55865e8eb32a06000b6b4758e4c21b20a1593e07f38bd5
+aa8b96b10e9536f9e3f180b72ff99f832456e7ceadf3336286188de8da7be24d
+aac9b51e942cfa72c2079cdddf654a3122ec1df8b400bd303672ece9f7fa6aff
+ab249ca76b9edcf5f40f6bbe9ec10969c5a469af084297fd346b87ec11bfb6a3
+ab389c9f5dd44bda0a384140a27d661d310240f33d7d5e7e55112fbc9cafd938
+ab6a36c42f6dfc1256df0d180e6a5c94b11bbd0548ceb8e6a84dff7423742342
+ac0b023f61b5da7dbbb555676bb744a657b61bcb1c9ae2e8a22f36e944d28aab
+ac3920ec719167c9912c12999ccfa07bce14385c480127dab3e874fd6ef942df
+ace09fc3267fcd5cb503b658db08f6259a5ca55ffeb735be258dd4b9235853ed
+ad5ac7d2aa0cd75509f1a06409114d94113d8b6163872cc697f594f65a18d9a8
+ada0f1eff4d604924bfbc198691d0909e723bfd2a43dc34018735c7b2ef65f77
+adb72c3a3259b9ba49af9ce1a2f37ff9303d992a1a57c6aac4cbb49c613b2efe
+add432940a2cd8064963b9958a3f25d82ddbf1d582b4eee1bd60461bbc2c9645
+addb0f836313111594d47de56777e5c063cd1795ba25c53f054b856f45faaab3
+ae08c09299bbc3dba57a08aaacc0cc9a430746cfde8231278cce267ac4c659a7
+ae24669b5dd6ead649a08874811dcd5d5153a65adc95d5ca738f1b83a5116330
+ae36a4443550996840fc12a06494616822c7a3e497c6503913765ad5d6915b25
+af4e5fac4a6938215e9be006c5770a05c994a8d5af89be1551d483fcec6b0f22
+b07dadec080d6a06b6fbd1ba6f26a6b80ff67ba3ebe71bcd0fe0252310cb1e13
+b093ba1eabb92cc01fe2a83b51f6c8a70b1263e56e44313dfbdc1afbecc57b24
+b0a0185b8dfa5d0f6ef813815acd4532805a7b9a17e1bc7794ec3914e6b6e250
+b0bf6297aae661c8fb9c28d90c447fbdee6fd904c9b8ff08a7ac8b255df01c67
+b0db3aa16a2d8dbb74f2038218512f12bc905e990d513ae104ad0b8a8d72571d
+b168bb1dd197eff2a0b08e6f3b8ade553cd6cb1565a280651d6914925012c789
+b2c0e1846a9b5ff5a0c373b79b5e09cfbdaaa58aa629e16762bdfdd258989fb7
+b2c3ebde595200b2f4fb5c7da4d02cf3bf98eee39f37cdecf5173ef951948bb0
+b2fbe48fb7f49c929c6ed54c0d1c156bc8875613af164f20a276a3876e448166
+b302deee016838e7650ae49b22f84717c987ac7b4f675295aceb08fd9ae3e44d
+b347086d16901deaba31d6bc661cc858262ad3059af9864e301a89c76e0adb29
+b36d86d4b79365622c2a7a507513702507ed2ff7e773c84e3fd04da0b02834e5
+b38969c84d05a921a1022eef1d25f315b5c77e2e8b30c3fe50f212141426d42f
+b4556ac00a93eac94576768f42ee773f99629a25c54427fe9c1d4eb5144eb335
+b45974663cf3f628312f0a1ef30faf206a5188aee87013cd3af21fed0d9ce5fb
+b48458d3ac18a63754f526a82edbc7611021680e8061ede73e041697eab53b70
+b4ead79b4a8863e10d6676d634385d450cb08440e503343dbc429c3fcf2ae52c
+b56585a85789bf80db9d1720b55b6eea3c145464102a9283821f0ac55c732a66
+b58b179bdc7585febf964a4ad751b0c95f611fc2880bc0afc6cea0ae8325aca8
+b5d17f580fb4f9644f28b6a1d2992623c0597987fbc7b53bd28aa8da7e1ef829
+b5d79390ec95ace9175db8d2f3d787ef670151fcd011878d2297ff4b0f05c6ca
+b621caa30e236b65f00cf6214a1a145d9955443711212d811a206473880bc84f
+b62a1c0f5204fc9c41eff50e7541e393b557e7a0ee88fd5297866dc5f23e0aeb
+b664d895df5f72f2e8c3ba00707f1e71d83f38711b0dc970f605ea6d61ffc22a
+b6ad73a7c9a8bbd8ca1a1297f31ba329f2eda0ca57ed780ce16cc672858a2238
+b6b738ba4789764726afb3224247149c257b42a1d000cb8b8e47e3c17032cb45
+b6d69a8de922021ac283efead40784cfccb026fe228308aa2bf5a48fc065cce8
+b7095383ba7d5acf49355035c5aef3ea0ee943ac2045997a2786b7e15d3e7f0c
+b77559ddc01fb17c58dc3255a53b3763cb32c65a33e4870bb146b0a2fc818ac9
+b7ba317a0d70c05362fe322071603394a669b17ff09cb2002332096a6afe389a
+b842a58d340d7c56beddd1e251d30c7109bf377a6284fbceffecd22c1acb1e10
+b86aed464fbb4860a67f40a4941d6b81dc9a6dc65ef732eea1ec24f4b71b88e3
+b8bb2b38a6ad900099a625dc13b43c3b5d00454fb18424cb8f8072352cf417fb
+b901275807fa36edafea9aed81160c9ee402abe20999bdc3af3637cb14e3c796
+b9f939c90058998c6aea771140f33f6492a401925f392fed4c127f36070f7669
+ba99d7040a3f0ff8c606c0c1fd65a56f62627e3ab3d58f45c5159eb652108e22
+badcf0b6288e1807ad84f533fce98e210559a268ea0283ed491db7804a5bbdd8
+bb33100d4450f3fc4be5fe9a6fea6909ca8a53528e3a40ba6fc96f1f37023366
+bb53b0dc07821a07a3b64a224d9dcaf7c28e634d0e736c966af38bbddfde4c21
+bbb9563b639ef7dc12306e2bb7cfa377d30a6daee6365aa47536af4fee1661b2
+bc0a65605645e8b175db70dd2781f9fe5be58e1654a653c35a3455744c7fb99f
+bc2c6a4630efa4964b0933f0e6c383dadb1da060363b77c18f054994f11ea3ea
+bc77cc7d604922f7d4f783028f2290d5860804f245c33b5b8693654731572f1b
+bcaaf9655fdda7a86c17a7fea0dc94b8154ac3192fdd71240f2a210b64547fe3
+bcfbf377b251a8cc1ff9201a6e936ae2c201afa6d5d28bafb69bce8e56c5c080
+bd56fd25b7283ca5fb878b9036e7b2a31ba09a4e3c0ed5b83ec0e8ea7f0b48f6
+bdba8663d107b57070fabdcf1e8e22303332e0d9bd6ffbbd17a9aeb913867a1f
+be1827b2f5a8757ace6487d744dd76140aca9e4e1d20d035d3b321587fad4dae
+be2d8db832d8dde66e4489ffd7a0d636ccd639c4506439fa3204c0cd2d04f513
+bea80a69600490cfdace5d32c0aba8eed39bd3151f53d4a82d9c57393763acb9
+bebc146aec7d32017ddf7fe3519785aa1b6d5d0567f94bd7edbdc5547aecd8a1
+beec4d693f8973f04bb3055258d449e4672a0afb3c5af6d5de4c5674a786ed05
+bf472f96eb175dcba70f30dc5efab7f3633dfb015c461312a2718f1c33b487fa
+bf50c735ab26ddab5bd3cb62e6604f96e2709970dab456e819e9ad69f0086d6a
+bf5fd3d7b743ea102f5482b283b972d5387ca5caaa812f7de812f138aebaeabd
+bfeb6e718270c5b468fe1a0bbf20bb293bfdd900cb83ed0165c5a440e63034c7
+bfee7b8f0cc4817361267fa9f1b03e8109dac78b031e7ad2a7f0f617694040ed
+c01f24a2b8aa397de082238d9a002e5d48a4d1f62bc56b4fa478e8b7defe04ca
+c083950633cc46127fe68a7b44c39b6ad83abffebaa1bd3648068520b4bab414
+c371907ad34f546faf9ebea7f7e174f2158ad9dc809b76c34add53d1b4e30aa3
+c38c1c82d688e45c901d186f57ceb24070959098266262411b8f8813afb1f2c2
+c3920c1f064f543e2fc967473b1ae916553882c0db24a675e039826f38caa5ee
+c43b01d16cce6a2999242371e56747d4832e77a4dc1161ff78e8a09701868b99
+c46a8d0818eec7a028dcd76b476ddf0294be04aceb7229a1024201ee962de4f9
+c480dc5eba45bfded8dadccadd59721438027af257695d034458bda495d70410
+c4f9d37719f3e607d04486bfc443831d72b5dc1cb91cd300567ffe95ed7d4348
+c51cd4646c565551eb8a9c975918de25d8a6df2761e098d26319ef4afbb24dae
+c52c3228ffe5ca380f98681577ceb191a3b7d3101f86e935978d07aa6a102c8e
+c5536e1e9793d47c05683b99b92901d1813663cf58550fadbf9150fae2322641
+c57e26cf2a3b0da2f072eaa5c472da07a2db71e69fe2b0a94668d3554957ca6c
+c5a42009b800ff52e73420eb00f2cffd13acb44afb29a7202ef2d7b43db33079
+c646b6ffdddc9424f54f340ab4caef82d44991a114c25e3d9402f48676f4b6dc
+c67128f35403228e308c555202b4b9f8e49949ca33d24156698cd6ec938ba59e
+c6927c80cb5438850c2850a7f3511e59afb93e523b04a84972cee4f207056df3
+c733f2505946e35caa4ab697e8324ac09ded1698b24a49c27176a95ebd2ca890
+c881fb4f46598dc15af4a912ea8967a1e65e10d7592ac843eb13c5c196d3ad5a
+c91b11ee5947273f57b582cac725e5756de5b870067e9878cc0b95434a62b7e0
+c980985dfef41a3fc37b621a61394d0643449a2f4040413197f435b377d7b106
+c98498f9b6afc8146a652ce45f3fe153e49ce081b283e4718c9a7cf0eee98e1c
+c9d94bc2e9b56da9c72d4e3b779bfdf94f377107ac4126894b832069e7747553
+c9fde0d069f0e98dfbb6cf5822fcd71884e5a6bcd015afb64956fefe7c6b516a
+ca142eef103964d024bf5386aec581c74f40fd6f5c14f567f1f1fb3a26d467fe
+cad744551176073f523f38644af01a3c877bbae783de45cc68b98e8d29610d0f
+cae34c7533fd1a178cf7980671bffa927d621a5ca0b6633f17c98a1f4075a04b
+calendar-2024-10-01-2026-10-16.json
+calendar-2025-03-10-2025-03-10.json
+calendar-2026-10-16-2026-10-16.json
+cb1c41fd64305dfd759fe5edc2007d1e9fb53992415e6ef83cf20e4004625d36
+cb2b3bdff6b231bf97101395adcb8352d3e39fb5c007ff83edce700260f15e43
+cb337356c37da5cfd75eea4eeb23b74640e4d2681987bd312c949228a6c97165
+cb3b718fd60cd4224546048e36a62377a4c201e64aa53b8cd589144d6326f62e
+cb54239c654e8ddd1fd5f5360687bc10828b1b6be45a818ae27cd97bff060608
+cb5fb7767cadbc9cf55c6abfa016f7dea6dc1dd4c17e0d056cf80d778752ebb4
+ccc21802c286029cee78b800fa86befb0602d53442e77dee45962f7f4ebf2638
+cd08247cbc12bd25b74e8aded9c6e63cf2ca640628d473d23d93303100e42656
+cd3caaeee2608fba439be98d7378f64fe9c66512150e44cc971706ae2e8b5dc1
+cd7e5bca69ec54970ab48af42f00e65383528022833ba19a087cbc8907556648
+ce3bf09c1c731e70c4cdfe243e8423601455f80c4e387878601836d985583726
+ce4020cf36377da63c8c4fc3c73606a5c453131d21dc87caebf9b0b569d88d65
+cf1f352277f889135cfb7da8b82e7ed9ccfedb47f77dfc7db814fc60485b018a
+cf9e1699e7ca8cd0e29245053a45058c77ca3793280d69aec20a36e739139f41
+cfcfc72ca7f0595885ce0d6058cfe5b07c6e334d9afade998c201299f610bace
+cfd385859dd05e2e6b3776e52d857abff225bb7b716758c15a92febdc9aa8ebe
+d00a53a9d73de216c839a073a77cbfa8b4ab5af2f5a4df688632dac4f0caacbe
+d0a1c3bf419f02f0883a104fcd01a45dab3af10c67b76efdc5653a24894d4fe4
+d0c39c88fcfb4271947e5cb3c371f86655dbd6b5653fb8822c4b2665b3a7afba
+d0dd6b3b05188e9e6dff775302a2a689b467157ae239d6c7d2898885b69259e1
+d1240461c5b9a69795fbf8b860f40bf1061db963be8e1666e8474d748feec052
+d127a64c7abc86ad6da134213b9c0319b06efc0c03a51c8c2cb769f7dd2afe25
+d16dcf53992e7fc1563f5002cdb1c846ae803d25a6ed9d1efac9b8bb21436b26
+d1948b31f8b95729a474921c0b7d2a32ae75fe180a2c92fa1df961651a740597
+d24d01c147119c04e1724b7b4df014b7936db32087248c4963487e0af9448892
+d2b2a165798ea7fb5a06d125e7e1dd264702ab86aaf45c659e333e809f5068e1
+d487cd8a006e9bc842dbba15e1137afa602a50688e791e7e9b8445a422fed00e
+d4be2ce9e2ac1dc07d797dcbd7334702789482abfb726e87746cef4477f82c82
+d549a943211721de4500e729c302da26e5fc1eb1e13ab3e6ed00491a58304175
+d5c0e1b9bcfb6f39c1c3a3ed7af4ec7df27e7cbc015e2938021ac84c749b6f33
+d5e25b53c08c53cbb4ab3c55e831bb0ce68fd24a3776510ca6acad50b1621248
+d6ce1ec31df6b4b10e4ad5dbcf43bd14f8bf470d02c7d688e923e0d90ac3b299
+d701e2518dc7fdb94bc9087d4ad3748529d54a599570178f7bea3dabec269619
+d7470633d9c227cbe5e81cb5819f7b3b0a20b8a3b28ab8fe354ded14df9c7fad
+d792e537daac336d357631ca345eae99c007df888463585c5309984ab6d7f2a8
+d7bc1e97f82e236f560bc5c6f24f5aa209f70b36c760800b450cd18fab4f4b35
+d7bd41d6a879546253f631d1633152ec386819c19e6292d8470e74b9194a29d5
+d81443323c00dddcde05251358f4262b7208b0cb30061ac88aa032799d0842d4
+d823f2dbc429641e798b40a9f9b757dc8145579d4e0a6c89f14db07012deae58
+d83a02a9f0229c990564057ecbf87035d9d24bd4d8a9cce1901477901f5e8bcf
+d84e4c3cff5401f6c7ecaf09279cbb6d7483d21733ed0f5209a53d8aa21de6c6
+d8d96dfca37352ea4fe8c3def6471aabb08dd238ff5c2cb8a3cc819a14c0feb8
+da67ebdc874915c042f8f010dd522047c56a04c23ac35222d03ff3244c4e9b5c
+da770ae063269c36c0715223e7a16ff7fcaebbb6a653a90124816943611a108a
+daa385370ee7944cdf38d511467000fc37aeabc0d431b120c416d062af063190
+dae24970fd98dd3b3492554140dee652f40b6fe5ce536448aa4e9d7d44f87a0a
+db4a8221b7539bef1d93ecb84ef2537dfb8b09a9772f5a05b25c381e6a55d608
+db6fd44fa5dbb77a6954ab4cb1da5285c8bf110292e809988ae732b23c58d34b
+dbb91a74f8214bd8bffc6ae9cafe1c48ee609415be0b74156d28700216216348
+dc3d4e5d9896407083f5c2f69f7ccd937d6f186e0a963ee3ca4c62247c2694d2
+dc436fb2467c7868f1135d28f5d2a05fd212d3c566fdf13647a96e7c6109e68f
+dc5bf3a443b12cf9094c83e94194074000310627c6b3d2322ecde814f714171b
+dc8d830b2d8366b756c192b55d3f12d5d4a1bf2ae4be59dbc952c50d56d7fd3f
+dc937f1ce3cc24ae814116ac10004da69a51466d2fade2bc8701eb11cb0e185b
+dd4114112b9e49497a495a5503cce1345d3b6dbc0efb0898b7efcb383918360b
+dd6f8df65f2089c2fd3fd8ec162fb9e661b504984b5bcf6a7d7362cee574ab8e
+dd73135bfbe8330b498e160074295c51a13ea2871f612eb8ba813f6e9677cc3d
+dd7e24abd58a8046cc4d0b933a90d9857f4feb29b84a99d6ef89ccfc457d9207
+de1311e2dd24b0de44c0232df96108093ee1787953a99c3149b1238adcef97ec
+de16c9f610d8e28653128265242e881679fc6560a2e16c5f3ddda8a25efa669c
+de1c343dff5fa3aa2f9d0f51e632e89b5873782d3ac75636bff5ab3a547c3bd7
+de81b233c45eff4897ec4df523629e314b4d4425b916e18c98b6b877d1ca39cd
+de84857435366a0dcb6594701c472118140649a3121f98fbdd783ff28fc5372b
+ded6e4aec76a548c6b89edfb8d7d3f6771d29f8af3de51becb9b6cd86777f37f
+dfb0d3a6fab60191859a146fd62cdb60a41952f9c72d06a97e2fc787d0a5dd4d
+dff05363841cd7bdea085ed2f772deaa5d8e27c7602a4e5528171423831379c9
+download-169157ba98744acda35552ab75ebaf99.json
+download-59f249a79ff745e88c01757821da60ef.json
+download-be07538cbfc24b34867363f3eb28b7fb.json
+download-e86a132a4d6f414eb29d0c5057ca10d2.json
+e04c72f1b7759480d1ac52258a30523463c46ff9e32dd48a9972c230eba59a06
+e0df302932fa559fd9e8a04d6010b11a4f4861ab7e9aaa4e16d9f190a276b928
+e0e4b281bf26ac85a08666b1493847bdde8ea92e1d4db4eab7550cd58338400e
+e0fd340e2c2716aba79eea1167ced28aa6b873d921cdbf364467df833b5631bf
+e18933d835baf177e1e0d07097796eb03412f626ea6ed4b75bb18218797ba81b
+e1be350960af674dfdf23a11e4f2cce35156efb7937c6866d007fd7dcf6d2e2b
+e2525c5826d7f622ea65169405cc48890d991d5f879d4a49108793029baf46c3
+e2a0ecdf650c4482ff12788d26f97fee11e2368d7fae786d7aea7a792eb191d3
+e2b0046ce1447a732a750de1e62ce7cb4a1128c07854dcb4fee742dfa8682272
+e3030e28f22b3f50e9dc17b1fd33a5f01a4963ad3fceb836997b2648c1681fb6
+e335a7e8ecd135df139683c0585bf8e2ce058e824640ddce8cd52ecc8c7a4cbc
+e3504e0129d139fc50987dc4d08df8409b9e572eae5e40b88430d61c767ae2f0
+e3a5e5ccab7b9fafe6d17139110dc2770e9fb8ac46f02cb230a129576aa46559
+e42558b4869bb2eccf55f7cfca0144476e486ee3546988fad278581fe7975a6f
+e458161bd9a34d3e449d5211b05ab13a2b79b937e38725560e8d20d3a02084ac
+e48515a22e0e445392779abc9952e6fa52968d4794e5914268dda85df2e3c908
+e5a9d263f4b3b3720a238c51d9c0fd220e4305115bce04f98e7c0b8988bfcd92
+e5b88545d1f654fc889913195f26c985cff95f89fcdd5c0d740f7a3132681d7d
+e5db2080a8a394a3e106ccf50a3b12a8e160cd47e2a2e54c0b32833123981662
+e6149567dd9d74fd8b5a1a88c7aad1b52bd65c39dd6d8b73a5bfee841112c2bb
+e65672eb9915e19eb27d3dd40f62d5547b27858ebcb107cf81b84180b6a60d12
+e67b43b97505521412ec4d5426d31c3928bef06cd806412e0403ff5b2875e399
+e6a2df9407df53198ab0f9d83dc29bb75137584a7496ae12731a33d65acea960
+e6ca5beb8cfcd8c883e25bd85f169745e23fd81fd0c421431cf5df2051121e9b
+e7469589d0e8a5fa989e48070a8b9a71836ba038f7c8f65c43a186e48fd5a526
+e74a20db3bbcc94d955b92a501c892ea095e7efe055bf412ec745f6a920d95dc
+e78b40ccf3fcfaea75bd37a8f661e80d84ddcedcb8f5ad3b3dfb7e5f94fe7baa
+e7add90a76b6c02ad429522a7ac6065fb59721cc833a8d09194e68add3d61b1b
+e7b364c60d56e0777b6f9af73be139843defb4b810d3b0a8ba1056057db02874
+e7f43f69638045ab4dfcd01c1bd751df06b90b4ca988d1969147ee6b0abf1f29
+e865a2695ea2f0d9fdb365b1399d8e2b2a2348a68f3a656bc358a60391d2faba
+e8e27f3541ab4eb55441c6b9131a5aa25bb3c01955d81076d309469615fe107f
+e98add4948fc541e7e0a95f685ce56c7459373f030bba29299f3db220bc85bdb
+e9a22218bc645921d8ec914ff8de593726a67da795570070e8aa38f6edccffe3
+e9d3121d34615a0634036ece902c18edd56023f29f8fdc4c334cac2105e50a01
+eabe0a991632c47300b22c6117309ddd0a70eeaa008056cb5ceda2ac02dc8a31
+ead90ff21b30b5e3e34cbafd362f4e987400960a6f06b3d2b82584062032abb0
+eb70b22109fceeab7d82cc693bb1b5ce99796164c7ca95b3ddcf9a085a3989ae
+eb8965bd61ed8981959ac7edc9dd5a7372b6421d8302a8f834d211bf1d29809a
+ebc53ea5bc9c8c8f43634316ae1975bedf3fdd2b35b9e42b0a7b48e5697e7846
+ec07664400602d49a3aa8d37234c87eea8f43311e4b9d057e9845f77b788af2b
+ec24420b0ca4fe4ed6f7429f977bec1ca36bb3b0647a2cd4299da5b7e63fdd1f
+ec2bc9b9aad2a702d9f21c6c5a130e6289ce7dedd7cdb8cd65f938c7ac18cb69
+ec4d8d771e78a4c0b945627ee8a2e57054e9abdfafc5d6288bf095e8c6c4684e
+ec981399dea529dfee0edd941cce921689ab9c6a1db8c31ed93694c4c8b3ed77
+ecd342914fedba0608cfb2c2880771805e989f5feaf28b6442cf15aa961de62c
+ed0ead731e95f2ec5c0556b072c2925fe2b20154d9506da184980596e8a07688
+ed8576f2a07bcbb495c8c8c4a4cb57a08f4609cc0a6649c40b20e37800b4fe16
+edf5e4c9a71865df3004cf93923f5262441a01d42e0682f64096ccb233e30744
+ee127d6c0c9847065263202cc26510e3700cdd81913cf663e54e3ed0985523e3
+ee2a662b75ec72460d338c8507f5c12d9038a6772b61ab3cba1ca5ddaf3e6f12
+ee574a56cfd537b836ce1ccd52b3d7289a4c69821e0ec4cb4ce61d1f15e6b1e6
+eefa280c3a12bb38e0554cd607040c71ea0a39af0881c860c338603ecc1bc636
+ef0ab7cad870e6121308943ab9e4abbb0e7304bfcc7deb89b0d7b3354202b40e
+ef992d3501714e5fd751237dcccc8330a18e3c76f7e1767929b7344cf88d6ee7
+eff030f92b0f2096508a2f60cac73534646543f225a6c28a72eb15e6b22595a1
+f01e32a5ceac85ca65979358f1cf449d1ee298094b7aa29e5ed1d38498c57e60
+f0a261e22f68cf09658723087b1801c73a8086eefc89912afd88508cd771feb2
+f13db67175d59b9226daa64f88829d93309de709d72ab8122663277a5369938f
+f1478c4924b3e98bd435619d59535c5aae4ed402338e137edb2373c07e3b9616
+f1fd7bd0ea03378bc5c4842bf5eae045c05e11b2f5c0752591128d9274e48b9f
+f2201d1308014b1abc43c4a8938363157db2438399e348624d7705cd882c1b0a
+f2819f08dd7b8f2f49b2a43886715f50bf533fcecb28a2cf953f59cc37ee8777
+f3027d7637ebc883de9dd27d1a35c40a4eb1a405663762a577875e7ef25536cb
+f31390996454edb7523552ec6d795450a3dedbc78842198e79fc23ab068ad0a3
+f3ace0d17be9be72fde24e2fbf6509aeba069984e7113d186e7237027495b602
+f3d65765dcf006c8488dda592a0f9f6376f3b7b33da233c08df8fc5895ba1d65
+f47ec82dbb79e03a62a2ef5897dd13e36e89bfa8836b2471ee1979c11d217870
+f4daf7bfc188f2f054bc513bd74a94e4e851d749eaff781d0a5bf04da6cd5341
+f4df5718971cac59a1e10cb9aa19d2b5ccbd91eff72f685e283af28259fd4bd4
+f50eb49b8225a5726a7cd6cdfddfb05d275ac2ad61f36bd23606f8a052a74d74
+f56c16854c6182a50eb93c6930758ec76fa3e9bad21168f7d0efe912d990bb65
+f586e2a4aae39c0314b4c247f24eb691f807d8b8679956fe891f7e030cb21123
+f59891ccfa99a9930b490cb58bf68eace2869720cd58e1e8460ffa307254b514
+f60dddce097a1880426545802cd155caa8bebf557c724884b501cb1380bcdae5
+f6fb6e2d0ad787f8e49acc6c2230d8a82c7c75e1c8b38261670a129c42312c32
+f75c55f2234d259ab51053ad1fdfae489ef1ef929ac2f55a7b2d2a2ebda1bec5
+f7b1434e38274fe26f2a2459f6ba6d0ddc2bd9af0c1547477a5f41119d266613
+f7c236f0795d60af001a05420d2fd97529e04b60c7cc10918c2fa5e5b808a471
+f81dbd1381b674efebf79f82510da47dd3f07d17473ca1ab2620b576cf1dc9fd
+f8f3f5965ca4b747fd6f9050aaa323784be00f0a9d7fcfd6997ff4cfe2c64302
+f94f409968becab5c5fa62181eb08ed478d9cbe39f3fe816abb64d76343c9ac0
+f96e7ab013a71adc6027c1d1f470e4ce665208bb973defb1681b2e6d844fb0b5
+f99ec60f9ab67d329f2a61f5e5ee91fa94b8b08f14c2ca588bfb82b5d2a2b0b8
+f9daa1dc81f28cd6016abcf0824dafef6dfd12c8fa865a761b4a2cd4f65cba87
+f9e21a79521aed634a9d689b57886edaf0d5450176663df8f638b1915473e01a
+f9e8c401762bb9f57599bbfa8f022b4e6b295954356b3c05d6d0d5eb38caacb4
+f9fd8ddf48f5a651357df8c9a9ed3d6af008620387701827916f5bb7da2377e3
+fb06bd0372403a52c98cf2dc32d4e03b07c0383cf84bda928940fa82cc8b4dd9
+fb21744802f56abb88c83c5b7a06f938417d61ce070e5171067c0bbb8e911e9b
+fb3c14f5006e93eb8c3765fcd34011630dcd7526b58bf180b806f3766eea31f1
+fb76034c30f70273157172e5642a8064f553a7acf2e015ad1edb8803defec93c
+fb929973d6adb946bd28528a33454b6b50e58fa33f0e796ab7454ad0bdb6c06e
+fbb6f2422d5b0af148f67899ffb64e8d4f76cbb0eca02cdb9dd6d05b15af07c4
+fc20b9ae5f8d1f825a6f30e25fb7f176908184e02b4886bee6341195e246825b
+fc9016516ecf506663ae41e25bc47bd2581150359106ae499109bc965e642c99
+fd4f62e82787401531d30b68ae0bbcd3e34381a8aef28ac7bc3ef0c2fd946854
+fdb0e9781f27abf5c547e83a2fb7a4b3d85acbf313590bc9804718fb414aff99
+fdbdfb82c6686b11a696c743f6a50bdc6d5829e09da5e54a76c230ae0bfa4bb1
+fde1ea5e91a3be9a1369add363e5c6cbb65cab0068f9358d8a9dbafcc26a35cc
+fdeef3e579f61f8bc850e7b9ae4a179ed610abed4a2c51e2a5474b38e8ce87fa
+fe00c08ee7e899d280e70c0774e0e46d264a71726ef3030f06ad4a6cc525f7b8
+fe53682996a1f86043a6ed37ce8396fece70d533964f93fea2d1916b71cda630
+feea257a153cd7c37abdd5d3cd677fe968392c5a31103eacaeda2302a37e0be4
+ff9279918b218231b0c941caccd2c7d7d2af550844ae44bf458e7d46598a06f9
+ffa40b83575fedeea1ed44f6ba14abbf7b63e9d06193dececa70351bd6ee2662
+ffa5bb8891bc66c22e056a6a66d5eb56ed9056396b02689e7e522fc1f07c8e89
+
+exec
+/bin/zsh -lc "sed -n '215,370p' /Users/prts/Projects/aquant/src/aquant/backtest.py; ls /Users/prts/Projects/aquant/outputs/backtest/20261019T120659Z-54ff92be/feed_available-sip-validation-orb-base; env PYTHONPATH=\""'$PWD/src" PYTHONDONTWRITEBYTECODE=1 AQUANT_OUTPUT_DIR="$PWD/outputs" .venv/bin/python - <<'"'PY'
+from pathlib import Path
+import pandas as pd
+p=Path('/Users/prts/Projects/aquant/outputs/backtest/20261019T120659Z-54ff92be/feed_available-sip-validation-orb-base')
+for name in ['trades','equity']:
+ f=pd.read_parquet(p / (name+'.parquet'))
+ print(name, f.shape, f.columns.tolist())
+ print(f.head(2).to_string(index=False))
+PY" in /Users/prts/Projects/aquant-overnight
+ succeeded in 276ms:
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l1dcachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l2cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l3cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.optional.neon'. Detail: [errno 1] Operation not permitted
+trades (174, 12) ['symbol', 'day', 'entry_time', 'exit_time', 'entry_price', 'exit_price', 'qty', 'net_pnl', 'return', 'fees', 'exit_reason', 'holding_minutes']
+symbol        day                entry_time                 exit_time entry_price          exit_price         qty                      net_pnl                            return                           fees exit_reason  holding_minutes
+   QQQ 2026-01-02 2026-01-02 14:48:00+00:00 2026-01-02 15:10:00+00:00 621.8732670 619.914646051920150 1.608028601 -3.1694868078357707197815321 -0.003169486809631903680963190367 0.0199683048056358879916821015        stop             22.0
+   SPY 2026-01-02 2026-01-02 14:51:00+00:00 2026-01-02 15:12:00+00:00 686.8330095 684.669794594929275 1.455943418 -3.1694868075611224454891676 -0.003169486809631903680963190349 0.0199683048039055572511176195        stop             21.0
+equity (47970, 6) ['time', 'day', 'cash', 'equity', 'SPY_qty', 'QQQ_qty']
+                     time        day cash equity SPY_qty QQQ_qty
+2026-01-02 14:31:00+00:00 2026-01-02 2000   2000       0       0
+2026-01-02 14:32:00+00:00 2026-01-02 2000   2000       0       0
+
+codex
+已确认这不是模块改名：本 worktree 缺少 `backtest.py`、`history.py` 和 `evaluation/intraday.py`，主工作区则存在这些未包含在当前提交中的文件。为避免把正在变化的另一工作区当成可复现基线，本轮先记录阻塞与预定实验，不自行移植代码；也不重新评估已曝光的 locked_test。
+
+exec
+/bin/zsh -lc 'mkdir -p overnight/round-01; git ls-files src/aquant/backtest.py src/aquant/history.py src/aquant/evaluation/intraday.py docs/intraday.md docs/intraday_results.md; git rev-parse HEAD' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+31d47f271f30b6a5982377a91b082a668cfaaea1
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant-overnight/overnight/STATE.md
+/Users/prts/Projects/aquant-overnight/overnight/preflight.py
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a372648b70675eb7f99c5c49da149e39f4b9f53e
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0909bee5b5602ab175aa00aecec3ecd31000b3b1
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a372648b70675eb7f99c5c49da149e39f4b9f53e
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0909bee5b5602ab175aa00aecec3ecd31000b3b1
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc 'env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data AQUANT_OUTPUT_DIR="$PWD/outputs" .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json' in /Users/prts/Projects/aquant-overnight
+ exited 2 in 0ms:
+exec
+/bin/zsh -lc "cat overnight/round-01/preflight.json; git diff --check; git status --short; sed -n '1,45p' overnight/STATE.md" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+{
+  "status": "blocked",
+  "branch": "overnight/2026-10-19",
+  "commit": "31d47f271f30b6a5982377a91b082a668cfaaea1",
+  "python": "/Users/prts/Projects/aquant-overnight/.venv/bin/python",
+  "package": "/Users/prts/Projects/aquant-overnight/src/aquant/__init__.py",
+  "data_root": "/Users/prts/Projects/aquant/data",
+  "output_dir": "/Users/prts/Projects/aquant-overnight/outputs",
+  "checks": {
+    "worktree": true,
+    "branch": true,
+    "data_root": true,
+    "output_inside_worktree": true,
+    "local_package": true,
+    "no_bytecode_writes": true,
+    "src/aquant/backtest.py": false,
+    "src/aquant/history.py": false,
+    "src/aquant/evaluation/intraday.py": false,
+    "docs/intraday.md": false,
+    "docs/intraday_results.md": false
+  },
+  "network_requests": 0,
+  "backtests": 0,
+  "locked_test_evaluations": 0
+}
+?? .venv
+?? overnight/
+# 夜间研究状态
+
+## 目标与边界
+
+提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
+只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
+共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
+禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
+使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
+后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
+只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
+候选 locked_test 只能留待最终报告一次评估，必须记录次数。
+
+## 第 1 轮：前置条件阻塞
+
+核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
+起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
+初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
+
+已验证事实：
+
+- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
+  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
+  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
+- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
+- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
+  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
+- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
+  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
+- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
+  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
+- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
+  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
+
+这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
+网络请求、订单入口或策略回测；没有写入共享数据目录。
+不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
+
+## 假设清单
+
+|编号|假设|预定实验|状态|
+|---|---|---|---|
+|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
+
+H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a372648b70675eb7f99c5c49da149e39f4b9f53e
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2d`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0909bee5b5602ab175aa00aecec3ecd31000b3b1
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant-overnight/overnight/STATE.md
+/Users/prts/Projects/aquant-overnight/overnight/preflight.py
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc 'env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 AQUANT_OUTPUT_DIR="$PWD/outputs" .venv/bin/python -m ruff check --no-cache overnight/preflight.py' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+All checks passed!
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+codex
+前置检查已复现：路径和环境检查全部通过，五个必需文件缺失，检查程序按预期返回阻塞。已在 STATE.md 记录未执行回测、各收益指标为 N/A，以及待总控提供冻结代码的事项；现在提交这份记录和可复现检查脚本。
+
+exec
+/bin/zsh -lc 'git add overnight/STATE.md overnight/preflight.py overnight/round-01/preflight.json; git diff --cached --check; git diff --cached --stat; git diff --cached --name-only' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+ overnight/STATE.md                | 80 +++++++++++++++++++++++++++++++++++++++
+ overnight/preflight.py            | 58 ++++++++++++++++++++++++++++
+ overnight/round-01/preflight.json | 25 ++++++++++++
+ 3 files changed, 163 insertions(+)
+overnight/STATE.md
+overnight/preflight.py
+overnight/round-01/preflight.json
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc 'git commit -m "overnight: record missing intraday baseline and reproducible preflight"' in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+[overnight/2026-10-19 aa904f2] overnight: record missing intraday baseline and reproducible preflight
+ 3 files changed, 163 insertions(+)
+ create mode 100644 overnight/STATE.md
+ create mode 100644 overnight/preflight.py
+ create mode 100644 overnight/round-01/preflight.json
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+exec
+/bin/zsh -lc "git status --short; git log -1 --format='%h %s'; git show --format= --name-only HEAD; git branch --show-current" in /Users/prts/Projects/aquant-overnight
+ succeeded in 0ms:
+?? .venv
+aa904f2 overnight: record missing intraday baseline and reproducible preflight
+overnight/STATE.md
+overnight/preflight.py
+overnight/round-01/preflight.json
+overnight/2026-10-19
+
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+codex
+本轮阻塞：worktree 缺少日内回测代码及指定文档，未完成收益实验，指标均为 N/A。
+已创建 [STATE.md](/Users/prts/Projects/aquant-overnight/overnight/STATE.md)，记录证据、预定实验与下一步。
+可复现检查按预期返回阻塞；Ruff 检查通过。
+未下单、未修改主工作区或共享数据，locked_test 新增评估 0 次。
+需总控提供日内代码冻结提交或一致快照，已记入“待人类决定”。
+已提交 `aa904f2`：`overnight: record missing intraday baseline and reproducible preflight`。
+diff --git a/overnight/STATE.md b/overnight/STATE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1c47df8e06de927dbbd5f463e750c07dc3812df8
+--- /dev/null
++++ b/overnight/STATE.md
+@@ -0,0 +1,80 @@
++# 夜间研究状态
++
++## 目标与边界
++
++提高 ORB + VWAP 日内策略样本外、扣成本后的风险调整收益；允许结论为未发现稳健改进。
++只修改和提交 `/Users/prts/Projects/aquant-overnight`，分支 `overnight/2026-10-19`。
++共享 `/Users/prts/Projects/aquant/data` 只读。新产物仅写本 worktree 的 `overnight/` 和 `outputs/`。
++禁止任何真实或 Paper 下单；不修改 `.env`、launchd 或主工作区文件。
++使用 `.venv/bin/python`、`PYTHONPATH=$PWD/src`、`PYTHONDONTWRITEBYTECODE=1`。
++后者也避免向共享虚拟环境写入字节码；不安装或更改共享环境依赖。
++只用 development/validation 选择策略；今日 2026-10-19 不参与调参。
++候选 locked_test 只能留待最终报告一次评估，必须记录次数。
++
++## 第 1 轮：前置条件阻塞
++
++核查时间：2026-10-19 约 14:00 ET（日本时间 2026-10-20 约 03:00）。
++起始提交：`31d47f2`（完整 SHA 见 `round-01/preflight.json`）。
++初始工作区仅有未跟踪 `.venv` 符号链接，本轮不将其加入 Git。
++
++已验证事实：
++
++- 工作目录、分支均正确，但当前提交与工作树缺少 `src/aquant/backtest.py`、
++  `src/aquant/history.py`、`src/aquant/evaluation/intraday.py`、
++  `docs/intraday.md`、`docs/intraday_results.md`。`git ls-files` 对这些路径无输出。
++- 本地解释器实际加载本 worktree 的 `src/aquant/__init__.py`，不是主工作区包。
++- 只读查看主工作区的指定文档和相关代码，确认其存在上述日内实现；
++  当前分支不能从已签入内容获得该基线。没有修改或复制主工作区文件。
++- 主工作区结果文档明确说明原 locked_test 已被评估。本轮已读该文档中既有汇总，
++  因此不能声称旧测试区间完全未见；未打开其逐笔结果或重新评估。
++- 为判断能否绕过缺失代码，只读查看既有 **validation/base** 交易和权益日志的
++  列名、行数及前两行；未据此选参数，未分析候选收益。未读取今日行情。
++- `AQUANT_OUTPUT_DIR` 启动时实际未设置；所有 Python 检查命令已显式设为
++  `$PWD/outputs`。未依赖默认输出目录，也未读写 `.env`。
++
++这是缺少可复现研究基线导致的阻塞，不是已发生硬边界违规。没有运行历史下载、
++网络请求、订单入口或策略回测；没有写入共享数据目录。
++不从另一个正在工作的目录临时拼装代码、不另造回放引擎，以免产生无法归因的结果。
++
++## 假设清单
++
++|编号|假设|预定实验|状态|
++|---|---|---|---|
++|H1|开盘后较晚的 ORB 信号可能降低扣成本后的收益质量|将 `Rules.entry_minutes` 从 120 固定改为 60；其余规则不变，比较 SIP 完整交易日的 development/validation、zero/base/stress 成本|待取得冻结基线；尚未测试|
++
++H1 只做一个固定候选，不搜索截止时间；不依据本轮缺失的收益结果调整该假设。
++完整交易日筛选存在事后质量选择偏差，SIP 结果也不代表 IEX 实时可执行收益。
++两组均独立从 $2,000 开始，比较交易数、净收益、PF、分钟权益最大回撤、
++日收益风险指标与成本敏感性，并说明样本量不足和月份间不稳定性。
++先复现 development/validation 基线，再执行候选；验证失败则不访问 locked_test。
++
++## 已做实验表
++
++|轮次 / 编号|操作与命令|输出路径|交易数 / 净收益 / PF / 最大回撤 / 成本敏感性|结论|
++|---|---|---|---|---|
++|1 / P0（前置核查，非收益实验）|下方可复现命令；预期退出码 2|`overnight/round-01/preflight.json`|均 N/A，未执行回测；不能把 N/A 写成 0 收益或 0 回撤|日内代码和文档缺失，H1 未执行|
++
++```bash
++env PYTHONPATH="$PWD/src" PYTHONDONTWRITEBYTECODE=1 \
++  AQUANT_DATA_ROOT=/Users/prts/Projects/aquant/data \
++  AQUANT_OUTPUT_DIR="$PWD/outputs" \
++  .venv/bin/python overnight/preflight.py > overnight/round-01/preflight.json
++```
++
++该命令不导入交易模块，只检查目录、分支、环境、包来源和所需文件。
++预期 `status=blocked`，五个文件检查为 false，其余边界检查为 true。
++本轮新增候选数 0；locked_test 新增评估次数 0；今日样本观察次数 0。
++
++## 下一步
++
++1. 总控提供包含日内研究依赖与测试的冻结提交或一致快照，再在本 worktree 接入。
++2. 重新执行 P0，确保所有检查通过；只运行本 worktree 的测试和离线回放。
++3. 复现 development/validation 基线，执行 H1 固定时间过滤实验并完整记录三档成本。
++4. 冻结候选之后才考虑最终测试；2026-10-19 仅作独立新鲜观察，不能用于修改 H1。
++
++## 待人类决定
++
++- 请总控指定日内代码的可信提交或冻结快照来源。当前 `main` 与本分支都指向
++  `31d47f2`，已有日内文件不在该提交中；本轮不擅自导入另一 worker 的未提交状态。
++- 原 locked_test 结果已被既有报告披露，应确认后续最终报告将其标为“已曝光历史留出集”，
++  并将真正未来样本单独报告；不得把再次使用旧区间描述为全新盲测。
+diff --git a/overnight/preflight.py b/overnight/preflight.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6183b44467148f0a203e5f1883feb197f8ffabea
+--- /dev/null
++++ b/overnight/preflight.py
+@@ -0,0 +1,58 @@
++"""Read-only prerequisite check; never imports trading modules or accesses the network."""
++
++import importlib.util
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++
++def main():
++    root = Path(__file__).resolve().parents[1]
++    expected = Path('/Users/prts/Projects/aquant-overnight')
++    required = (
++        'src/aquant/backtest.py',
++        'src/aquant/history.py',
++        'src/aquant/evaluation/intraday.py',
++        'docs/intraday.md',
++        'docs/intraday_results.md',
++    )
++    branch = subprocess.check_output(
++        ['git', 'branch', '--show-current'], cwd=root, text=True
++    ).strip()
++    output = os.environ.get('AQUANT_OUTPUT_DIR')
++    data = os.environ.get('AQUANT_DATA_ROOT')
++    package = importlib.util.find_spec('aquant')
++    origin = str(Path(package.origin).resolve()) if package and package.origin else None
++    checks = {
++        'worktree': root == expected and Path.cwd().resolve() == expected,
++        'branch': branch == 'overnight/2026-10-19',
++        'data_root': data == '/Users/prts/Projects/aquant/data',
++        'output_inside_worktree': bool(output)
++        and Path(output).resolve().is_relative_to(root / 'outputs'),
++        'local_package': origin == str(root / 'src/aquant/__init__.py'),
++        'no_bytecode_writes': sys.dont_write_bytecode,
++        **{name: (root / name).is_file() for name in required},
++    }
++    result = {
++        'status': 'ready' if all(checks.values()) else 'blocked',
++        'branch': branch,
++        'commit': subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD'], cwd=root, text=True
++        ).strip(),
++        'python': sys.executable,
++        'package': origin,
++        'data_root': data,
++        'output_dir': output,
++        'checks': checks,
++        'network_requests': 0,
++        'backtests': 0,
++        'locked_test_evaluations': 0,
++    }
++    print(json.dumps(result, indent=2, ensure_ascii=False))
++    return 0 if result['status'] == 'ready' else 2
++
++
++if __name__ == '__main__':
++    raise SystemExit(main())
+
+tokens used
+50,910
+本轮阻塞：worktree 缺少日内回测代码及指定文档，未完成收益实验，指标均为 N/A。
+已创建 [STATE.md](/Users/prts/Projects/aquant-overnight/overnight/STATE.md)，记录证据、预定实验与下一步。
+可复现检查按预期返回阻塞；Ruff 检查通过。
+未下单、未修改主工作区或共享数据，locked_test 新增评估 0 次。
+需总控提供日内代码冻结提交或一致快照，已记入“待人类决定”。
+已提交 `aa904f2`：`overnight: record missing intraday baseline and reproducible preflight`。

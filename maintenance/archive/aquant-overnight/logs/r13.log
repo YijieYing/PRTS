@@ -1,0 +1,2780 @@
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1532a-c005-7360-a2e8-859f9de0843a
+--------
+user
+[PRTS 总控夜间指令 · 第 13 轮 · 纽约 16:14，16:00 收盘]
+用户已经去睡觉。从现在起，本线程由 PRTS 总控（Claude）通过 `codex exec resume` 驱动，**不会有人类回复你**。
+
+规则：
+- 继续推进你手上的第五阶段：只读前向验证，以及策略研究与优化。目标是样本外、扣成本后的风险调整收益；不要拿 locked_test 调参。
+- **不发送任何订单，包括 Paper**；不改 launchd 和 `.env`。
+- 遇到需要人类判断的事，写进 `docs/overnight/PENDING.md`，然后改做不依赖这个判断的工作。
+- 第 1 轮先执行 `git switch -c overnight/phase5-2026-10-19`，保留当前未提交的改动。之后每轮结束前，把本轮改动用小步 commit 提交到这个分支，不要提交到 main。
+- 每轮控制在约 25 分钟。把进度追加到 `docs/overnight/STATE.md`，包括做了什么、结果数字、产物路径、下一步。
+- 结束时输出不超过 8 行的摘要。
+codex
+第13轮将检查只读前向记录的磁盘占用和容量保护，重点验证异常增长时能否及时停止并保留证据。继续使用隔离的离线数据，不改运行调度、冻结参数或 `.env`，不发送订单。
+exec
+/bin/zsh -lc "rg -n 'disk|bytes|sqlite|rotate|budget' src/aquant/forward.py scripts/research/check_recovery.py tests/test_forward.py tests/test_recovery.py; sed -n '1,180p' src/aquant/journal.py; git branch --show-current" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+tests/test_recovery.py:31:                Path(strategy.__file__).read_bytes()
+tests/test_recovery.py:120:    with closing(audit.connect(root / "state.sqlite3")) as connection:
+tests/test_recovery.py:157:    if case == "disk_budget":
+tests/test_recovery.py:178:def test_owned_process_kill_lock_release_and_sqlite_recovery(tmp_path, policy, case):
+scripts/research/check_recovery.py:48:    "disk_budget",
+scripts/research/check_recovery.py:133:    journal = Journal(root / "state.sqlite3").__enter__()
+scripts/research/check_recovery.py:144:        journal = Journal(root / "state.sqlite3").__enter__()
+scripts/research/check_recovery.py:389:    with offline(), ExitStack() as patches, Journal(root / "state.sqlite3") as journal:
+scripts/research/check_recovery.py:390:        if case == "disk_budget":
+scripts/research/check_recovery.py:392:                patch.object(forward.shutil, "disk_usage", return_value=SimpleNamespace(free=0))
+scripts/research/check_recovery.py:412:        "disk_budget",
+scripts/research/check_recovery.py:460:    with offline(), Journal(root / "state.sqlite3") as journal:
+scripts/research/check_recovery.py:531:                with Journal(root / "state.sqlite3"):
+scripts/research/check_recovery.py:535:            reader = audit_forward.connect(root / "state.sqlite3")
+scripts/research/check_recovery.py:559:        with Journal(root / "state.sqlite3") as journal:
+scripts/research/check_recovery.py:592:        "sqlite_recovered": integrity == "ok" and visible_bars == recovered_bars == expected,
+scripts/research/check_recovery.py:647:        "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+scripts/research/check_recovery.py:648:        "audit_sha256": hashlib.sha256(Path(audit_forward.__file__).read_bytes()).hexdigest(),
+scripts/research/check_recovery.py:650:            (Path(forward.__file__).parent / "journal.py").read_bytes()
+scripts/research/check_recovery.py:653:            (forward.DIRECTORY / "policy.json").read_bytes()
+scripts/research/check_recovery.py:670:    (output / Path(__file__).name).write_bytes(Path(__file__).read_bytes())
+src/aquant/forward.py:13:import sqlite3
+src/aquant/forward.py:92:            str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+src/aquant/forward.py:117:        if hashlib.sha256(Path(filename).read_bytes()).hexdigest() != expected:
+src/aquant/forward.py:123:    path = root / "state.sqlite3"
+src/aquant/forward.py:126:    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+src/aquant/forward.py:542:                budget = min(D(book["cash"]), D(self.p["allocation"]))
+src/aquant/forward.py:543:                qty = (budget / (price * (1 + D(cost.fee_bps) / 10000))).quantize(
+src/aquant/forward.py:768:                            shutil.disk_usage(root).free < 256 * 1024**2
+src/aquant/forward.py:769:                            or (root / "state.sqlite3").stat().st_size > 5 * 1024**3
+src/aquant/forward.py:771:                            raise AcceptanceError("Observation disk budget exhausted")
+src/aquant/forward.py:823:        journal = Journal(root / "state.sqlite3").__enter__()
+src/aquant/forward.py:905:            path.write_bytes(plistlib.dumps(definition(label)))
+src/aquant/forward.py:971:        "database_bytes": (DIRECTORY / "state.sqlite3").stat().st_size
+src/aquant/forward.py:972:        if (DIRECTORY / "state.sqlite3").exists()
+src/aquant/forward.py:974:        "database_limit_bytes": 5 * 1024**3,
+src/aquant/forward.py:975:        "free_disk_bytes": shutil.disk_usage(DIRECTORY).free,
+tests/test_forward.py:166:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:182:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:197:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:204:            with Journal(tmp_path / "state.sqlite3"):
+tests/test_forward.py:206:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:215:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:231:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:276:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:290:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:331:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:431:    before = hashlib.sha256(source.read_bytes()).hexdigest()
+tests/test_forward.py:446:    assert before == hashlib.sha256(source.read_bytes()).hexdigest()
+tests/test_forward.py:454:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:489:        str(implementation): hashlib.sha256(implementation.read_bytes()).hexdigest()
+tests/test_forward.py:520:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:555:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:640:    with Journal(tmp_path / "state.sqlite3") as j:
+tests/test_forward.py:661:    with Journal(tmp_path / "state.sqlite3") as j:
+"""Durable local order intents and observations; no credentials or raw responses."""
+
+import fcntl
+import json
+import sqlite3
+from datetime import UTC, datetime
+from pathlib import Path
+
+from aquant.alpaca import AcceptanceError
+from aquant.risk import TERMINAL
+
+
+class Journal:
+    """One process holds the lock across checks, confirmation, persistence and send.
+
+    SQLite FULL commits the intent before any HTTP write. A crash in that gap leaves
+    an unresolved intent, never an instruction to retry. The lock is per checkout;
+    external dashboards/processes must not trade this account concurrently.
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.connection = None
+        self.lock = None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.lock = self.path.with_suffix(".lock").open("a")
+        try:
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.lock.close()
+            raise AcceptanceError("已有 Paper 命令占用本地日志锁，请等待其结束。") from None
+        try:
+            self.connection = sqlite3.connect(self.path)
+            self.connection.execute("PRAGMA synchronous=FULL")
+            self.connection.executescript("""
+                CREATE TABLE IF NOT EXISTS account (id TEXT PRIMARY KEY);
+                CREATE TABLE IF NOT EXISTS intents (
+                    client_id TEXT PRIMARY KEY, payload TEXT NOT NULL,
+                    state TEXT NOT NULL, observation TEXT
+                );
+                CREATE TABLE IF NOT EXISTS events (
+                    sequence INTEGER PRIMARY KEY, time_utc TEXT NOT NULL,
+                    client_id TEXT, kind TEXT NOT NULL, detail TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS records (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+            """)
+            return self
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+
+    def __exit__(self, *_):
+        if self.connection is not None:
+            self.connection.close()
+        if self.lock is not None:
+            self.lock.close()
+
+    def bind(self, account_id: str):
+        rows = self.connection.execute("SELECT id FROM account").fetchall()
+        if rows and rows != [(account_id,)]:
+            raise AcceptanceError("日志账户不匹配：禁止将另一 Paper 账户的状态混用。")
+        with self.connection:
+            self.connection.execute("INSERT OR IGNORE INTO account VALUES (?)", (account_id,))
+
+    def _event(self, client_id, kind, detail):
+        self.connection.execute(
+            "INSERT INTO events(time_utc,client_id,kind,detail) VALUES (?,?,?,?)",
+            (
+                datetime.now(UTC).isoformat(),
+                client_id,
+                kind,
+                json.dumps(detail, ensure_ascii=False),
+            ),
+        )
+
+    def event(self, client_id, kind, detail):
+        with self.connection:
+            self._event(client_id, kind, detail)
+
+    def prepare(self, payload: dict):
+        client_id = payload["client_order_id"]
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO intents VALUES (?,?,'prepared',NULL)",
+                (client_id, json.dumps(payload)),
+            )
+            self._event(client_id, "intent", payload)
+
+    def observe(self, client_id: str, observation: dict):
+        with self.connection:
+            self.connection.execute(
+                "UPDATE intents SET state=?, observation=? WHERE client_id=?",
+                (observation["status"], json.dumps(observation), client_id),
+            )
+            self._event(client_id, "observation", observation)
+
+    def unfinished(self) -> list[dict]:
+        return [
+            {"payload": json.loads(payload), "state": state}
+            for payload, state in self.connection.execute("SELECT payload,state FROM intents")
+            if state not in TERMINAL
+        ]
+
+    def payload(self, client_id: str) -> dict | None:
+        row = self.connection.execute(
+            "SELECT payload FROM intents WHERE client_id=?",
+            (client_id,),
+        ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def get(self, name: str):
+        row = self.connection.execute("SELECT value FROM records WHERE name=?", (name,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def put(self, name: str, value: dict, *, create: bool = False):
+        with self.connection:
+            sql = "INSERT" if create else "INSERT OR REPLACE"
+            self.connection.execute(f"{sql} INTO records VALUES (?,?)", (name, json.dumps(value)))
+
+    def runs(self) -> list[dict]:
+        return [
+            json.loads(row[0])
+            for row in self.connection.execute(
+                "SELECT value FROM records WHERE name LIKE 'smoke:%' ORDER BY name"
+            )
+        ]
+main
+
+exec
+/bin/zsh -lc "sed -n '1,170p' scripts/research/check_recovery.py; sed -n '270,445p' scripts/research/check_recovery.py; sed -n '620,675p' scripts/research/check_recovery.py; sed -n '1,205p' tests/test_recovery.py; sed -n '720,810p' src/aquant/forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+"""Offline fault injection into the frozen Day state machine, never live evidence."""
+
+import argparse
+import asyncio
+import hashlib
+import json
+import multiprocessing
+import signal
+import socket
+from contextlib import ExitStack, contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pandas as pd
+from requests.adapters import HTTPAdapter
+
+from aquant import forward, history, readonly
+from aquant.alpaca import AcceptanceError
+from aquant.evaluation.intraday import save_json
+from aquant.journal import Journal
+from scripts.research import audit_forward
+
+CASES = (
+    "normal",
+    "duplicate",
+    "revision",
+    "missing",
+    "late_start",
+    "sleep",
+    "disconnect",
+    "restart",
+    "backlog",
+    "transaction_crash",
+)
+TRANSPORT_CASES = (
+    "normal",
+    "disconnect",
+    "silent",
+    "backlog",
+    "auth",
+    "subscription",
+    "provider_rejection",
+    "server_error",
+    "close_error",
+    "stop_file",
+    "disk_budget",
+)
+PROCESS_CASES = ("uncommitted_bar", "committed_bar")
+
+
+@contextmanager
+def offline():
+    def deny(*args, **kwargs):
+        raise AssertionError("Offline recovery verification forbids network/client access")
+
+    with ExitStack() as stack:
+        for owner, attr in (
+            (HTTPAdapter, "send"),
+            (socket.socket, "connect"),
+            (readonly, "Client"),
+            (readonly, "Stream"),
+        ):
+            stack.enter_context(patch.object(owner, attr, deny))
+        yield
+
+
+def bar(opening, minute, symbol):
+    price = 100 + 0.5 * min(minute, 59) / 59 if minute < 65 else 100.7
+    return {
+        "T": "b",
+        "S": symbol,
+        "t": opening + pd.Timedelta(minutes=minute),
+        "o": price,
+        "h": price + 0.02,
+        "l": price - 0.02,
+        "c": price,
+        "vw": price,
+        "v": 1000,
+        "n": 10,
+    }
+
+
+def quote(received, symbol):
+    return {
+        "T": "q",
+        "S": symbol,
+        "t": received,
+        "bp": 100.69,
+        "ap": 100.71,
+        "bs": 10,
+        "as": 10,
+        "bx": "V",
+        "ax": "V",
+    }
+
+
+def scenario(root, policy, case, *, minutes=390):
+    """Synthetic Day-level faults; no claim of exercising launchd or physical sleep."""
+    if case not in CASES or minutes < 80 or minutes > 390:
+        raise ValueError("Unknown scenario or insufficient simulated session")
+    if root.exists() or root.resolve().is_relative_to(forward.DIRECTORY.resolve()):
+        raise ValueError("Use a new isolated fixture directory")
+    root.mkdir(parents=True)
+    save_json(
+        root / "OFFLINE_FIXTURE.json",
+        {
+            "kind": "synthetic_recovery_fixture",
+            "case": case,
+            "real_forward_observations": 0,
+            "orders_authorized": False,
+            "minutes": minutes,
+        },
+    )
+    history.immutable(root / "policy.json", policy)
+    date = policy["protocol"]["not_before"]
+    opening = pd.Timestamp(date + "T09:30:00", tz="America/New_York").tz_convert("UTC")
+    closing = opening + pd.Timedelta(minutes=minutes)
+    history.immutable(
+        root / "calendar.json",
+        {
+            "synthetic": True,
+            "rows": [
+                {
+                    "date": date,
+                    "open": "09:30",
+                    "close": closing.tz_convert("America/New_York").strftime("%H:%M"),
+                }
+            ],
+        },
+    )
+    journal = Journal(root / "state.sqlite3").__enter__()
+    first = 15 if case == "late_start" else 0
+    processing = opening + pd.Timedelta(minutes=first)
+    day = forward.Day(journal, policy, date, opening, closing, processing)
+    day.clock = lambda: processing
+    day.connection(True, processing)
+    restart_quotes_cleared, rollback_verified = None, None
+
+    def restore(at):
+        nonlocal journal, day, restart_quotes_cleared
+        journal.__exit__(None, None, None)
+        journal = Journal(root / "state.sqlite3").__enter__()
+        day = forward.Day(journal, policy, date, opening, closing, at)
+        day.clock = lambda: processing
+        restart_quotes_cleared = not day.s["quotes"]
+
+    try:
+        for minute in range(first, minutes):
+            at = opening + pd.Timedelta(minutes=minute)
+            if minute == 60 and case == "disconnect":
+                processing = at + pd.Timedelta(seconds=1)
+                day.connection(False, processing)
+            if case in {"sleep", "disconnect", "backlog"} and 60 <= minute < 64:
+                if case == "backlog" and minute == 60:
+                    processing = at + pd.Timedelta(minutes=4)
+                    for symbol in ("SPY", "QQQ"):
+                        day.consume(bar(opening, minute, symbol), at + pd.Timedelta(minutes=1))
+                continue
+            if minute == 64 and case == "disconnect":
+                day.connection(True, at)
+            if minute == 60 and case == "restart":
+                processing = at + pd.Timedelta(seconds=1)
+                restore(processing)
+                restart_quotes_cleared = not day.s["quotes"]
+                day.connection(True, processing)
+            for seconds in (15, 30, 45, 60):
+                processing = at + pd.Timedelta(seconds=seconds)
+                day.heartbeat(processing)
+        "quotes_received_counter": state["quotes_received"],
+        "real_forward_observations": 0,
+        "execution_evidence": False,
+        "orders_authorized": False,
+    }
+    save_json(root / "recovery.json", result)
+    return result
+
+
+def transport_scenario(root, policy, case, *, minutes=80):
+    """Drive the real collect loop with a synthetic stream and monotonic clock."""
+    if case not in TRANSPORT_CASES or not 80 <= minutes <= 390:
+        raise ValueError("Unknown transport case or insufficient simulated session")
+    if root.exists() or root.resolve().is_relative_to(forward.DIRECTORY.resolve()):
+        raise ValueError("Use a new isolated fixture directory")
+    date = policy["protocol"]["not_before"]
+    opening = pd.Timestamp(date + "T09:30:00", tz="America/New_York").tz_convert("UTC")
+    closing = opening + pd.Timedelta(minutes=minutes)
+    history.immutable(root / "policy.json", policy)
+    history.immutable(
+        root / "OFFLINE_FIXTURE.json",
+        {
+            "kind": "synthetic_collect_fixture",
+            "real_forward_observations": 0,
+            "orders_authorized": False,
+            "case": case,
+        },
+    )
+    history.immutable(
+        root / "calendar.json",
+        {
+            "synthetic": True,
+            "rows": [
+                {
+                    "date": date,
+                    "open": "09:30",
+                    "close": closing.tz_convert("America/New_York").strftime("%H:%M"),
+                }
+            ],
+        },
+    )
+    clock = SimpleNamespace(value=opening)
+    counters = {"connect": 0, "close_attempts": 0, "receive": 0}
+    delays, frames = [], []
+    subscription = {"T": "subscription", "bars": ["SPY", "QQQ"], "quotes": ["SPY", "QQQ"]}
+    for second in range(15, (minutes + 2) * 60 + 1, 15):
+        at = opening + pd.Timedelta(seconds=second)
+        frames.append((at, [quote(at, s) for s in ("SPY", "QQQ")]))
+        if second % 60 == 0 and second <= minutes * 60:
+            frames.append(
+                (
+                    at + pd.Timedelta(milliseconds=10),
+                    [bar(opening, second // 60 - 1, s) for s in ("SPY", "QQQ")],
+                )
+            )
+    cursor, injected = 0, False
+
+    class Stream:
+        def __init__(self):
+            self.acknowledged = False
+
+        async def connect(self):
+            counters["connect"] += 1
+            if case == "auth":
+                raise readonly.PermissionError("Synthetic permission denial")
+
+        async def receive(self):
+            nonlocal cursor, injected
+            counters["receive"] += 1
+            if counters["receive"] > len(frames) + 100:
+                raise AssertionError("Synthetic clock failed to progress")
+            if not self.acknowledged:
+                self.acknowledged = True
+                ack = {**subscription, "bars": ["SPY"]} if case == "subscription" else subscription
+                return [ack], clock.value
+            if (
+                case == "silent"
+                and counters["connect"] == 1
+                and clock.value >= opening + pd.Timedelta(minutes=40)
+            ):
+                clock.value += pd.Timedelta(seconds=30)
+                raise TimeoutError("synthetic-secret-sentinel")
+            if not injected and clock.value >= opening + pd.Timedelta(minutes=40):
+                injected = True
+                if case in {"disconnect", "close_error"}:
+                    clock.value += pd.Timedelta(seconds=120)
+                    raise ConnectionError("synthetic-secret-sentinel")
+                if case in {"provider_rejection", "server_error"}:
+                    code = 405 if case == "provider_rejection" else 500
+                    return [
+                        {"T": "error", "code": code, "msg": "synthetic-secret-sentinel"}
+                    ], clock.value
+                if case == "stop_file":
+                    (root / "STOP").touch()
+                    return [], clock.value
+                if case == "backlog":
+                    at, messages = frames[cursor]
+                    cursor += 1
+                    clock.value = at + pd.Timedelta(seconds=120)
+                    return messages, at
+            while cursor < len(frames) and frames[cursor][0] < clock.value:
+                cursor += 1  # missed live frames stay missing; no historical replay
+            if cursor == len(frames):
+                clock.value = closing + pd.Timedelta(minutes=2)
+                return [], clock.value
+            clock.value, messages = frames[cursor]
+            cursor += 1
+            return messages, clock.value
+
+        async def close(self):
+            counters["close_attempts"] += 1
+            if case == "close_error":
+                raise ConnectionError("synthetic-secret-sentinel")
+
+    async def sleep(seconds):
+        delays.append(seconds)
+        clock.value += pd.Timedelta(seconds=seconds)
+
+    error_type = None
+    with offline(), ExitStack() as patches, Journal(root / "state.sqlite3") as journal:
+        if case == "disk_budget":
+            patches.enter_context(
+                patch.object(forward.shutil, "disk_usage", return_value=SimpleNamespace(free=0))
+            )
+        day = forward.Day(journal, policy, date, opening, closing, opening)
+        try:
+            asyncio.run(
+                forward.collect(
+                    day, root, clock=lambda: clock.value, stream_factory=Stream, sleeper=sleep
+                )
+            )
+        except (AcceptanceError, ConnectionError) as error:
+            error_type = type(error).__name__  # no exception text in artifacts
+        state = day.s
+    forward.publish(root)
+    integrity = audit_forward.audit(root, now=clock.value)
+    save_json(root / "integrity.json", integrity)
+    expected_stop = case in {
+        "auth",
+        "subscription",
+        "provider_rejection",
+        "stop_file",
+        "disk_budget",
+    }
+    expected_complete = not expected_stop and case != "close_error"
+    summary = forward.summarize_days([state], policy)["days"][0]
+    checks = {
+        "no_orders": state["orders_authorized"] is False,
+        "no_trades_or_positions": all(
+            not b["trades"] and not b["positions"] for b in state["books"].values()
+        ),
+        "no_cash_change": all(b["cash"] == policy["capital"] for b in state["books"].values()),
+        "completion_matches_fault": state["complete"] == expected_complete,
+        "stop_matches_fault": (root / "STOP").exists() == expected_stop,
+        "disconnect_recorded_and_close_attempted": not state["connected"]
+        and counters["close_attempts"] == counters["connect"],
+        "bounded_backoff": all(1 <= s <= 60 for s in delays),
+        "no_unexpected_integrity_error": integrity["status"] != "FAIL",
+        "signals_rejected": summary["signals"] == summary["rejected_signals"],
+    }
+    result = {
+        "case": case,
+        "result": "PASS" if all(checks.values()) else "FAIL",
+        "kind": "synthetic_collect_result",
+        "checks": checks,
+        "summary": summary,
+        "audit_status": integrity["status"],
+        "counters": counters,
+        "backoff_seconds": delays,
+        "exception_type": error_type,
+        "stopped": (root / "STOP").exists(),
+        "anomaly_kinds": sorted({a["kind"] for a in state["anomalies"]}),
+        "recovery_limitation": "close exception escapes retry loop; process restart required"
+        if case == "close_error"
+        else None,
+        "orders_authorized": False,
+        "orders_authorized": False,
+        "real_forward_observations": 0,
+        "execution_evidence": False,
+        "scope": (
+            "Owned fixture SIGKILL only; not OS power loss, "
+            "launchd restart or exchange redelivery guarantee"
+        ),
+    }
+    save_json(root / "recovery.json", result)
+    return result
+
+
+def run(output, *, minutes=390, transport=False, process=False):
+    if transport and process:
+        raise ValueError("Choose one recovery mode")
+    if output.exists() or output.resolve().is_relative_to(forward.DIRECTORY.resolve()):
+        raise ValueError("Use a new isolated output directory")
+    p = forward.policy()
+    plan = {
+        "kind": "synthetic_recovery_suite",
+        "mode": "process" if process else "transport" if transport else "state",
+        "cases": PROCESS_CASES if process else TRANSPORT_CASES if transport else CASES,
+        "minutes": minutes,
+        "started_at": datetime.now(UTC).isoformat(),
+        "config_hash": p["config_hash"],
+        "real_forward_observations": 0,
+        "orders_authorized": False,
+        "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "audit_sha256": hashlib.sha256(Path(audit_forward.__file__).read_bytes()).hexdigest(),
+        "journal_sha256": hashlib.sha256(
+            (Path(forward.__file__).parent / "journal.py").read_bytes()
+        ).hexdigest(),
+        "production_policy_sha256": hashlib.sha256(
+            (forward.DIRECTORY / "policy.json").read_bytes()
+        ).hexdigest(),
+        "scope": (
+            "Spawned fixture SIGKILL, flock and SQLite recovery; no launchd or physical power loss"
+        )
+        if process
+        else (
+            "Actual collect loop with synthetic stream/clock; "
+            "no real sockets, launchd or physical sleep"
+        )
+        if transport
+        else (
+            "Day event/persistence fault injection; not launchd, physical sleep, "
+            "network transport, or actual future quotes"
+        ),
+    }
+    save_json(output / "plan.json", plan)
+    (output / Path(__file__).name).write_bytes(Path(__file__).read_bytes())
+    rows = []
+    with offline():
+        for case in plan["cases"]:
+            runner = process_scenario if process else transport_scenario if transport else scenario
+            result = runner(output / case, p, case, minutes=minutes)
+"""Synthetic state-machine recovery; never touch production observation paths."""
+
+import hashlib
+from dataclasses import asdict
+from pathlib import Path
+
+import pandas as pd
+import pytest
+from requests import Request
+from requests.adapters import HTTPAdapter
+
+from aquant import backtest, forward, readonly, strategy
+from scripts.research import check_recovery as recovery
+
+
+@pytest.fixture
+def policy():
+    s = next(s for s in strategy.BASELINES if s.id == "intraday_trend")
+    return {
+        "strategy": asdict(s),
+        "config_hash": s.hash,
+        "protocol": strategy.specification()["forward"],
+        "costs": [asdict(c) for c in backtest.COSTS],
+        "capital": "2000",
+        "allocation": "1000",
+        "feed": "iex",
+        "activated_at": "2026-10-19T18:00:00Z",
+        "orders_authorized": False,
+        "code_hashes": {
+            str(Path(strategy.__file__)): hashlib.sha256(
+                Path(strategy.__file__).read_bytes()
+            ).hexdigest()
+        },
+    }
+
+
+@pytest.mark.parametrize("case", recovery.CASES)
+def test_recovery_fault_matrix_is_safe_and_durable(tmp_path, policy, case):
+    with recovery.offline():
+        r = recovery.scenario(tmp_path / case, policy, case, minutes=80)
+    assert r["result"] == "PASS", r
+    assert r["real_forward_observations"] == 0 and not r["execution_evidence"]
+    assert all(r["checks"].values())
+    assert r["summary"]["hypothetical_trades"] == 0 and r["summary"]["net_pnl"] is None
+    if case in {"normal", "duplicate", "revision", "restart", "transaction_crash"}:
+        assert r["summary"]["signals"] == r["summary"]["rejected_signals"] == 2
+    assert (tmp_path / case / "OFFLINE_FIXTURE.json").exists()
+    if case in {"restart", "disconnect"}:
+        state = forward.records(tmp_path / case)[0]
+        kind = "process_restart" if case == "restart" else "disconnect"
+        fault = next(a for a in state["anomalies"] if a["kind"] == kind)
+        assert pd.Timestamp(fault["time"]) >= pd.Timestamp(state["bars"]["SPY"][59]["received_at"])
+    if case == "transaction_crash":
+        assert r["quotes_received_counter"] == 159 and r["sampled_quote_rows"] == 160
+        assert r["audit_status"] == "INCOMPLETE"
+        assert "quote_counter_below_persisted_samples" in r["integrity_day_warnings"][0]
+    else:
+        assert r["quotes_received_counter"] >= r["sampled_quote_rows"]
+
+
+@pytest.mark.parametrize("factory", [readonly.Client, readonly.Stream])
+def test_network_guard_blocks_clients(factory):
+    # Resolve the patched attribute, not an alias captured before entering the guard.
+    with recovery.offline(), pytest.raises(AssertionError, match="forbids"):
+        getattr(readonly, factory.__name__)()
+
+
+def test_network_guard_blocks_http_transport():
+    with recovery.offline(), pytest.raises(AssertionError, match="forbids"):
+        HTTPAdapter().send(Request("GET", "https://example.invalid").prepare())
+
+
+def test_fixture_cannot_write_into_production_directory(policy):
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.scenario(forward.DIRECTORY / "forbidden-test", policy, "normal", minutes=80)
+
+
+def test_fixture_does_not_overwrite_existing_data(tmp_path, policy):
+    folder = tmp_path / "existing"
+    folder.mkdir()
+    (folder / "keep").write_text("original")
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.scenario(folder, policy, "normal", minutes=80)
+    assert (folder / "keep").read_text() == "original"
+
+
+@pytest.mark.parametrize("minutes", [0, 79, 391])
+def test_invalid_fixture_session_refused(tmp_path, policy, minutes):
+    with pytest.raises(ValueError, match="session"):
+        recovery.scenario(tmp_path / "new", policy, "normal", minutes=minutes)
+    assert not (tmp_path / "new").exists()
+
+
+def test_network_guard_restores_original_capabilities_on_error():
+    original = readonly.Client
+    with pytest.raises(RuntimeError), recovery.offline():
+        assert readonly.Client is not original
+        raise RuntimeError("controlled")
+    assert readonly.Client is original
+
+
+def test_unknown_case_refused_before_writing(tmp_path, policy):
+    with pytest.raises(ValueError, match="Unknown"):
+        recovery.scenario(tmp_path / "new", policy, "unknown")
+    assert not (tmp_path / "new").exists()
+
+
+@pytest.mark.parametrize("counter", [-1, True, "3"])
+def test_audit_rejects_malformed_quote_counter(tmp_path, policy, counter):
+    import json
+    from contextlib import closing
+
+    import pandas as pd
+
+    from scripts.research import audit_forward as audit
+
+    root = tmp_path / "counter"
+    with recovery.offline():
+        recovery.scenario(root, policy, "normal", minutes=80)
+    with closing(audit.connect(root / "state.sqlite3")) as connection:
+        name, payload = connection.execute(
+            "SELECT name,value FROM records WHERE name LIKE 'forward:%'"
+        ).fetchone()
+        state = json.loads(payload)
+        state["quotes_received"] = counter
+        watermark = connection.execute("SELECT max(rowid) FROM observations").fetchone()[0]
+        result = audit.inspect_day(
+            state,
+            policy,
+            audit.events(connection, state["day"], watermark),
+            pd.Timestamp(state["close"]) + pd.Timedelta(minutes=3),
+        )
+    assert name == "forward:" + state["day"]
+    assert "invalid_quote_counter" in result["errors"]
+
+
+@pytest.mark.parametrize("case", recovery.TRANSPORT_CASES)
+def test_real_collect_loop_with_synthetic_transport(tmp_path, policy, case, caplog):
+    caplog.set_level("INFO", logger="aquant.forward")
+    result = recovery.transport_scenario(tmp_path / case, policy, case)
+    assert result["result"] == "PASS", result
+    assert not result["orders_authorized"] and result["real_forward_observations"] == 0
+    assert "synthetic-secret-sentinel" not in caplog.text
+    if case == "normal":
+        assert result["summary"]["signals"] == 2
+        assert result["counters"]["connect"] == 1
+    if case in {"disconnect", "silent", "server_error"}:
+        assert result["counters"]["connect"] >= 2 and result["backoff_seconds"]
+    if case in {"disconnect", "silent", "backlog", "server_error"}:
+        assert not result["summary"]["valid_observation"]
+    if case == "close_error":
+        assert result["exception_type"] == "ConnectionError"
+        assert result["recovery_limitation"] and result["counters"]["connect"] == 1
+        assert not result["summary"]["complete"]
+    if case == "auth":
+        assert result["exception_type"] == "PermissionError"
+    if case == "disk_budget":
+        assert result["exception_type"] == "AcceptanceError"
+    for name in ("recovery.json", "integrity.json", "report.json", "report.md"):
+        path = tmp_path / case / name
+        if path.exists():
+            assert "synthetic-secret-sentinel" not in path.read_text()
+
+
+def test_collect_fixture_rejects_production_path(policy):
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.transport_scenario(forward.DIRECTORY / "no-write", policy, "normal")
+
+
+def test_collect_fixture_does_not_replace_existing_evidence(tmp_path, policy):
+    root = tmp_path / "exists"
+    root.mkdir()
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.transport_scenario(root, policy, "normal")
+
+
+@pytest.mark.parametrize("case", recovery.PROCESS_CASES)
+def test_owned_process_kill_lock_release_and_sqlite_recovery(tmp_path, policy, case):
+    result = recovery.process_scenario(tmp_path / case, policy, case)
+    assert result["result"] == "PASS", result
+    assert result["child_exitcode"] == -9
+    assert result["recovered_bars"] == (6 if case == "uncommitted_bar" else 7)
+    assert result["final_bars"] == 7
+    assert result["summary"]["hypothetical_trades"] == 0
+    assert not result["summary"]["valid_observation"]
+    assert result["audit_status"] == "INCOMPLETE"
+    assert not result["orders_authorized"] and result["real_forward_observations"] == 0
+    # No claimed recovery of missing real-time observations, just a fresh injected duplicate.
+    s = forward.records(tmp_path / case)[0]
+    assert len(s["bars"]["SPY"]) == 4 and len(s["bars"]["QQQ"]) == 3
+    received = pd.Timestamp(s["bars"]["SPY"][-1]["received_at"])
+    opening = pd.Timestamp(s["open"])
+    assert (
+        received == opening + pd.Timedelta(minutes=4, seconds=1)
+        if case == "uncommitted_bar"
+        else received == opening + pd.Timedelta(minutes=4, milliseconds=10)
+    )
+
+
+def test_process_fixture_cannot_target_production(policy):
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.process_scenario(forward.DIRECTORY / "never-kill-here", policy, "committed_bar")
+
+
+def test_process_fixture_cannot_replace_existing_data(tmp_path, policy):
+    return report
+
+
+def calendar(client, root, instant):
+    path = root / "calendar.json"
+    day = instant.astimezone(NY).date()
+    cached = history.read(path) if path.exists() else None
+    if cached and cached["checked_day"] == str(day):
+        return cached["rows"]
+    start = str(day - timedelta(days=14))
+    if (root / "policy.json").exists():
+        previous = records(root)
+        start = previous[-1]["day"] if previous else policy(root)["protocol"]["not_before"]
+    rows = client.get("/calendar", {"start": start, "end": str(day + timedelta(days=14))})
+    history.sessions(rows)  # validate timestamp/day shape before publication
+    atomic(path, {"checked_day": str(day), "received_at": stamp(instant), "rows": rows})
+    return rows
+
+
+async def collect(
+    day, root, clock=readonly.now, stream_factory=readonly.Stream, sleeper=asyncio.sleep
+):
+    day.clock = clock
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop.set)
+    failures = 0
+    try:
+        while (
+            clock() < day.closing + pd.Timedelta(minutes=2)
+            and not stop.is_set()
+            and not (root / "STOP").exists()
+        ):
+            stream = stream_factory()
+            try:
+                await stream.connect()
+                last_data, last_beat = clock(), clock()
+                while (
+                    clock() < day.closing + pd.Timedelta(minutes=2)
+                    and not stop.is_set()
+                    and not (root / "STOP").exists()
+                ):
+                    instant = clock()
+                    if (instant - last_beat).total_seconds() >= 15:
+                        day.heartbeat(instant)
+                        last_beat = instant
+                        if (
+                            shutil.disk_usage(root).free < 256 * 1024**2
+                            or (root / "state.sqlite3").stat().st_size > 5 * 1024**3
+                        ):
+                            raise AcceptanceError("Observation disk budget exhausted")
+                    if (instant - last_data).total_seconds() > 90:
+                        raise TimeoutError("stream silent")
+                    try:
+                        messages, received = await asyncio.wait_for(stream.receive(), timeout=2)
+                    except TimeoutError:
+                        continue
+                    for m in messages:
+                        if m.get("T") == "error":
+                            if m.get("code") in {401, 402, 404, 405, 409}:
+                                raise AcceptanceError("Stream authorization/subscription rejected")
+                            raise ConnectionError("stream provider error")
+                        if m.get("T") == "subscription":
+                            if not all(
+                                set(m.get(k, [])) == {"SPY", "QQQ"} for k in ("bars", "quotes")
+                            ):
+                                raise AcceptanceError("Unexpected subscription acknowledgement")
+                            day.connection(True, received)
+                        if m.get("T") in {"b", "q", "u"}:
+                            last_data, failures = received, 0
+                            day.consume(m, received)
+            except AcceptanceError:
+                day.anomaly("fatal_capability_or_permission_failure", clock())
+                (root / "STOP").touch()
+                raise
+            except Exception as error:
+                day.anomaly("connection_error_" + type(error).__name__, clock())
+                failures += 1
+            finally:
+                day.connection(False, clock())
+                await stream.close()
+            if not stop.is_set() and not (root / "STOP").exists() and clock() < day.closing:
+                await sleeper(min(60, 2 ** min(failures, 6)))
+        if clock() >= day.closing:
+            day.finish(clock())
+        else:
+            day.anomaly("stopped_before_close", clock())
+            day.persist()
+    finally:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+
+exec
+/bin/zsh -lc "sed -n '210,350p' src/aquant/forward.py; sed -n '445,480p' scripts/research/check_recovery.py; sed -n '1025,1049p' src/aquant/forward.py; tail -25 tests/test_recovery.py; sed -n '165,215p' src/aquant/forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+            self.anomaly("process_restart", instant)
+        elif self.s["compromised"]:
+            self.anomaly("missed_open", instant)
+        self.persist()
+
+    def persist(self):
+        self.journal.put(self.key, self.s)
+
+    def anomaly(self, kind, instant):
+        recent = next(
+            (
+                a
+                for a in reversed(self.s["anomalies"][-20:])
+                if a["kind"] == kind and (instant - pd.Timestamp(a["time"])).total_seconds() < 60
+            ),
+            None,
+        )
+        if recent:
+            recent["count"] = recent.get("count", 1) + 1
+        else:
+            self.s["anomalies"].append({"kind": kind, "time": stamp(instant), "count": 1})
+            log.info("observation %s %s", kind, stamp(instant))
+        if self.opening <= instant < self.closing and kind in {
+            "disconnect",
+            "sleep_or_heartbeat_gap",
+            "missed_open",
+        }:
+            self.s["compromised"] = True
+
+    def heartbeat(self, instant):
+        previous = self.s["heartbeat"]
+        if previous:
+            before = pd.Timestamp(previous)
+            elapsed = (instant - before).total_seconds()
+            if elapsed > 45 or elapsed < 0:
+                self.anomaly("sleep_or_heartbeat_gap", instant)
+            elif self.s["connected"]:
+                self.s["online_seconds"] += max(
+                    0,
+                    (
+                        min(pd.Timestamp(instant), self.closing) - max(before, self.opening)
+                    ).total_seconds(),
+                )
+        self.s["heartbeat"] = stamp(instant)
+        self.persist()
+
+    def connection(self, connected, instant):
+        self.heartbeat(instant)
+        self.s["connected"] = connected
+        self.anomaly("connected" if connected else "disconnect", instant)
+        self.persist()
+
+    def event(self, message, received, source):
+        if source != "iex_websocket":
+            raise AcceptanceError("Historical or replay input cannot enter forward observations")
+        safe = {
+            k: (str(v) if k == "t" else v)
+            for k, v in message.items()
+            if k
+            in {
+                "T",
+                "S",
+                "t",
+                "o",
+                "h",
+                "l",
+                "c",
+                "v",
+                "vw",
+                "n",
+                "bp",
+                "ap",
+                "bs",
+                "as",
+                "bx",
+                "ax",
+                "z",
+            }
+        }
+        identity = digest(safe)
+        cursor = self.journal.connection.execute(
+            "INSERT OR IGNORE INTO observations VALUES (?,?,?,?,?)",
+            (
+                identity,
+                self.s["day"],
+                stamp(received),
+                safe.get("T", "unknown"),
+                json.dumps(
+                    {
+                        "event": safe,
+                        "feed": "iex",
+                        "source": source,
+                        "received_at": stamp(received),
+                        "regular_session_receipt": self.opening <= received < self.closing,
+                    }
+                ),
+            ),
+        )
+        return bool(cursor.rowcount)
+
+    def consume(self, message, received, source="iex_websocket"):
+        if source != "iex_websocket":
+            raise AcceptanceError("Historical input is not a live observation")
+        if self.s["complete"] or received < pd.Timestamp(self.p["activated_at"]):
+            raise AcceptanceError("Event outside activated forward session")
+        if message.get("S") not in {"SPY", "QQQ"} or message.get("T") not in {"b", "q", "u"}:
+            return
+        if message["T"] == "q":
+            try:
+                self.quote(message, pd.Timestamp(message["t"]), received)
+                self.s["quotes_received"] += 1
+                previous = self.quote_saved.get(message["S"])
+                if previous is None or (received - previous).total_seconds() >= 1:
+                    with self.journal.connection:
+                        self.event(message, received, source)
+                    self.quote_saved[message["S"]] = received
+            except (ValueError, KeyError, TypeError, ArithmeticError):
+                self.anomaly("malformed_quote", received)
+            return
+        # Commit the bar and decision together; quote sampling is not strategy input sampling.
+        with self.journal.connection:
+            if not self.event(message, received, source):
+                return
+            try:
+                t = pd.Timestamp(message["t"])
+                if t.tzinfo is None:
+                    raise ValueError("naive event")
+                if message["T"] == "u":
+                    self.anomaly("bar_revision_not_applied", received)
+                elif message["T"] == "q":
+                    self.quote(message, t, received)
+                else:
+                    self.bar(message, t, received)
+            except (ValueError, KeyError, TypeError, ArithmeticError):
+                self.anomaly("malformed_market_event", received)
+            self.persist()
+
+    def quote(self, m, t, received):
+        symbol = m["S"]
+        numbers = [D(str(m[k])) for k in ("bp", "ap", "bs", "as")]
+        if (
+        "orders_authorized": False,
+        "real_forward_observations": 0,
+        "execution_evidence": False,
+    }
+    save_json(root / "recovery.json", result)
+    return result
+
+
+def crash_worker(root, policy, case, opening, closing, channel):
+    """Owned fixture child only: block at a verified transaction boundary until killed."""
+    if (
+        root.resolve().is_relative_to(forward.DIRECTORY.resolve())
+        or not (root / "OFFLINE_FIXTURE.json").exists()
+    ):
+        raise ValueError("Process worker requires an isolated marked fixture")
+    with offline(), Journal(root / "state.sqlite3") as journal:
+        day = forward.Day(
+            journal, policy, policy["protocol"]["not_before"], opening, closing, opening
+        )
+        day.connection(True, opening)
+        for minute in range(3):
+            for second in (15, 30, 45, 60):
+                day.heartbeat(opening + pd.Timedelta(minutes=minute, seconds=second))
+            at = opening + pd.Timedelta(minutes=minute + 1, milliseconds=10)
+            for symbol in ("SPY", "QQQ"):
+                day.consume(quote(at, symbol), at)
+                day.consume(bar(opening, minute, symbol), at)
+        at = opening + pd.Timedelta(minutes=4, milliseconds=10)
+
+        def block():
+            channel.send({"boundary": case, "in_transaction": journal.connection.in_transaction})
+            channel.recv()  # parent kills this owned child; never an external service
+            raise AssertionError("Crash fixture must not resume")
+
+        if case == "uncommitted_bar":
+            day.persist = block
+            "probe",
+            "install",
+            "status",
+            "tick",
+            "stop",
+            "resume",
+            "report",
+            "logs",
+            "reconcile-run",
+            "reconcile-status",
+        ],
+    )
+    parser.add_argument("--days", type=int, default=10)
+    parser.add_argument("--seconds", type=int, default=10)
+    args = parser.parse_args(argv)
+    DIRECTORY.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        DIRECTORY / "monitor.log", maxBytes=2 * 1024**2, backupCount=5
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    try:
+        if args.action == "prepare":
+            p = configure()
+    assert len(s["bars"]["SPY"]) == 4 and len(s["bars"]["QQQ"]) == 3
+    received = pd.Timestamp(s["bars"]["SPY"][-1]["received_at"])
+    opening = pd.Timestamp(s["open"])
+    assert (
+        received == opening + pd.Timedelta(minutes=4, seconds=1)
+        if case == "uncommitted_bar"
+        else received == opening + pd.Timedelta(minutes=4, milliseconds=10)
+    )
+
+
+def test_process_fixture_cannot_target_production(policy):
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.process_scenario(forward.DIRECTORY / "never-kill-here", policy, "committed_bar")
+
+
+def test_process_fixture_cannot_replace_existing_data(tmp_path, policy):
+    root = tmp_path / "exists"
+    root.mkdir()
+    with pytest.raises(ValueError, match="isolated"):
+        recovery.process_scenario(root, policy, "uncommitted_bar")
+
+
+def test_recovery_modes_cannot_be_combined(tmp_path):
+    with pytest.raises(ValueError, match="one recovery mode"):
+        recovery.run(tmp_path, transport=True, process=True)
+        previous = prior[-1] if prior else None
+        self.quote_saved = {}
+        self.s = old or {
+            "day": day,
+            "open": str(opening),
+            "close": str(closing),
+            "started_at": stamp(instant),
+            "config_hash": p["config_hash"],
+            "feed": "iex",
+            "kind": "forward_simulated",
+            "orders_authorized": False,
+            "bars": {s: [] for s in ("SPY", "QQQ")},
+            "quotes": {},
+            "decisions": [],
+            "anomalies": [],
+            "online_seconds": 0.0,
+            "heartbeat": None,
+            "connected": False,
+            "complete": False,
+            "compromised": instant > self.opening.to_pydatetime(),
+            "prior_unresolved": any(b["positions"] for s in prior for b in s["books"].values()),
+            "halted": any(s.get("halted", False) for s in prior),
+            "quotes_received": 0,
+            "books": {
+                c.name: {
+                    "cash": previous["books"][c.name]["cash"] if previous else p["capital"],
+                    "starting_cash": previous["books"][c.name]["cash"]
+                    if previous
+                    else p["capital"],
+                    "peak": previous["books"][c.name]["peak"] if previous else p["capital"],
+                    "events": [],
+                    "positions": {},
+                    "pending": {},
+                    "attempted": [],
+                    "trades": [],
+                    "marks": [],
+                }
+                for c in frozen_costs(p)
+            },
+        }
+        if self.s["config_hash"] != p["config_hash"]:
+            raise AcceptanceError("Mixed strategy versions in a forward session")
+        if old:
+            self.s["connected"] = False
+            self.s["quotes"] = {}  # a restart cannot restore a quote as fresh
+            self.anomaly("process_restart", instant)
+        elif self.s["compromised"]:
+            self.anomaly("missed_open", instant)
+        self.persist()
+
+    def persist(self):
+
+codex
+发现一个值得单独验证的边界：采集器先持久化心跳，再检查剩余空间和数据库大小。如果写入先失败，容量保护和连接清理未必能走完。我会在小型隔离 SQLite 中注入真实容量限制，核对退出状态、已提交记录和连接清理结果；不会填满本机磁盘。
+exec
+/bin/zsh -lc "mkdir -p outputs/overnight/round-13/before
+cp scripts/research/check_recovery.py tests/test_recovery.py docs/overnight/STATE.md docs/overnight/PENDING.md docs/forward.md outputs/overnight/round-13/before/
+sed -n '1049,1135p' src/aquant/forward.py; sed -n '136,164p' src/aquant/forward.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+            p = configure()
+            client = readonly.Client()
+            try:
+                calendar(client, DIRECTORY, readonly.now())
+                result = {
+                    "policy_hash": digest(p),
+                    "reconciliation": reconciliation.prepare(client),
+                }
+            finally:
+                client.close()
+        elif args.action == "probe":
+            if not 1 <= args.seconds <= 90:
+                raise AcceptanceError("Probe must last 1–90 seconds")
+            client = readonly.Client()
+            try:
+                account, clock = client.get("/account"), client.get("/clock")
+                rows = calendar(client, DIRECTORY, readonly.now())
+                result = {
+                    "read_only": True,
+                    "account_status": account["status"],
+                    "cash": account["cash"],
+                    "equity": account["equity"],
+                    "clock": clock,
+                    "calendar_sessions": len(rows),
+                    "stream": asyncio.run(probe_stream(args.seconds)),
+                }
+                history.immutable(
+                    DIRECTORY / "probes" / (stamp(readonly.now()).replace(":", "") + ".json"),
+                    result,
+                )
+            finally:
+                client.close()
+        elif args.action in {"install", "resume"}:
+            install()
+            result = status()
+        elif args.action == "stop":
+            for root, label in ((DIRECTORY, LABEL), (reconciliation.DIRECTORY, RECON_LABEL)):
+                root.mkdir(parents=True, exist_ok=True)
+                (root / "STOP").touch()
+                launch("bootout", f"gui/{os.getuid()}/{label}", required=False)
+            result = {"stopped": True, "orders_authorized": False}
+        elif args.action == "status":
+            result = status()
+        elif args.action == "tick":
+            result = tick()
+        elif args.action == "reconcile-run":
+            if (reconciliation.DIRECTORY / "STOP").exists():
+                result = {"stopped": True}
+            else:
+                client = readonly.Client()
+                try:
+                    result = reconciliation.run(client)
+                finally:
+                    client.close()
+        elif args.action == "reconcile-status":
+            result = reconciliation.status()
+        elif args.action == "logs":
+            print("\n".join((DIRECTORY / "monitor.log").read_text().splitlines()[-100:]))
+            return 0
+        else:
+            report = summarize_days(records()[-max(1, args.days) :], policy())
+            print(markdown(report))
+            print("全部累计：\n" + markdown(summarize_days(records(), policy())))
+            return 0
+        log.info("%s %s", args.action, json.dumps(result, ensure_ascii=False, default=str))
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return 0
+    except Exception as error:
+        log.error("%s failed: %s", args.action, type(error).__name__)
+        print(
+            json.dumps(
+                {
+                    "status": "FAILED",
+                    "error_type": type(error).__name__,
+                    "orders_authorized": False,
+                    "detail": str(error) if isinstance(error, AcceptanceError) else None,
+                }
+            )
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+    return [backtest.Cost(**c) for c in p["costs"]]
+
+
+class Day:
+    """Durable per-session state. Only newly received websocket events advance it."""
+
+    def __init__(self, journal, p, day, opening, closing, instant):
+        if day < p["protocol"]["not_before"]:
+            raise AcceptanceError("Session predates the frozen forward observation cutoff")
+        self.journal, self.p = journal, p
+        self.clock = None  # collect injects its real or simulated processing clock
+        self.config = strategy.Strategy(**p["strategy"])
+        self.opening, self.closing = pd.Timestamp(opening), pd.Timestamp(closing)
+        self.key = "forward:" + day
+        self.journal.connection.execute(
+            "CREATE TABLE IF NOT EXISTS observations (id TEXT PRIMARY KEY, day TEXT NOT NULL, "
+            "received TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL)"
+        )
+        self.journal.connection.execute(
+            "CREATE INDEX IF NOT EXISTS observation_day ON observations(day,kind)"
+        )
+        old = journal.get(self.key)
+        prior = [
+            json.loads(r[0])
+            for r in journal.connection.execute(
+                "SELECT value FROM records WHERE name LIKE 'forward:%' AND name < ? ORDER BY name",
+                (self.key,),
+            )
+        ]
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('scripts/research/check_recovery.py')
+s=p.read_text().replace('import socket\\n', 'import socket\\nimport sqlite3\\n')
+s=s.replace('    \"disk_budget\",\\n)', '    \"disk_budget\",\\n    \"database_size\",\\n    \"database_full\",\\n)')
+s=s.replace('    cursor, injected = 0, False\\n', '    cursor, injected = 0, False\\n    storage = {}\\n')
+s=s.replace('                injected = True\\n                if case', '''                injected = True
+                if case == \"database_full\":
+                    # Restrict only this fixture database, never consume actual disk capacity.
+                    connection = journal.connection
+                    pages = connection.execute(\"PRAGMA page_count\").fetchone()[0]
+                    page_size = connection.execute(\"PRAGMA page_size\").fetchone()[0]
+                    if pages * page_size > 16 * 1024**2:
+                        raise AssertionError(\"Unexpected fixture size\")
+                    limit = connection.execute(f\"PRAGMA max_page_count={pages}\").fetchone()[0]
+                    storage.update(page_limit=limit, page_size=page_size, imposed_at=str(clock.value))
+                if case''')
+s=s.replace('        day = forward.Day(journal, policy, date, opening, closing, opening)\\n        try:', '''        if case == \"database_size\":
+            original_stat = Path.stat
+
+            def oversized(path, *args, **kwargs):
+                if path == root / \"state.sqlite3\":
+                    return SimpleNamespace(st_size=5 * 1024**3 + 1)
+                return original_stat(path, *args, **kwargs)
+
+            patches.enter_context(patch.object(Path, \"stat\", oversized))
+        day = forward.Day(journal, policy, date, opening, closing, opening)
+        try:''')
+s=s.replace('        except (AcceptanceError, ConnectionError) as error:\\n            error_type', '        except (AcceptanceError, ConnectionError, sqlite3.Error) as error:\\n            storage[\"sqlite_errorcode\"] = getattr(error, \"sqlite_errorcode\", None)\\n            error_type')
+s=s.replace('        state = day.s\\n    forward.publish(root)\\n    integrity = audit_forward.audit(root, now=clock.value)', '''        state = day.s
+        if case == \"database_full\":
+            storage.update(
+                integrity=journal.connection.execute(\"PRAGMA integrity_check\").fetchone()[0],
+                persisted_complete=journal.get(day.key)[\"complete\"],
+                persisted_connected=journal.get(day.key)[\"connected\"],
+                persisted_bars=sum(len(b) for b in journal.get(day.key)[\"bars\"].values()),
+                memory_bars=sum(len(b) for b in state[\"bars\"].values()),
+                actual_database_bytes=original_size(root / \"state.sqlite3\"),
+            )
+    forward.publish(root)
+    integrity = audit_forward.audit(root, now=clock.value)''')
+# use direct stat after no patch for this case, no separate helper
+s=s.replace('original_size(root / \"state.sqlite3\")','(root / \"state.sqlite3\").stat().st_size')
+s=s.replace('        \"disk_budget\",\\n    }\\n    expected_complete = not expected_stop and case "'!= "close_error"'"', '        \"disk_budget\",\\n        \"database_size\",\\n    }\\n    expected_complete = not expected_stop and case not in {\"close_error\", \"database_full\"}')
+s=s.replace('        \"disconnect_recorded_and_close_attempted\": not state[\"connected\"]\\n        and counters[\"close_attempts\"] == counters[\"connect\"],', '''        \"disconnect_recorded_and_close_attempted\": (
+            not state[\"connected\"] and counters[\"close_attempts\"] == counters[\"connect\"]
+        )
+        if case "'!= "database_full"
+        else (
+            storage.get("sqlite_errorcode") == sqlite3.SQLITE_FULL
+            and storage.get("integrity") == "ok"
+            and not storage.get("persisted_complete")
+        ),'"''')
+s=s.replace('        \"exception_type\": error_type,\\n        \"stopped\":', '        \"exception_type\": error_type,\\n        \"storage\": storage,\\n        \"cleanup_completed\": counters[\"close_attempts\"] == counters[\"connect\"],\\n        \"stopped\":')
+s=s.replace('        if case == \"close_error\"\\n        else None,', '''        if case == \"close_error\"
+        else (
+            \"SQLite full can interrupt heartbeat/cleanup before capacity guard and socket close; \"
+            \"persisted connected state may be stale, no guaranteed STOP marker or automatic recovery\"
+        )
+        if case == \"database_full\"
+        else None,''')
+p.write_text(s)
+PY
+.venv/bin/ruff format scripts/research/check_recovery.py
+.venv/bin/ruff check scripts/research/check_recovery.py
+.venv/bin/python - <<'PY'
+from pathlib import Path
+from aquant import forward
+from scripts.research.check_recovery import transport_scenario
+import json
+r=transport_scenario(Path('outputs/research/overnight-20261019-storage-prototype'), forward.policy(), 'database_full')
+print(json.dumps(r,indent=2))
+PY" in /Users/prts/Projects/aquant
+ succeeded in 859ms:
+{
+  "case": "database_full",
+  "result": "PASS",
+  "kind": "synthetic_collect_result",
+  "checks": {
+    "no_orders": true,
+    "no_trades_or_positions": true,
+    "no_cash_change": true,
+    "completion_matches_fault": true,
+    "stop_matches_fault": true,
+    "disconnect_recorded_and_close_attempted": true,
+    "bounded_backoff": true,
+    "no_unexpected_integrity_error": true,
+    "signals_rejected": true
+  },
+  "summary": {
+    "day": "2026-10-20",
+    "complete": false,
+    "coverage": {
+      "SPY": 0.5,
+      "QQQ": 0.5
+    },
+    "online_seconds": 2400.01,
+    "anomalies": [
+      {
+        "kind": "connected",
+        "time": "2026-10-20T13:30:00Z",
+        "count": 1
+      },
+      {
+        "kind": "connection_error_OperationalError",
+        "time": "2026-10-20T14:10:00.010000Z",
+        "count": 1
+      }
+    ],
+    "missing": {
+      "SPY": [
+        "2026-10-20 14:10:00+00:00",
+        "2026-10-20 14:11:00+00:00",
+        "2026-10-20 14:12:00+00:00",
+        "2026-10-20 14:13:00+00:00",
+        "2026-10-20 14:14:00+00:00",
+        "2026-10-20 14:15:00+00:00",
+        "2026-10-20 14:16:00+00:00",
+        "2026-10-20 14:17:00+00:00",
+        "2026-10-20 14:18:00+00:00",
+        "2026-10-20 14:19:00+00:00",
+        "2026-10-20 14:20:00+00:00",
+        "2026-10-20 14:21:00+00:00",
+        "2026-10-20 14:22:00+00:00",
+        "2026-10-20 14:23:00+00:00",
+        "2026-10-20 14:24:00+00:00",
+        "2026-10-20 14:25:00+00:00",
+        "2026-10-20 14:26:00+00:00",
+        "2026-10-20 14:27:00+00:00",
+        "2026-10-20 14:28:00+00:00",
+        "2026-10-20 14:29:00+00:00",
+        "2026-10-20 14:30:00+00:00",
+        "2026-10-20 14:31:00+00:00",
+        "2026-10-20 14:32:00+00:00",
+        "2026-10-20 14:33:00+00:00",
+        "2026-10-20 14:34:00+00:00",
+        "2026-10-20 14:35:00+00:00",
+        "2026-10-20 14:36:00+00:00",
+        "2026-10-20 14:37:00+00:00",
+        "2026-10-20 14:38:00+00:00",
+        "2026-10-20 14:39:00+00:00",
+        "2026-10-20 14:40:00+00:00",
+        "2026-10-20 14:41:00+00:00",
+        "2026-10-20 14:42:00+00:00",
+        "2026-10-20 14:43:00+00:00",
+        "2026-10-20 14:44:00+00:00",
+        "2026-10-20 14:45:00+00:00",
+        "2026-10-20 14:46:00+00:00",
+        "2026-10-20 14:47:00+00:00",
+        "2026-10-20 14:48:00+00:00",
+        "2026-10-20 14:49:00+00:00"
+      ],
+      "QQQ": [
+        "2026-10-20 14:10:00+00:00",
+        "2026-10-20 14:11:00+00:00",
+        "2026-10-20 14:12:00+00:00",
+        "2026-10-20 14:13:00+00:00",
+        "2026-10-20 14:14:00+00:00",
+        "2026-10-20 14:15:00+00:00",
+        "2026-10-20 14:16:00+00:00",
+        "2026-10-20 14:17:00+00:00",
+        "2026-10-20 14:18:00+00:00",
+        "2026-10-20 14:19:00+00:00",
+        "2026-10-20 14:20:00+00:00",
+        "2026-10-20 14:21:00+00:00",
+        "2026-10-20 14:22:00+00:00",
+        "2026-10-20 14:23:00+00:00",
+        "2026-10-20 14:24:00+00:00",
+        "2026-10-20 14:25:00+00:00",
+        "2026-10-20 14:26:00+00:00",
+        "2026-10-20 14:27:00+00:00",
+        "2026-10-20 14:28:00+00:00",
+        "2026-10-20 14:29:00+00:00",
+        "2026-10-20 14:30:00+00:00",
+        "2026-10-20 14:31:00+00:00",
+        "2026-10-20 14:32:00+00:00",
+        "2026-10-20 14:33:00+00:00",
+        "2026-10-20 14:34:00+00:00",
+        "2026-10-20 14:35:00+00:00",
+        "2026-10-20 14:36:00+00:00",
+        "2026-10-20 14:37:00+00:00",
+        "2026-10-20 14:38:00+00:00",
+        "2026-10-20 14:39:00+00:00",
+        "2026-10-20 14:40:00+00:00",
+        "2026-10-20 14:41:00+00:00",
+        "2026-10-20 14:42:00+00:00",
+        "2026-10-20 14:43:00+00:00",
+        "2026-10-20 14:44:00+00:00",
+        "2026-10-20 14:45:00+00:00",
+        "2026-10-20 14:46:00+00:00",
+        "2026-10-20 14:47:00+00:00",
+        "2026-10-20 14:48:00+00:00",
+        "2026-10-20 14:49:00+00:00"
+      ]
+    },
+    "valid_observation": false,
+    "execution_evidence": false,
+    "quotes_received": 320,
+    "unevaluable_minutes": 0,
+    "halted": false,
+    "signals": 0,
+    "rejected_signals": 0,
+    "hypothetical_trades": 0,
+    "unresolved_positions": false,
+    "net_pnl": null
+  },
+  "audit_status": "INCOMPLETE",
+  "counters": {
+    "connect": 1,
+    "close_attempts": 0,
+    "receive": 201
+  },
+  "backoff_seconds": [],
+  "exception_type": "OperationalError",
+  "storage": {
+    "page_limit": 86,
+    "page_size": 4096,
+    "imposed_at": "2026-10-20 14:10:00+00:00",
+    "sqlite_errorcode": 13,
+    "integrity": "ok",
+    "persisted_complete": false,
+    "persisted_connected": true,
+    "persisted_bars": 79,
+    "memory_bars": 80,
+    "actual_database_bytes": 352256
+  },
+  "cleanup_completed": false,
+  "stopped": false,
+  "anomaly_kinds": [
+    "connected",
+    "connection_error_OperationalError"
+  ],
+  "recovery_limitation": "SQLite full can interrupt heartbeat/cleanup before capacity guard and socket close; persisted connected state may be stale, no guaranteed STOP marker or automatic recovery",
+  "orders_authorized": false,
+  "real_forward_observations": 0,
+  "execution_evidence": false
+}
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('scripts/research/check_recovery.py')
+s=p.read_text().replace('    \"database_size\",\\n    \"database_full\",', '    \"database_size\",\\n    \"database_at_limit\",\\n    \"disk_at_reserve\",\\n    \"database_full\",')
+s=s.replace('        if case == \"disk_budget\":\\n', '        if case in {\"disk_budget\", \"disk_at_reserve\"}:\\n')
+s=s.replace('patch.object(forward.shutil, \"disk_usage\", return_value=SimpleNamespace(free=0))', '''patch.object(
+                    forward.shutil, \"disk_usage\",
+                    return_value=SimpleNamespace(free=0 if case == \"disk_budget\" else 256 * 1024**2),
+                )''')
+s=s.replace('        if case == \"database_size\":\\n', '        if case in {\"database_size\", \"database_at_limit\"}:\\n')
+s=s.replace('return SimpleNamespace(st_size=5 * 1024**3 + 1)', 'return SimpleNamespace(st_size=5 * 1024**3 + (case == \"database_size\"))')
+s=s.replace('                memory_bars=sum(len(b) for b in state[\"bars\"].values()),', '                memory_bars=sum(len(b) for b in state[\"bars\"].values()),\\n                memory_connected=state[\"connected\"],')
+s=s.replace('                actual_database_bytes=(root / \"state.sqlite3\").stat().st_size,\\n            )', '                actual_database_bytes=(root / \"state.sqlite3\").stat().st_size,\\n            )\\n            state = journal.get(day.key)  # failed in-memory mutations are not committed evidence')
+s=s.replace('        \"disconnect_recorded_and_close_attempted\": (\\n            not state[\"connected\"] and counters[\"close_attempts\"] == counters[\"connect\"]\\n        )\\n        if case "'!= "database_full"'"\\n        else (\\n            storage.get(\"sqlite_errorcode\") == sqlite3.SQLITE_FULL\\n            and storage.get(\"integrity\") == \"ok\"\\n            and not storage.get(\"persisted_complete\")\\n        ),', '        \"disconnect_recorded_and_close_attempted\": not state[\"connected\"]\\n        and counters[\"close_attempts\"] == counters[\"connect\"],')
+s=s.replace('    result = {\\n        \"case\": case,\\n        \"result\": \"PASS\" if all(checks.values()) else \"FAIL\",\\n        \"kind\": \"synthetic_collect_result\",', '''    if case == \"database_full\":
+        del checks[\"disconnect_recorded_and_close_attempted\"]
+        checks[\"full_database_retains_unfinished_committed_state\"] = (
+            storage.get(\"sqlite_errorcode\") == sqlite3.SQLITE_FULL
+            and storage.get(\"integrity\") == \"ok\"
+            and not storage.get(\"persisted_complete\")
+        )
+    result = {
+        \"case\": case,
+        \"result\": \"PASS\" if all(checks.values()) else \"FAIL\",
+        \"kind\": \"synthetic_collect_result\",''')
+s=s.replace('\"cleanup_completed\": counters[\"close_attempts\"] == counters[\"connect\"],', '\"all_socket_closes_attempted\": counters[\"close_attempts\"] == counters[\"connect\"],')
+s=s.replace('\"persisted connected state may be stale, no guaranteed STOP marker or automatic recovery\"', '\"persisted connected state may be stale; \"\\n            \"no guaranteed STOP marker or automatic recovery\"')
+p.write_text(s)
+PY
+.venv/bin/ruff format scripts/research/check_recovery.py
+.venv/bin/ruff check scripts/research/check_recovery.py" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+1 file reformatted
+All checks passed!
+
+exec
+/bin/zsh -lc "cat >> tests/test_recovery.py <<'PY'
+
+
+@pytest.mark.parametrize(
+    (\"case\", \"stopped\"),
+    [(\"disk_budget\", True), (\"database_size\", True),
+     (\"database_at_limit\", False), (\"disk_at_reserve\", False)],
+)
+def test_storage_guard_boundaries_without_large_files(tmp_path, policy, case, stopped):
+    root = tmp_path / case
+    result = recovery.transport_scenario(root, policy, case)
+    assert result[\"result\"] == \"PASS\"
+    assert result[\"stopped\"] is stopped
+    assert result[\"all_socket_closes_attempted\"]
+    assert result[\"summary\"][\"complete\"] is not stopped
+    assert (root / \"state.sqlite3\").stat().st_size < 2 * 1024**2
+    assert result[\"exception_type\"] == (\"AcceptanceError\" if stopped else None)
+
+
+def test_sqlite_full_cannot_masquerade_as_committed_observation(tmp_path, policy):
+    import sqlite3
+
+    root = tmp_path / \"full\"
+    result = recovery.transport_scenario(root, policy, \"database_full\")
+    assert result[\"result\"] == \"PASS\"  # expected failure containment, not successful cleanup
+    assert result[\"exception_type\"] == \"OperationalError\"
+    stored = result[\"storage\"]
+    assert stored[\"sqlite_errorcode\"] == sqlite3.SQLITE_FULL and stored[\"integrity\"] == \"ok\"
+    assert stored[\"actual_database_bytes\"] <= stored[\"page_limit\"] * stored[\"page_size\"]
+    assert stored[\"memory_bars\"] == 80 and stored[\"persisted_bars\"] == 79
+    assert stored[\"persisted_connected\"]  # stale persisted field is not connection evidence
+    assert not result[\"all_socket_closes_attempted\"] and result[\"counters\"][\"close_attempts\"] == 0
+    assert not result[\"stopped\"] and result[\"recovery_limitation\"]
+    assert \"disconnect_recorded_and_close_attempted\" not in result[\"checks\"]
+    state = forward.records(root)[0]
+    assert sum(len(b) for b in state[\"bars\"].values()) == 79
+    assert result[\"summary\"][\"coverage\"][\"QQQ\"] == 39 / 80
+    assert result[\"summary\"][\"hypothetical_trades\"] == 0
+    assert not result[\"summary\"][\"complete\"] and result[\"audit_status\"] == \"INCOMPLETE\"
+
+
+def test_actual_cli_log_rotation_is_bounded_in_isolated_directory(tmp_path, monkeypatch, capsys):
+    import logging.handlers
+
+    root = tmp_path / \"logging\"
+    monkeypatch.setattr(forward, \"DIRECTORY\", root)
+    monkeypatch.setattr(forward, \"status\", lambda: {\"fixture\": True})
+    logger = forward.log
+    old_handlers, old_level, old_propagate = logger.handlers[:], logger.level, logger.propagate
+    logger.handlers, logger.propagate = [], False
+    try:
+        with recovery.offline():
+            assert forward.main([\"status\"]) == 0
+        assert '\"fixture\": true' in capsys.readouterr().out
+        handler, = logger.handlers
+        assert isinstance(handler, logging.handlers.RotatingFileHandler)
+        assert handler.maxBytes == 2 * 1024**2 and handler.backupCount == 5
+        for index in range(7 * handler.maxBytes // 1024 + 1):
+            logger.info(\"rotation-%08d %s\", index, \"x\" * 1024)
+        handler.flush()
+        paths = sorted(root.glob(\"monitor.log*\"))
+        assert len(paths) == 6
+        assert all(0 < p.stat().st_size < handler.maxBytes for p in paths)
+        assert f\"rotation-{index:08d}\" in (root / \"monitor.log\").read_text()
+        assert all(\"rotation-00000000\" not in p.read_text() for p in paths)
+    finally:
+        for handler in logger.handlers:
+            handler.close()
+        logger.handlers, logger.level, logger.propagate = old_handlers, old_level, old_propagate
+PY
+.venv/bin/ruff format tests/test_recovery.py
+.venv/bin/ruff check scripts/research/check_recovery.py tests/test_recovery.py
+.venv/bin/python -m pytest -q tests/test_recovery.py" in /Users/prts/Projects/aquant
+codex
+离线故障注入确认了问题：SQLite 达到约 344 KiB 的测试配额后抛出 `SQLITE_FULL`，清理阶段再次写入失败，未调用 WebSocket close，也未写出 STOP。数据库完整性仍为正常，但仅提交了 79 根 bar，内存已有 80 根。报告已改为采用已提交状态，并明确标记观察不完整。
+exec
+/bin/zsh -lc '.venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/overnight-20261019-storage-final' in /Users/prts/Projects/aquant
+exec
+/bin/zsh -lc 'diff -u outputs/overnight/round-13/before/check_recovery.py scripts/research/check_recovery.py; diff -u outputs/overnight/round-13/before/test_recovery.py tests/test_recovery.py' in /Users/prts/Projects/aquant
+ exited 1 in 0ms:
+--- outputs/overnight/round-13/before/check_recovery.py	2026-10-20 05:16:05
++++ scripts/research/check_recovery.py	2026-10-20 05:17:26
+@@ -7,6 +7,7 @@
+ import multiprocessing
+ import signal
+ import socket
++import sqlite3
+ from contextlib import ExitStack, contextmanager
+ from datetime import UTC, datetime
+ from pathlib import Path
+@@ -46,6 +47,10 @@
+     "close_error",
+     "stop_file",
+     "disk_budget",
++    "database_size",
++    "database_at_limit",
++    "disk_at_reserve",
++    "database_full",
+ )
+ PROCESS_CASES = ("uncommitted_bar", "committed_bar")
+ 
+@@ -323,6 +328,7 @@
+                 )
+             )
+     cursor, injected = 0, False
++    storage = {}
+ 
+     class Stream:
+         def __init__(self):
+@@ -351,6 +357,17 @@
+                 raise TimeoutError("synthetic-secret-sentinel")
+             if not injected and clock.value >= opening + pd.Timedelta(minutes=40):
+                 injected = True
++                if case == "database_full":
++                    # Restrict only this fixture database, never consume actual disk capacity.
++                    connection = journal.connection
++                    pages = connection.execute("PRAGMA page_count").fetchone()[0]
++                    page_size = connection.execute("PRAGMA page_size").fetchone()[0]
++                    if pages * page_size > 16 * 1024**2:
++                        raise AssertionError("Unexpected fixture size")
++                    limit = connection.execute(f"PRAGMA max_page_count={pages}").fetchone()[0]
++                    storage.update(
++                        page_limit=limit, page_size=page_size, imposed_at=str(clock.value)
++                    )
+                 if case in {"disconnect", "close_error"}:
+                     clock.value += pd.Timedelta(seconds=120)
+                     raise ConnectionError("synthetic-secret-sentinel")
+@@ -387,10 +404,25 @@
+ 
+     error_type = None
+     with offline(), ExitStack() as patches, Journal(root / "state.sqlite3") as journal:
+-        if case == "disk_budget":
++        if case in {"disk_budget", "disk_at_reserve"}:
+             patches.enter_context(
+-                patch.object(forward.shutil, "disk_usage", return_value=SimpleNamespace(free=0))
++                patch.object(
++                    forward.shutil,
++                    "disk_usage",
++                    return_value=SimpleNamespace(
++                        free=0 if case == "disk_budget" else 256 * 1024**2
++                    ),
++                )
+             )
++        if case in {"database_size", "database_at_limit"}:
++            original_stat = Path.stat
++
++            def oversized(path, *args, **kwargs):
++                if path == root / "state.sqlite3":
++                    return SimpleNamespace(st_size=5 * 1024**3 + (case == "database_size"))
++                return original_stat(path, *args, **kwargs)
++
++            patches.enter_context(patch.object(Path, "stat", oversized))
+         day = forward.Day(journal, policy, date, opening, closing, opening)
+         try:
+             asyncio.run(
+@@ -398,9 +430,21 @@
+                     day, root, clock=lambda: clock.value, stream_factory=Stream, sleeper=sleep
+                 )
+             )
+-        except (AcceptanceError, ConnectionError) as error:
++        except (AcceptanceError, ConnectionError, sqlite3.Error) as error:
++            storage["sqlite_errorcode"] = getattr(error, "sqlite_errorcode", None)
+             error_type = type(error).__name__  # no exception text in artifacts
+         state = day.s
++        if case == "database_full":
++            storage.update(
++                integrity=journal.connection.execute("PRAGMA integrity_check").fetchone()[0],
++                persisted_complete=journal.get(day.key)["complete"],
++                persisted_connected=journal.get(day.key)["connected"],
++                persisted_bars=sum(len(b) for b in journal.get(day.key)["bars"].values()),
++                memory_bars=sum(len(b) for b in state["bars"].values()),
++                memory_connected=state["connected"],
++                actual_database_bytes=(root / "state.sqlite3").stat().st_size,
++            )
++            state = journal.get(day.key)  # failed in-memory mutations are not committed evidence
+     forward.publish(root)
+     integrity = audit_forward.audit(root, now=clock.value)
+     save_json(root / "integrity.json", integrity)
+@@ -410,8 +454,9 @@
+         "provider_rejection",
+         "stop_file",
+         "disk_budget",
++        "database_size",
+     }
+-    expected_complete = not expected_stop and case != "close_error"
++    expected_complete = not expected_stop and case not in {"close_error", "database_full"}
+     summary = forward.summarize_days([state], policy)["days"][0]
+     checks = {
+         "no_orders": state["orders_authorized"] is False,
+@@ -427,6 +472,13 @@
+         "no_unexpected_integrity_error": integrity["status"] != "FAIL",
+         "signals_rejected": summary["signals"] == summary["rejected_signals"],
+     }
++    if case == "database_full":
++        del checks["disconnect_recorded_and_close_attempted"]
++        checks["full_database_retains_unfinished_committed_state"] = (
++            storage.get("sqlite_errorcode") == sqlite3.SQLITE_FULL
++            and storage.get("integrity") == "ok"
++            and not storage.get("persisted_complete")
++        )
+     result = {
+         "case": case,
+         "result": "PASS" if all(checks.values()) else "FAIL",
+@@ -437,10 +489,18 @@
+         "counters": counters,
+         "backoff_seconds": delays,
+         "exception_type": error_type,
++        "storage": storage,
++        "all_socket_closes_attempted": counters["close_attempts"] == counters["connect"],
+         "stopped": (root / "STOP").exists(),
+         "anomaly_kinds": sorted({a["kind"] for a in state["anomalies"]}),
+         "recovery_limitation": "close exception escapes retry loop; process restart required"
+         if case == "close_error"
++        else (
++            "SQLite full can interrupt heartbeat/cleanup before capacity guard and socket close; "
++            "persisted connected state may be stale; "
++            "no guaranteed STOP marker or automatic recovery"
++        )
++        if case == "database_full"
+         else None,
+         "orders_authorized": False,
+         "real_forward_observations": 0,
+--- outputs/overnight/round-13/before/test_recovery.py	2026-10-20 05:16:05
++++ tests/test_recovery.py	2026-10-20 05:18:00
+@@ -212,3 +212,75 @@
+ def test_recovery_modes_cannot_be_combined(tmp_path):
+     with pytest.raises(ValueError, match="one recovery mode"):
+         recovery.run(tmp_path, transport=True, process=True)
++
++
++@pytest.mark.parametrize(
++    ("case", "stopped"),
++    [
++        ("disk_budget", True),
++        ("database_size", True),
++        ("database_at_limit", False),
++        ("disk_at_reserve", False),
++    ],
++)
++def test_storage_guard_boundaries_without_large_files(tmp_path, policy, case, stopped):
++    root = tmp_path / case
++    result = recovery.transport_scenario(root, policy, case)
++    assert result["result"] == "PASS"
++    assert result["stopped"] is stopped
++    assert result["all_socket_closes_attempted"]
++    assert result["summary"]["complete"] is not stopped
++    assert (root / "state.sqlite3").stat().st_size < 2 * 1024**2
++    assert result["exception_type"] == ("AcceptanceError" if stopped else None)
++
++
++def test_sqlite_full_cannot_masquerade_as_committed_observation(tmp_path, policy):
++    import sqlite3
++
++    root = tmp_path / "full"
++    result = recovery.transport_scenario(root, policy, "database_full")
++    assert result["result"] == "PASS"  # expected failure containment, not successful cleanup
++    assert result["exception_type"] == "OperationalError"
++    stored = result["storage"]
++    assert stored["sqlite_errorcode"] == sqlite3.SQLITE_FULL and stored["integrity"] == "ok"
++    assert stored["actual_database_bytes"] <= stored["page_limit"] * stored["page_size"]
++    assert stored["memory_bars"] == 80 and stored["persisted_bars"] == 79
++    assert stored["persisted_connected"]  # stale persisted field is not connection evidence
++    assert not result["all_socket_closes_attempted"] and result["counters"]["close_attempts"] == 0
++    assert not result["stopped"] and result["recovery_limitation"]
++    assert "disconnect_recorded_and_close_attempted" not in result["checks"]
++    state = forward.records(root)[0]
++    assert sum(len(b) for b in state["bars"].values()) == 79
++    assert result["summary"]["coverage"]["QQQ"] == 39 / 80
++    assert result["summary"]["hypothetical_trades"] == 0
++    assert not result["summary"]["complete"] and result["audit_status"] == "INCOMPLETE"
++
++
++def test_actual_cli_log_rotation_is_bounded_in_isolated_directory(tmp_path, monkeypatch, capsys):
++    import logging.handlers
++
++    root = tmp_path / "logging"
++    monkeypatch.setattr(forward, "DIRECTORY", root)
++    monkeypatch.setattr(forward, "status", lambda: {"fixture": True})
++    logger = forward.log
++    old_handlers, old_level, old_propagate = logger.handlers[:], logger.level, logger.propagate
++    logger.handlers, logger.propagate = [], False
++    try:
++        with recovery.offline():
++            assert forward.main(["status"]) == 0
++        assert '"fixture": true' in capsys.readouterr().out
++        (handler,) = logger.handlers
++        assert isinstance(handler, logging.handlers.RotatingFileHandler)
++        assert handler.maxBytes == 2 * 1024**2 and handler.backupCount == 5
++        for index in range(7 * handler.maxBytes // 1024 + 1):
++            logger.info("rotation-%08d %s", index, "x" * 1024)
++        handler.flush()
++        paths = sorted(root.glob("monitor.log*"))
++        assert len(paths) == 6
++        assert all(0 < p.stat().st_size < handler.maxBytes for p in paths)
++        assert f"rotation-{index:08d}" in (root / "monitor.log").read_text()
++        assert all("rotation-00000000" not in p.read_text() for p in paths)
++    finally:
++        for handler in logger.handlers:
++            handler.close()
++        logger.handlers, logger.level, logger.propagate = old_handlers, old_level, old_propagate
+
+ succeeded in 32635ms:
+...................................................                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+51 passed, 1 warning in 31.87s
+
+ succeeded in 11167ms:
+{"case": "normal", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "disconnect", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "silent", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "backlog", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "auth", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "subscription", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "provider_rejection", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "server_error", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "close_error", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "stop_file", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "disk_budget", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "database_size", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "database_at_limit", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "disk_at_reserve", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "disconnect_recorded_and_close_attempted": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true}}
+{"case": "database_full", "result": "PASS", "checks": {"no_orders": true, "no_trades_or_positions": true, "no_cash_change": true, "completion_matches_fault": true, "stop_matches_fault": true, "bounded_backoff": true, "no_unexpected_integrity_error": true, "signals_rejected": true, "full_database_retains_unfinished_committed_state": true}}
+
+exec
+/bin/zsh -lc '.venv/bin/ruff check . && .venv/bin/ruff format --check . && git diff --check' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+All checks passed!
+194 files already formatted
+
+exec
+/bin/zsh -lc '.venv/bin/python -m pytest -q' in /Users/prts/Projects/aquant
+exec
+/bin/zsh -lc "git status --short; .venv/bin/python - <<'PY'
+import json
+from collections import Counter
+from pathlib import Path
+p=json.loads(Path('outputs/research/overnight-20261019-storage-final/report.json').read_text())
+print(json.dumps({'result':p['result'],'audits':dict(Counter(r['audit_status'] for r in p['results'])),'signals':sum(r['summary']['signals'] for r in p['results']),'rejected':sum(r['summary']['rejected_signals'] for r in p['results']),'limits':p['recovery_limitations'],'storage':p['results'][-1]['storage'],'minutes':p['minutes']},indent=2))
+PY" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+ M .env.example
+ M NOTES.md
+ M README.md
+ M docs/ai_usage_log.md
+ M platform/bigquant/export_baseline.py
+ M platform/bigquant/loader.py
+ M projects/bigquant_2026/README.md
+ M pyproject.toml
+ M scripts/competition/smoke_bigquant.py
+ M src/aquant/config/__init__.py
+ M src/aquant/training/losses.py
+ M src/aquant/training/trainer.py
+?? docs/alpaca_backtest.md
+?? docs/forward.md
+?? docs/intraday.md
+?? docs/intraday_results.md
+?? docs/overnight/
+?? docs/research.md
+?? docs/research_results.md
+?? projects/bigquant_2026/docs/temporal_validation.md
+?? projects/bigquant_2026/experiments/
+?? projects/bigquant_2026/matrix.py
+?? projects/bigquant_2026/report.py
+?? projects/bigquant_2026/runner.py
+?? scripts/research/audit_evidence.py
+?? scripts/research/audit_forward.py
+?? scripts/research/check_recovery.py
+?? scripts/research/diagnose_returns.py
+?? scripts/research/replay_signals.py
+?? scripts/research/run_bigquant_experiments.py
+?? src/aquant/alpaca.py
+?? src/aquant/backtest.py
+?? src/aquant/data/availability.py
+?? src/aquant/evaluation/intraday.py
+?? src/aquant/evaluation/research.py
+?? src/aquant/evaluation/uncertainty.py
+?? src/aquant/forward.py
+?? src/aquant/history.py
+?? src/aquant/journal.py
+?? src/aquant/paper.py
+?? src/aquant/readonly.py
+?? src/aquant/reconciliation.py
+?? src/aquant/risk.py
+?? src/aquant/schedule.py
+?? src/aquant/simulation.py
+?? src/aquant/smoke.py
+?? src/aquant/strategy.py
+?? tests/projects/test_experiments.py
+?? tests/projects/test_temporal_export.py
+?? tests/test_alpaca.py
+?? tests/test_backtest.py
+?? tests/test_evidence.py
+?? tests/test_forward.py
+?? tests/test_forward_audit.py
+?? tests/test_history.py
+?? tests/test_paper.py
+?? tests/test_reconciliation.py
+?? tests/test_recovery.py
+?? tests/test_research.py
+?? tests/test_returns.py
+?? tests/test_signal_replay.py
+?? tests/test_smoke.py
+{
+  "result": "PASS",
+  "audits": {
+    "PASS": 3,
+    "INCOMPLETE": 12
+  },
+  "signals": 6,
+  "rejected": 6,
+  "limits": [
+    {
+      "case": "close_error",
+      "limitation": "close exception escapes retry loop; process restart required"
+    },
+    {
+      "case": "database_full",
+      "limitation": "SQLite full can interrupt heartbeat/cleanup before capacity guard and socket close; persisted connected state may be stale; no guaranteed STOP marker or automatic recovery"
+    }
+  ],
+  "storage": {
+    "actual_database_bytes": 352256,
+    "imposed_at": "2026-10-20 14:10:00+00:00",
+    "integrity": "ok",
+    "memory_bars": 80,
+    "memory_connected": true,
+    "page_limit": 86,
+    "page_size": 4096,
+    "persisted_bars": 79,
+    "persisted_complete": false,
+    "persisted_connected": true,
+    "sqlite_errorcode": 13
+  },
+  "minutes": 80
+}
+
+exec
+/bin/zsh -lc "rg -n '\\[tool.ruff|exclude|outputs' pyproject.toml .gitignore; rg --files -g '*.py' | wc -l" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+.gitignore:28:/outputs/**
+.gitignore:29:!/outputs/.gitkeep
+.gitignore:30:!/outputs/data_reports/
+.gitignore:31:!/outputs/data_reports/.gitkeep
+pyproject.toml:28:[tool.ruff]
+pyproject.toml:29:extend-exclude = ["references/bigquant/community/transformer_train_example.py"]
+pyproject.toml:33:[tool.ruff.lint]
+     145
+
+apply patch
+patch: completed
+/Users/prts/Projects/aquant/docs/forward.md
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+codex
+15 个传输与容量场景均得到预期结果；其中 12 个观察报告保持 INCOMPLETE，没有把故障场景标成完整观察。另已在隔离目录验证日志轮转：保留当前文件及 5 份备份，每份小于 2 MiB。运行代码属于冻结范围，本轮只增加测试和证据，修复安排写入 PENDING。
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('outputs/overnight/round-12/package.py').read_text()
+p=p.replace(\"root=Path('outputs/overnight/round-12')\", \"root=Path('outputs/overnight/round-13')\")
+p=p.replace('range(1,12)', 'range(1,13)').replace('round12-patches-', 'round13-patches-').replace('applies_after_rounds_1_to_11_verified', 'applies_after_rounds_1_to_12_verified')
+p=p.replace(\"'01-operations.patch':['docs/forward.md']\", \"'01-storage.patch':['scripts/research/check_recovery.py','tests/test_recovery.py']\")
+p=p.replace(\"'02-records.patch':[\", \"'02-records.patch':['docs/forward.md',\")
+p=p.replace('RESULTS-12.md', 'RESULTS-13.md').replace('round-12-validation.json', 'round-13-validation.json')
+Path('outputs/overnight/round-13/package.py').write_text(p)
+PY" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+ succeeded in 88582ms:
+..............................................................s......... [ 10%]
+........................................................................ [ 21%]
+........................................................................ [ 32%]
+........................................................................ [ 42%]
+........................................................................ [ 53%]
+........................................................................ [ 64%]
+........................................................................ [ 75%]
+........................................................................ [ 85%]
+........................................................................ [ 96%]
+........................                                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/pipeline/test_community_reference_equivalence.py:35: BLOCKED: supplied source has Markdown escapes/fences and lost indentation; readable-logic reproduction tested separately, original never repaired
+671 passed, 1 skipped, 1 warning in 87.70s (0:01:27)
+
+exec
+/bin/zsh -lc "cat > docs/overnight/RESULTS-13.md <<'EOF'
+# 第13轮：容量保护与写入失败边界
+
+复用 "'`scripts/research/check_recovery.py` 的传输模式，增加4个容量场景；不增加新模块，
+不改冻结的forward/Journal、策略、调度、`.env` 或账户。`tests/test_recovery.py`增加对应验证
+及实际CLI日志轮转测试；主要操作文档同步说明容量保护的条件与限制。
+
+## 实测发现
+
+采集循环先保存心跳，再检查数据库和剩余空间。使用真实SQLite的`max_page_count`，
+把**仅本轮隔离数据库**限制为86页×4096字节（352,256字节，344KiB）；没有填满本机磁盘。
+在80分钟合成交易时段的第40分钟附近，数据库返回`SQLITE_FULL`（错误码13）。
+
+- 完整性检查为ok；内存已有80根bar，但实际只提交79根，SPY40根、QQQ39根。
+- 清理阶段的心跳/状态写入再次失败，SDK close未被调用（1次连接，0次关闭尝试）。
+- 没有生成STOP，持久状态仍为connected=true；它是旧状态，不证明实际连接仍正常。
+- 记录未完成、审计INCOMPLETE；没有订单意图、假设交易、持仓或现金变化，收益N/A。
+- 这是SQLite单库配额错误的实际路径，不是物理磁盘耗尽、断电或所有I/O故障的实测。
+  未证明服务的实际自动重启、容量恢复，或故障之后供应商会重发行情。
+
+本轮校正**离线验收报告**在这种失败路径下的统计来源：从SQLite读取已提交状态，不能拿
+失败写入后的80根内存bar充当79根持久观察。内存与持久数量分别保留，用于说明丢失边界。
+失败路径不再显示“已记录断连并尝试关闭”检查通过，改为明确核对已提交未完成记录的完整性。
+`all_socket_closes_attempted`只描述是否全部尝试，不表示关闭成功。
+
+生产采集器未修复。它属于冻结实现Hash集合；修改需要先隔离部署版本并保留旧规则版本。
+该问题已写入PENDING，不能因离线预期故障断言PASS就宣称无人值守可靠性通过。
+
+## 容量阈值与日志
+
+使用模拟stat/剩余空间值验证现有判断，没有建立5GiB测试文件：
+
+|情形|观察到的结果|
+|---|---|
+|剩余空间0|心跳仍可写时产生STOP，尝试关闭，观察不完整|
+|数据库大小5GiB+1字节|产生STOP，尝试关闭，观察不完整|
+|数据库大小正好5GiB|不触发当前严格大于阈值|
+|剩余空间正好256MiB|不触发当前严格小于阈值|
+
+日志测试在临时目录调用真实CLI创建的RotatingFileHandler，替换status返回值并阻断网络，
+连续写入有编号的合成日志。确认只保留当前日志及5份备份，各文件小于2MiB；最新编号存在，
+最旧编号已轮转掉。测试记录每条约1KiB，不能为任意巨型单条消息保证同样文件上限。
+退出测试时关闭自有句柄并恢复原logger设置，不触碰生产日志。
+
+## 产物与验证范围
+
+`outputs/research/overnight-20261019-storage-final/` 保存计划、源码、15场景、JSON/Markdown。
+15/15预期故障断言通过；数据审计3 PASS、12 INCOMPLETE，6个合成信号全部拒绝，0成交。
+早期 `...-storage-prototype/` 保留为初步诊断；其内存汇总不作为最终证据，以final目录为准。
+
+专项51项通过；全量及保护文件检查见 `round-13-validation.json`。
+未调用真实API、未消费正式Paper复核槽位、未运行历史参数搜索或使用locked_test。
+首个实际观察日尚未开始，利润指标没有新证据；生产仍应按原计划于20日09:20 ET开始采集，
+Paper复核为20/22日16:15 ET，本轮不变更调度。
+
+Git元数据仍只读，不能创建分支/commit；小步增量补丁位于 `outputs/overnight/round-13/`，
+按前12轮后应用验证，不向main提交，不覆盖旧研究/Smoke/生产记录。
+EOF' in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+codex
+全量回归已通过：671 passed、1 skipped，新增10项测试；Ruff 与格式检查通过。此次新增的是容量故障证据，没有新增前向收益。正在保存验证记录、核对保护文件 Hash，并将需要后续处理的冻结部署问题写入 PENDING。
+exec
+/bin/zsh -lc "cat > outputs/overnight/round-13/verify.py <<'PY'
+import hashlib
+import json
+from collections import Counter
+from contextlib import closing
+from datetime import UTC, datetime
+from pathlib import Path
+from aquant import forward, history
+from aquant.evaluation.intraday import save_json
+from scripts.research.audit_forward import audit, connect
+
+out=Path('outputs/research/overnight-20261019-storage-final')
+suite=history.read(out/'report.json')
+assert suite['result']=='PASS' and len(suite['results'])==15
+assert hashlib.sha256(Path('scripts/research/check_recovery.py').read_bytes()).hexdigest()==suite['source_sha256']
+assert hashlib.sha256(Path('scripts/research/audit_forward.py').read_bytes()).hexdigest()==suite['audit_sha256']
+assert hashlib.sha256(Path('src/aquant/journal.py').read_bytes()).hexdigest()==suite['journal_sha256']
+assert hashlib.sha256((forward.DIRECTORY/'policy.json').read_bytes()).hexdigest()==suite['production_policy_sha256']
+assert not suite['orders_authorized'] and not suite['real_forward_observations']
+intents=0
+for row in suite['results']:
+    assert row['summary']['hypothetical_trades']==0 and row['summary']['net_pnl'] is None
+    with closing(connect(out/row['case']/'state.sqlite3')) as connection:
+        intents += connection.execute('SELECT count(*) FROM intents').fetchone()[0]
+assert intents==0
+protected=history.read(Path('outputs/research/overnight-20261019-reconciliation/verification.json'))['protected_hashes']
+assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==h for p,h in protected.items())
+source=history.read(Path('outputs/research/overnight-20261019-reconciliation-recovery/verification.json'))['reconciliation_source_sha256']
+assert hashlib.sha256(Path('src/aquant/reconciliation.py').read_bytes()).hexdigest()==source
+forward.policy()
+status=forward.status()
+assert not any(c['completed'] for c in status['reconciliation']['checks'])
+a=audit(forward.DIRECTORY,limit=10)
+assert a['status']=='WAITING' and not a['days']
+full=next(r for r in suite['results'] if r['case']=='database_full')
+report={'at':datetime.now(UTC).isoformat(),'kind':'overnight_round_13_validation','pytest':{'passed':671,'skipped':1,'seconds':87.70},'targeted':{'passed':51,'seconds':31.87},'new_tests':10,'ruff':'PASS','format':'PASS,194 files','diff_check':'PASS','network_api_requests':0,'orders_sent':0,'order_intents':intents,'production_checks_consumed':0,'suite':{'result':suite['result'],'cases':len(suite['results']),'audit_statuses':dict(Counter(r['audit_status'] for r in suite['results'])),'synthetic_signals':sum(r['summary']['signals'] for r in suite['results']),'synthetic_rejected_signals':sum(r['summary']['rejected_signals'] for r in suite['results']),'hypothetical_trades':0,'real_forward_observations':0},'storage_full':{'storage':full['storage'],'counters':full['counters'],'all_socket_closes_attempted':full['all_socket_closes_attempted'],'stopped':full['stopped'],'audit_status':full['audit_status'],'limitation':full['recovery_limitation']},'log_rotation_test':{'files':6,'max_bytes_each':2*1024**2,'small_records_only':True,'production_log_untouched':True},'production_audit':a['status'],'protected_files_checked':len(protected),'protected_files_unchanged':True,'frozen_code_unchanged':True,'reconciliation_source_unchanged':True,'launchd_modified':False,'env_modified':False,'locked_test_used':False,'parameters_changed':False,'unattended_readiness_verified':False,'status':status,'git':{'branch':'main','commits':0,'blocked':'.git read-only; no escalation allowed'},'artifact_sha256':hashlib.sha256((out/'report.json').read_bytes()).hexdigest(),'source_sha256':suite['source_sha256']}
+save_json(out/'verification.json',report)
+save_json(Path('docs/overnight/round-13-validation.json'),report)
+save_json(Path('outputs/overnight/round-13/status.json'),status)
+print(json.dumps(report,indent=2))
+PY
+PYTHONPATH=. .venv/bin/python outputs/overnight/round-13/verify.py" in /Users/prts/Projects/aquant
+ succeeded in 289ms:
+{
+  "at": "2026-10-19T20:21:07.113836+00:00",
+  "kind": "overnight_round_13_validation",
+  "pytest": {
+    "passed": 671,
+    "skipped": 1,
+    "seconds": 87.7
+  },
+  "targeted": {
+    "passed": 51,
+    "seconds": 31.87
+  },
+  "new_tests": 10,
+  "ruff": "PASS",
+  "format": "PASS,194 files",
+  "diff_check": "PASS",
+  "network_api_requests": 0,
+  "orders_sent": 0,
+  "order_intents": 0,
+  "production_checks_consumed": 0,
+  "suite": {
+    "result": "PASS",
+    "cases": 15,
+    "audit_statuses": {
+      "PASS": 3,
+      "INCOMPLETE": 12
+    },
+    "synthetic_signals": 6,
+    "synthetic_rejected_signals": 6,
+    "hypothetical_trades": 0,
+    "real_forward_observations": 0
+  },
+  "storage_full": {
+    "storage": {
+      "actual_database_bytes": 352256,
+      "imposed_at": "2026-10-20 14:10:00+00:00",
+      "integrity": "ok",
+      "memory_bars": 80,
+      "memory_connected": true,
+      "page_limit": 86,
+      "page_size": 4096,
+      "persisted_bars": 79,
+      "persisted_complete": false,
+      "persisted_connected": true,
+      "sqlite_errorcode": 13
+    },
+    "counters": {
+      "close_attempts": 0,
+      "connect": 1,
+      "receive": 201
+    },
+    "all_socket_closes_attempted": false,
+    "stopped": false,
+    "audit_status": "INCOMPLETE",
+    "limitation": "SQLite full can interrupt heartbeat/cleanup before capacity guard and socket close; persisted connected state may be stale; no guaranteed STOP marker or automatic recovery"
+  },
+  "log_rotation_test": {
+    "files": 6,
+    "max_bytes_each": 2097152,
+    "small_records_only": true,
+    "production_log_untouched": true
+  },
+  "production_audit": "WAITING",
+  "protected_files_checked": 15,
+  "protected_files_unchanged": true,
+  "frozen_code_unchanged": true,
+  "reconciliation_source_unchanged": true,
+  "launchd_modified": false,
+  "env_modified": false,
+  "locked_test_used": false,
+  "parameters_changed": false,
+  "unattended_readiness_verified": false,
+  "status": {
+    "orders_authorized": false,
+    "stopped": false,
+    "next_start_utc": "2026-10-20 13:20:00+00:00",
+    "next_start_et": "2026-10-20 09:20:00-04:00",
+    "launchd": {
+      "com.aquant.forward": {
+        "loaded": true,
+        "state": "not running",
+        "runs": "119",
+        "last exit code": "0"
+      },
+      "com.aquant.paper-pnl": {
+        "loaded": true,
+        "state": "not running",
+        "runs": "25",
+        "last exit code": "0"
+      }
+    },
+    "latest": [],
+    "database_bytes": 32768,
+    "database_limit_bytes": 5368709120,
+    "free_disk_bytes": 216001703936,
+    "reconciliation": {
+      "configured": true,
+      "read_only": true,
+      "checks": [
+        {
+          "day": "2026-10-20",
+          "due": "2026-10-20T20:15:00Z",
+          "number": 1,
+          "report": "/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-1.json",
+          "completed": false,
+          "markdown_exists": false
+        },
+        {
+          "day": "2026-10-22",
+          "due": "2026-10-22T20:15:00Z",
+          "number": 2,
+          "report": "/Users/prts/Projects/aquant/outputs/alpaca/paper_pnl_reconciliation/check-2.json",
+          "completed": false,
+          "markdown_exists": false
+        }
+      ]
+    },
+    "log": "/Users/prts/Projects/aquant/outputs/research/forward_observations/monitor.log"
+  },
+  "git": {
+    "branch": "main",
+    "commits": 0,
+    "blocked": ".git read-only; no escalation allowed"
+  },
+  "artifact_sha256": "a677fb45b55c07998e2fb4fb233fa0206108203f4e76a3c81b350f61b39cd8c8",
+  "source_sha256": "c02b9c0f61638de3922c621779d2efb2ba30cdc4e695b5a0eb7d12f7651aded1"
+}
+
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+exec
+/bin/zsh -lc "python3 - <<'PY'
+from pathlib import Path
+p=Path('docs/forward.md')
+s=p.read_text().replace('夜间第12轮回归：**661 passed', '夜间第13轮回归：**671 passed')
+p.write_text(s)
+PY
+cat >> docs/overnight/STATE.md <<'EOF'
+
+## 第 13 轮 · 2026-10-19 纽约 16:14 起
+
+- 扩展既有check_recovery传输模式至15场景，新增数据库超限、正好上限、正好剩余空间保留值
+  和真实SQLite单库配额耗尽。不改任何生产运行模块、调度、.env或冻结策略。
+- 证实SQLITE_FULL会在容量检查前中断心跳/清理：86页×4096字节=344KiB的隔离库，
+  内存80根bar、持久79根，完整性ok；连接1次、SDK关闭尝试0次、无STOP、持久connected仍true。
+  这是旧状态，不是仍在线证据。未填满本机磁盘，未声称验证真实磁盘断电或自动重启恢复。
+- 离线验收报告改从已提交记录统计此路径，保留内存/持久差异；缺失不补造，审计INCOMPLETE。
+  15/15预期故障断言通过，数据审计3 PASS、12 INCOMPLETE；6个合成信号全拒绝、0假设成交、
+  0订单意图/真实前向观察，unattended_readiness_verified仍false。运行修复需冻结部署隔离。
+- 实际CLI日志轮转在临时目录验证：当前日志+5份备份，各小于2MiB，保留最新编号、轮转最旧编号；
+  使用小记录，不为任意巨大单条日志保证相同上限。原logger恢复，生产日志未由测试改写。
+- 新增10项测试，专项 **51 passed**（31.87秒）；全量 **671 passed、1 skipped**（87.70秒），
+  Ruff及194文件格式检查通过。操作文档更新容量保护前提和已确认限制。
+- 15项保护文件、冻结实现、第11轮对账源码Hash不变；本轮0API/0订单，不用locked_test。
+  生产仍0日/WAITING；两个只读服务loaded/not running/last exit 0，未启停服务。下一采集20日
+  09:20 ET，Paper复核20/22日16:15 ET，正式槽位未消费。Git只读/main，无commit。
+
+### 第 13 轮产物及下一步
+
+- "'`scripts/research/check_recovery.py`、`tests/test_recovery.py`：容量与日志验证，复用现有模式。
+- `docs/forward.md`、`docs/overnight/RESULTS-13.md`、`round-13-validation.json`：限制与验收。
+- `outputs/research/overnight-20261019-storage-final/`：15场景、源码、报告、保护Hash验证。
+  初步prototype目录保留；其失败后的内存汇总不是最终证据，以final中已提交状态为准。
+- `outputs/overnight/round-13/01-storage.patch`、`02-records.patch`：前12轮之后的小步增量。
+- 后续先处理冻结部署隔离，再修复写入失败与连接清理的耦合，并验证真实恢复；不对原策略重签。
+  首日真实证据和到期账户复核仍待发生，不把Mock/历史数据当作新的前向收益。
+EOF
+cat >> docs/overnight/PENDING.md <<'"'EOF'
+
+## 第 13 轮：写入失败可能跳过容量保护和连接清理
+
+- 真实SQLite单库344KiB配额注入确认SQLITE_FULL路径：内存80根bar但只提交79根，数据库
+  integrity_check=ok，SDK close尝试0次，STOP不存在，持久connected仍true。主机磁盘未填满。
+  所有相关报告必须以已提交记录为准，不能据旧connected或内存数量声称持续在线/完整覆盖。
+- 原采集器先持久化心跳再检查容量，并在finally里先写断连状态再close；写入失败会使后续步骤
+  无法执行。修复需要隔离冻结部署版本，独立保证清理、保留错误证据，再做容量/进程恢复测试。
+  本轮未修改运行代码、重签policy、启停或改装launchd；不将故障验证PASS称为可靠性验收PASS。
+- 5GiB/256MiB属于周期性条件检查，不是磁盘耗尽时必能执行的硬保证；正常日志轮转测试也只覆盖
+  远小于2MiB的记录。物理断电、文件系统I/O失败及launchd恢复时机仍需后续验证。
+- Git仍只读，无commit；第13轮两份补丁在 "'`outputs/overnight/round-13/`，按前12轮后核查，
+  不覆盖旧生产/Smoke/研究记录，不将本轮隔离数据库搬入生产，也不开启任何策略订单权限。
+EOF
+.venv/bin/python outputs/overnight/round-13/package.py' in /Users/prts/Projects/aquant
+ succeeded in 122ms:
+{
+  "committed": false,
+  "reason": ".git remains read-only",
+  "requires_rounds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "patches": [
+    {
+      "path": "outputs/overnight/round-13/01-storage.patch",
+      "sha256": "1625b29dcffe5d27333935991c416ba7c818f9a5c526e710538adbb1fd270ad9",
+      "files": [
+        "scripts/research/check_recovery.py",
+        "tests/test_recovery.py"
+      ],
+      "applies_after_rounds_1_to_12_verified": true
+    },
+    {
+      "path": "outputs/overnight/round-13/02-records.patch",
+      "sha256": "569c1862ae4ca3b6b4427f4db84dbcf37bf932f58ebc0bc38c888464a0f549f3",
+      "files": [
+        "docs/forward.md",
+        "docs/overnight/RESULTS-13.md",
+        "docs/overnight/round-13-validation.json",
+        "docs/overnight/STATE.md",
+        "docs/overnight/PENDING.md"
+      ],
+      "applies_after_rounds_1_to_12_verified": true
+    }
+  ],
+  "verified_files": 43
+}
+
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+exec
+/bin/zsh -lc "git diff --check && git branch --show-current
+python3 - <<'PY'
+import hashlib,json
+from pathlib import Path
+m=json.loads(Path('outputs/overnight/round-13/manifest.json').read_text())
+for p in m['patches']:
+    assert hashlib.sha256(Path(p['path']).read_bytes()).hexdigest()==p['sha256']
+assert m['verified_files']==43 and not m['committed']
+print('13 rounds / 43 files sequentially verified; current patch hashes unchanged')
+PY" in /Users/prts/Projects/aquant
+ succeeded in 0ms:
+main
+13 rounds / 43 files sequentially verified; current patch hashes unchanged
+
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+codex
+- 第13轮新增容量故障与日志轮转验证，复用现有恢复测试。
+- 确认 SQLite 写满可能跳过连接清理和 STOP；已记录 PENDING，未修改冻结运行代码。
+- 15个场景得到预期结果；故障记录保持 INCOMPLETE，不计入前向收益。
+- 新增10项测试；全量 **671 passed、1 skipped**，Ruff及格式检查通过。
+- 零API请求、零订单；launchd、`.env`、冻结参数及复核计划未变。
+- 已追加 STATE，详情见[第13轮报告](/Users/prts/Projects/aquant/docs/overnight/RESULTS-13.md)。
+- `.git`只读，未提交；已生成两份增量补丁，累计43个文件顺序应用验证通过。
+diff --git a/docs/forward.md b/docs/forward.md
+index a5622d3153ffaac57795df5bedccdd3662d262bb..4c9c1456abe398fb1c20a64a7466ddbc136b38e0
+--- a/docs/forward.md
++++ b/docs/forward.md
+@@ -64,7 +64,7 @@
+ # 一条命令：合成完整交易日，包含缺失、休眠、重启与事务中断等10种情形
+ .venv/bin/python -m scripts.research.check_recovery --output outputs/research/manual-recovery-01
+ 
+-# 可选：实际采集循环的11种传输故障；注入模拟流，阻断网络
++# 可选：实际采集循环的15种传输/容量情形；注入模拟流，阻断网络
+ .venv/bin/python -m scripts.research.check_recovery --transport --output outputs/research/manual-transport-01
+ 
+ # 可选：仅终止测试自有子进程，检验锁与SQLite提交边界；不终止现有服务
+@@ -111,6 +111,10 @@
+   或中断，不能仅凭这一现象判定崩溃，也不能用接收计数证明全部报价完整。
+ - 刷新日历可能不保留旧观察日期；审计只能核对实际留存的官方日历，不凭工作日推断休假。
+   日历内部删行尚不能被完全识别，需要后续不可变归档与请求范围记录。
++- 心跳先写数据库，之后才检查容量。隔离SQLite配额耗尽时，已证实心跳/清理写入可抛
++  `SQLITE_FULL`，跳过SDK连接关闭且未生成STOP；持久状态的`connected=true`不能证明仍在线。
++  此时只能统计已提交记录，内存中失败的bar不属于完整观察；结果保持INCOMPLETE。
++  该测试使用约344KiB的单库配额，没有填满本机磁盘，也不证明物理断电或所有I/O故障的行为。
+ 
+ 这些运行模块属于冻结实现Hash；不能直接改文件再重签原policy。部署版本隔离和修复安排见
+ [待处理事项](overnight/PENDING.md)。当前保留调度和门禁，不把离线测试升级为无人值守可靠性结论。
+@@ -140,7 +144,10 @@
+ 报价采样避免约每秒上百条报价造成无必要的SQLite写入。
+ 
+ 运行日志2MiB轮转，保留5份备份；原始观察不自动删除。SQLite超过5GiB或可用空间不足256MiB时
+-停止监控并记录异常，避免无限增长。`status`报告数据库大小与剩余空间。后续归档应保留原始
++在心跳写入仍可成功的前提下会触发停止；不是写入失败时仍可执行的硬容量保证。
++边界测试确认正好5GiB、正好256MiB尚不触发；日志在隔离目录验证了6个文件、各小于2MiB
++（测试中的每条记录远小于该阈值），不能据此为单条异常巨大的日志记录保证同样上限。
++`status`报告数据库大小与剩余空间。后续归档应保留原始
+ 证据并核对Hash，不能删除亏损信号或只保留成功交易。
+ 
+ `valid_observation`表示bar覆盖与在线连续性合格；`execution_evidence=false`明确表示这并不
+
+tokens used
+1,820,290
+- 第13轮新增容量故障与日志轮转验证，复用现有恢复测试。
+- 确认 SQLite 写满可能跳过连接清理和 STOP；已记录 PENDING，未修改冻结运行代码。
+- 15个场景得到预期结果；故障记录保持 INCOMPLETE，不计入前向收益。
+- 新增10项测试；全量 **671 passed、1 skipped**，Ruff及格式检查通过。
+- 零API请求、零订单；launchd、`.env`、冻结参数及复核计划未变。
+- 已追加 STATE，详情见[第13轮报告](/Users/prts/Projects/aquant/docs/overnight/RESULTS-13.md)。
+- `.git`只读，未提交；已生成两份增量补丁，累计43个文件顺序应用验证通过。

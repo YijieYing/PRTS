@@ -1,0 +1,1313 @@
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/prts/Projects/aquant/.git] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1532a-c005-7360-a2e8-859f9de0843a
+--------
+user
+[PRTS 总控夜间指令 · 第 3 轮 · 纽约 14:44（16:00 收盘）]
+用户已经睡觉。本线程由 PRTS 总控（Claude）通过 `codex exec resume` 驱动，**不会有人类回复你**。
+
+总控对目前进展的评估在 `~/PRTS/human/reports/2026-10-21-aquant-ml-assessment.md`，开工前先读一遍（只读）。
+
+按优先级推进：
+1. **完成 ML-03**，严格按你手上的指令和 `docs/ml03.json` 执行，不追加参数搜索。M2 如果没有稳定优于 M1，就明确拒绝。
+2. **收盘前**（16:00 ET 之前）：用实时数据测量参考 ETF（IWM、XLK、XLF、XLE、SMH）的 IEX 实时覆盖率和到达延迟，判断它们能否作为实时特征。保持 ML-01 实时旁路、Forward 和 Shadow 继续运行。不重启冻结服务。
+3. **收盘后**：核对 ML-01 今日提前登记的预测和到期标签，写出 2026-10-20 收盘报告。
+4. **最后**：写 `human/decision-2026-10-21.md`，一页纸的方向决策备忘，列出可选方向和各自的证据，供用户醒来决定。**不要自行开启 ML-04。**
+
+硬规则：
+- 禁止任何 Paper 或 Live 订单，禁止付费行情，禁止微信推送，不改 launchd 和 `.env`。
+- 需要人决定的事写进 `docs/overnight/PENDING.md`，然后改做不依赖它的事。
+- 每轮约 25 分钟。在对应的研究分支上小步 commit（`.git` 现在可写），不要提交到 main。进度追加到 `docs/overnight/STATE-2026-10-21.md`。
+- 结束时输出不超过 8 行的摘要。全部做完后，回复的第一行写 `ALL DONE`。
+codex
+我会继续核查采集和到期标签，重点区分“分钟覆盖率高”和“连续窗口可用于特征”。ML-03 已完成且维持拒绝晋级，本轮不新增模型实验；收盘报告仍等实际收盘后的证据。
+exec
+/bin/zsh -lc 'cat /Users/prts/PRTS/human/reports/2026-10-21-aquant-ml-assessment.md; git log -p --since=2026-10-20T18:35:15Z -- human/; git diff HEAD -- human/; git status --short; date -u' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+# aquant ML 进展评估（截至 2026-10-21 03:10 JST / 10-20 14:10 ET）
+
+## 结论
+**过程很严谨，结果是一致的负面：在 SPY/QQQ 分钟级、用免费 IEX 价格特征，目前没有可用的扣成本正期望。**这个负面结论本身可信，也有价值，但继续在同一问题上加 worktree 的边际收益已经很低。今晚应该做完 ML-03、用好最后两小时的实时数据，然后停下来做一次方向决策，而不是开 ML-04。
+
+## 三轮 ML 做了什么
+
+| 轮次 | 假设 | 结果 |
+|---|---|---|
+| ML-01 成本感知 | 11 个价格特征 + Ridge/LightGBM 预测 15/30 分钟收益 | 六折中 12 次选择全部落在零预测；LightGBM 有 +$15.9 代理盈利，但只有 9 笔交易 |
+| ML-02 拉长周期 | 60/120 分钟可能累积漂移，摊薄成本 | 8 个组合 MSE 都不如零预测；最高预测分位的实际收益只有 1–1.6bp，低于约 3.2bp 的往返成本 |
+| ML-03 跨资产 | 加入 IWM/XLK/XLF/XLE/SMH 的相对强弱、相关性、广度 | **进行中**（03:05 提交特征代码，正在下载参考标的行情） |
+
+另有 ML-01 实时诊断旁路：13:08 ET 起提前登记、只读预测，截至 13:30 SPY 有 23 个合格窗口，QQQ 为 0（连续性门禁没有放宽），阈值信号 0。
+
+## 做得好的地方
+- 每轮都先预注册（固定参数、阈值、评价指标），再看结果；负面结果全部保留，没有事后挑选。
+- 因果性和防泄漏处理到位：只用决策时刻已完成的 bar，有 embargo，按交易日分组做 bootstrap。
+- 实时诊断做到了“预测先落盘、再看结果”，这是真正的前向证据。
+
+## 我看到的问题
+1. **问题本身选得太难。**SPY/QQQ 是全世界最有效的标的，分钟级、只用价格、免费 IEX 数据，几乎是散户最难找到 edge 的组合。模型换来换去都输给零预测，说明瓶颈不在模型。
+2. **用 MSE 选模型天然偏向零预测。**信号极弱时，任何非零预测都会抬高 MSE。交易上更有意义的是排序能力（IC）和最高分位扣成本后的收益。ML-02 已经报告了分位收益，这部分做得对；以后的协议可以把 IC 定为主指标。
+3. **多重比较在累积。**ML-01、02、03 加起来已有上百个组合。即使 ML-03 出现“显著”改善，也要按累积的尝试次数打折扣。
+4. **执行数据才是硬约束。**IEX 不满足 NBBO 门禁，就算预测有效，也不能形成合格的模拟成交。
+5. **基础设施拖后腿。**今天开盘的数据缺口来自 Mac 空闲睡眠和合盖（09:27–09:30、11:34–11:42 ET）。采集应该搬到 24 小时不睡的 lain，或者至少保证 Mac 不睡眠（今晚已开 caffeinate）。
+
+## 今晚的安排（总控派发，只读，不下单）
+1. 让你的 Codex 按原指令完成 ML-03，不追加参数搜索；M2 如果不稳定优于 M1，就明确拒绝。
+2. 用好收盘前最后约 2 小时：记录参考 ETF 的实时 IEX 覆盖率和到达延迟，这是 ML-03 能否实盘接入的关键事实；同时让 ML-01 实时旁路和 Shadow 继续跑到收盘。
+3. 收盘后：核对 ML-01 今日提前登记预测和实际标签，写出 10-20 收盘报告。
+4. 最后写一页“方向决策备忘”，列出可选方向供你醒来决定：
+   - 继续日内，但换数据源或换标的（需要付费数据，要你批准）；
+   - 改做日线或多日周期；
+   - 把精力转到 BigQuant 比赛线；
+   - 暂停 aquant 研究，只保留前向观察。
+
+## 待你决定
+- 是否把实时采集迁到 lain。
+- 上面的方向选择（明早看备忘录）。
+commit d37165d7463c1782edd8637188e5cd3d63b88f3b
+Author: YijieYing <herryying30@gmail.com>
+Date:   Wed Oct 21 03:43:20 2026 +0900
+
+    report: preserve intraday receipt comparison and causal input evidence
+
+diff --git a/human/README.md b/human/README.md
+index a357932..b8b07f3 100644
+--- a/human/README.md
++++ b/human/README.md
+@@ -63,3 +63,5 @@ PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python scripts/research/run_bigquant_e
+ ```
+ 
+ - 2026-10-20参考ETF实时测量（进行中，747测试通过）：[REST可见性与收盘交接](arrival-2026-10-20.md)
++
++- 2026-10-20 14:41 ET更新（进行中，755测试通过）：[参考窗口与ML-01原始输入核验](arrival-2026-10-20.md)
+diff --git a/human/arrival-2026-10-20.md b/human/arrival-2026-10-20.md
+index ce6ad60..8d2fe7b 100644
+--- a/human/arrival-2026-10-20.md
++++ b/human/arrival-2026-10-20.md
+@@ -42,3 +42,40 @@ ML-01每个模型/期限47条，不是282个独立样本；IEX当时39条有效
+ - 两个新进程都只是本日一次性进程，不是launchd任务。既有采集、Shadow、模型、.env和授权未改。
+ 
+ 本报告是进行中截面，稍后日报提供实际完整统计。方向选择留待用户，不新增算法或交易授权。
++
++## 第2轮补充 · 14:41 ET（仍在进行）
++
++ML-03实验及拒绝晋级结论不变，没有再次训练、修改阈值或开启ML-04。
++
++|参考ETF|成熟分钟覆盖|16根及时且按时收到的窗口|
++|---|---:|---:|
++|IWM|17/17 (100.0%)|2|
++|XLK|14/17 (82.4%)|0|
++|XLF|16/17 (94.1%)|1|
++|XLE|17/17 (100.0%)|2|
++|SMH|17/17 (100.0%)|2|
++
++截至2026-10-20T18:41:41.309314+00:00，108次轮询、0失败、0超30秒间断；首次可见P95约11秒。
++这些只是参考窗口，不是完整ML-03输入资格。原协议允许部分参考ETF可用并显式记录coverage，未要求五只同时齐全；SPY/QQQ的32根核心窗口仍不可省略。
++REST与原WebSocket在14:23–14:37的15个成熟分钟对照：SPY共同15根、QQQ共同14根；共同首版OHLCV均一致，REST接收时间中位数晚约6.2–6.3秒。QQQ14:31在两者均缺失；不能仅凭此认定无成交或网络原因。没有用REST补原流。
++
++### ML-01实际输入核验
++
++14:38截面：324条提前预测、54个SPY输入窗口，QQQ仍0，阈值信号0。逐条核对输入前缀Hash、原始实时事件/接收时刻、输入ID、版本及重算特征，异常0；2.41秒完成。旧5个代码Hash与6个模型Hash保持一致。
++此项独立核验已加入16:40收盘程序；未改运行模型、原始预测或冻结采集。新8项反例测试证明Hash、特征、ID、版本、来源、接收时间和源码被改时会失效，而非继续算入合格表现。
++
++|ML-01模型|IEX15分钟RMSE（20目标）|SIP15分钟RMSE（25目标）|IEX方向正确率|
++|---|---:|---:|---:|
++|M0零预测|9.045 bp|7.467 bp|N/A|
++|Ridge|8.396 bp|6.491 bp|55%|
++|LightGBM|9.054 bp|7.262 bp|35%|
++
++两源上表不是同一有效子集，不能把误差差异当成源或模型优势。严格共同目标仅8个：M0的IEX/SIP RMSE为10.469/10.188 bp，Ridge8.945/8.655，LightGBM10.311/10.035。30分钟IEX尚无有效标签，SIP25个目标只属于延迟核验。
++同一天大量重叠目标不独立；短截面高相关性不支持晋级。未来未完成部分仍PENDING，不是最终收盘统计；无NBBO支持，执行P&L继续N/A。
++
++### 运行与交接
++
++14:41原Forward心跳正常、compromised仍true；Phase6游标34474，ML01游标34395，均在推进。Shadow旧的盘前OperationalError及睡眠间断保留；ML01原有13:42的单次OperationalError保留，未据此盲目重启。
++只替换本轮自建的等待汇总进程以加载新增核验，PID42585，等待锁实际持有、错误日志为空；原冻结服务、launchd与.env未改。
++全量755 passed、1 skipped，Ruff及235文件格式检查通过；完整日志outputs/ml03/pytest-overnight-2.txt。
++本截面机器证据已入库：[第2轮证据](../docs/overnight/EVIDENCE-2026-10-21-round2.json)。收盘报告和方向备忘仍等待16:40实际核验，不提前宣告完成。
+Tue Oct 20 18:44:16 UTC 2026
+
+exec
+/bin/zsh -lc "rg -n 'trade|gaps|audit' scripts/research/market.py src/aquant/history.py | head -60; sed -n '1,230p' scripts/research/market.py; rg -n '"'^class Transport|stocks/trades|page_token'"' src/aquant/history.py; sed -n '1,140p' src/aquant/history.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+src/aquant/history.py:66:            "/v2/stocks/trades",
+src/aquant/history.py:339:        "gap_policy": "unknown until trade evidence; no forward-fill",
+src/aquant/history.py:374:def eligibility(trade):
+src/aquant/history.py:376:    conditions = trade.get("c") or ["@"]
+src/aquant/history.py:378:    if trade.get("z") == "C":
+src/aquant/history.py:402:    if trade.get("z") != "C":
+src/aquant/history.py:411:def verify_gaps(client, report, feed, root=ARCHIVE):
+src/aquant/history.py:412:    """Batch gaps by symbol/day; retain complete trade pages without rewriting bars."""
+src/aquant/history.py:429:            trades = []
+src/aquant/history.py:430:            for page in pages(client, "/stocks/trades", params, root):
+src/aquant/history.py:431:                trades.extend((page["response"].get("trades") or {}).get(day["symbol"], []))
+src/aquant/history.py:433:            timestamps = pd.to_datetime([x["t"] for x in trades], utc=True, format="mixed")
+src/aquant/history.py:434:            for minute, trade in zip(timestamps.floor("min"), trades, strict=True):
+src/aquant/history.py:436:                    by_minute[minute].append(trade)
+src/aquant/history.py:441:                    "no_reported_trades"
+src/aquant/history.py:443:                    else "eligible_trades_without_bar"
+src/aquant/history.py:447:                    else "only_ineligible_trades"
+src/aquant/history.py:455:                        "trades": len(found),
+src/aquant/history.py:479:    a large quality audit practical without a service or a shared mutable Session.
+src/aquant/history.py:486:            return verify_gaps(client, chunk, feed, root)
+"""Incremental, read-only cross-asset archive using existing immutable page chains."""
+
+import argparse
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import uuid4
+
+import pandas as pd
+from alpaca.data.historical import StockHistoricalDataClient
+
+from aquant import history
+from aquant.alpaca import credentials
+
+REFERENCES = ("IWM", "XLK", "XLF", "XLE", "SMH")
+
+
+def archive(root, credential_root=None):
+    client = None
+    if credential_root:
+        client = StockHistoricalDataClient(*credentials(credential_root), raw_data=True)
+        client._session.close()
+        client._session = history.Transport()
+        client._retry = 0
+        client._history_interval = 0.6
+
+    class Offline:
+        def get(self, *_):
+            raise ValueError("Incomplete archive; resume download first")
+
+    metadata = {"at": datetime.now(UTC).isoformat(), "feeds": {}}
+    try:
+        for feed in ("iex", "sip"):
+            rows, fetched = [], []
+            for begin, stop in history.months(history.START, history.END):
+                params = history.parameters(feed, begin, stop, REFERENCES)
+                for page in history.pages(client or Offline(), "/stocks/bars", params, root):
+                    fetched.append(page["fetched_at"])
+                    for symbol, bars in (page["response"].get("bars") or {}).items():
+                        rows.extend({**bar, "symbol": symbol} for bar in bars)
+                print(feed, stop, len(rows), flush=True)
+            frame = pd.DataFrame(rows)
+            if frame.empty:
+                raise ValueError(f"{feed} archive is empty; no fallback")
+            frame["t"] = pd.to_datetime(frame.t, utc=True)
+            path = root / f"{feed}.parquet"
+            if not path.exists():
+                frame.sort_values(["t", "symbol"]).to_parquet(path, index=False)
+            metadata["feeds"][feed] = {
+                "rows": len(frame),
+                "first_fetched": min(fetched),
+                "last_fetched": max(fetched),
+                "adjustment": "raw",
+                "symbols": REFERENCES,
+                "latency_known": False,
+            }
+    finally:
+        if client:
+            client._session.close()
+        history.immutable(root / f"attempt-{uuid4().hex}.json", metadata)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--archive", type=Path, required=True)
+    parser.add_argument("--credential-root", type=Path)
+    args = parser.parse_args()
+    archive(args.archive, args.credential_root)
+56:class Transport(Session):
+66:            "/v2/stocks/trades",
+155:        query = {**params, **({"page_token": token} if token else {})}
+177:        token = record["response"].get("next_page_token")
+430:            for page in pages(client, "/stocks/trades", params, root):
+"""Read-only historical archive. Immutable SDK pages are the resume checkpoint."""
+
+import argparse
+import gzip
+import hashlib
+import json
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as wall_time
+from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
+
+from alpaca.common.exceptions import APIError
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.trading.client import TradingClient
+from requests import Session
+from requests.exceptions import RequestException
+
+from aquant.alpaca import NY, AcceptanceError, credentials, require_paper_key, stamp
+from aquant.data.paths import data_path
+
+START = date(2024, 10, 1)
+END = date(2026, 10, 16)
+ARCHIVE = data_path("raw", "alpaca", "history")
+
+
+def encode(value):
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()
+
+
+def immutable(path, value):
+    """Atomic no-clobber publication, including competing download processes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + "." + uuid4().hex + ".tmp")
+    data = encode(value)
+    if path.suffix == ".gz":
+        data = gzip.compress(data, mtime=0)
+    try:
+        with temp.open("xb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def read(path):
+    data = path.read_bytes()
+    return json.loads(gzip.decompress(data) if path.suffix == ".gz" else data)
+
+
+class Transport(Session):
+    """Separate history-only capability: no account/order route or mutation exists."""
+
+    def send(self, request, **kwargs):
+        url = urlsplit(request.url)
+        require_paper_key(request.headers.get("APCA-API-KEY-ID", ""))
+        query = parse_qs(url.query)
+        calendar = (url.netloc, url.path) == ("paper-api.alpaca.markets", "/v2/calendar")
+        market = url.netloc == "data.alpaca.markets" and url.path in {
+            "/v2/stocks/bars",
+            "/v2/stocks/trades",
+        }
+        actions = (url.netloc, url.path) == ("data.alpaca.markets", "/v1/corporate-actions")
+        if request.method != "GET" or url.scheme != "https" or url.fragment:
+            raise AcceptanceError("历史数据边界只允许 HTTPS GET。")
+        if not (calendar or market or actions):
+            raise AcceptanceError("历史数据边界拒绝该地址。")
+        if actions and date.fromisoformat(query.get("end", [""])[0]) >= datetime.now(UTC).date():
+            raise AcceptanceError("公司行动审计只允许历史截止日。")
+        if market:
+            if query.get("feed") not in (["sip"], ["iex"]):
+                raise AcceptanceError("必须显式选择 SIP 或 IEX，禁止回退。")
+            end = datetime.fromisoformat(query.get("end", [""])[0].replace("Z", "+00:00"))
+            if end.tzinfo is None or end > datetime.now(UTC) - timedelta(minutes=16):
+                raise AcceptanceError("历史数据 end 必须至少早于当前 16 分钟。")
+        kwargs.update(timeout=(5, 45), allow_redirects=False)
+        response = super().send(request, **kwargs)
+        if 300 <= response.status_code < 400:
+            raise AcceptanceError("历史数据拒绝重定向。")
+        return response
+
+
+@contextmanager
+def clients():
+    key, secret = credentials()
+    trading = TradingClient(key, secret, paper=True, raw_data=True)
+    data = StockHistoricalDataClient(key, secret, raw_data=True)
+    for client in (trading, data):
+        client._session.close()
+        client._session = Transport()
+        client._retry = 0
+    try:
+        yield trading, data
+    finally:
+        trading._session.close()
+        data._session.close()
+
+
+def failure(error):
+    """Only whitelisted provider diagnostics, never arbitrary exception/body text."""
+    if isinstance(error, APIError):
+        status = error.status_code
+        try:
+            code = error.code
+            code = code if isinstance(code, int) else None
+        except (ValueError, KeyError, TypeError):
+            code = None
+        message = "API request failed"
+        # Recognized official permission messages are safe to publish verbatim.
+        for known in (
+            "subscription does not permit querying recent SIP data",
+            "forbidden",
+            "unauthorized",
+            "rate limit exceeded",
+        ):
+            if known.lower() in str(error).lower():
+                message = known
+        return {"http_status": status, "code": code, "message": message}
+    return {"message": "network/transport failure", "type": type(error).__name__}
+
+
+def request(client, route, params, sleep=time.sleep):
+    attempts = []
+    for attempt in range(5):
+        try:
+            interval = getattr(client, "_history_interval", 0.35)
+            sleep(interval if isinstance(interval, (int, float)) else 0.35)
+            return client.get(route, params), attempts
+        except (APIError, RequestException) as error:
+            info = failure(error)
+            attempts.append(info)
+            status = info.get("http_status")
+            if status is not None and status != 429 and status < 500:
+                raise AcceptanceError(json.dumps(info)) from None
+            if attempt == 4:
+
+exec
+/bin/zsh -lc "sed -n '370,480p' src/aquant/history.py; .venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+s=json.loads(Path('outputs/ml03/arrival-20261020/status.json').read_text());print(s['at'],s['polls'],s['failures']);print({k:(v['mature_present'],v['mature_expected'],v['qualified_16_bar_windows'],v['missing_mature']) for k,v in s['assets'].items()})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+    )
+    return pd.concat(regular, ignore_index=True), report
+
+
+def eligibility(trade):
+    """Conservative subset of Alpaca's published minute OHLC condition table."""
+    conditions = trade.get("c") or ["@"]
+    allowed = {" ", "@", "A", "D", "E", "F", "K", "O", "T", "X"}
+    if trade.get("z") == "C":
+        allowed.add("B")
+    blocked = {
+        "C",
+        "G",
+        "H",
+        "I",
+        "L",
+        "M",
+        "N",
+        "P",
+        "Q",
+        "R",
+        "U",
+        "V",
+        "W",
+        "Y",
+        "Z",
+        "4",
+        "5",
+        "6",
+        "7",
+        "9",
+    }
+    if trade.get("z") != "C":
+        blocked.add("B")
+    if any(c in blocked for c in conditions):
+        return False
+    if all(c in allowed for c in conditions):
+        return True
+    return None
+
+
+def verify_gaps(client, report, feed, root=ARCHIVE):
+    """Batch gaps by symbol/day; retain complete trade pages without rewriting bars."""
+    import pandas as pd
+
+    counts = {}
+    evidence = []
+    processed = 0
+    for day in report["days"]:
+        times = [pd.Timestamp(t) for t in day["missing"]]
+        for group in [times] if times else []:
+            params = {
+                "symbols": day["symbol"],
+                "feed": feed,
+                "sort": "asc",
+                "limit": 10000,
+                "start": stamp(group[0]),
+                "end": stamp(group[-1] + timedelta(minutes=1) - timedelta(microseconds=1)),
+            }
+            trades = []
+            for page in pages(client, "/stocks/trades", params, root):
+                trades.extend((page["response"].get("trades") or {}).get(day["symbol"], []))
+            by_minute = {minute: [] for minute in group}
+            timestamps = pd.to_datetime([x["t"] for x in trades], utc=True, format="mixed")
+            for minute, trade in zip(timestamps.floor("min"), trades, strict=True):
+                if minute in by_minute:
+                    by_minute[minute].append(trade)
+            for minute in group:
+                found = by_minute[minute]
+                states = [eligibility(x) for x in found]
+                category = (
+                    "no_reported_trades"
+                    if not found
+                    else "eligible_trades_without_bar"
+                    if True in states
+                    else "unknown_conditions"
+                    if None in states
+                    else "only_ineligible_trades"
+                )
+                counts[category] = counts.get(category, 0) + 1
+                evidence.append(
+                    {
+                        "symbol": day["symbol"],
+                        "t": stamp(minute),
+                        "category": category,
+                        "trades": len(found),
+                    }
+                )
+            processed += 1
+            if processed % 25 == 0:
+                print(
+                    json.dumps(
+                        {
+                            "gap_symbol_days": processed,
+                            "feed": feed,
+                            "verified_minutes": len(evidence),
+                        }
+                    ),
+                    flush=True,
+                )
+    report["gap_evidence"] = evidence
+    report["gap_categories"] = counts
+    return report
+
+
+def verify_feed(report, feed, root=ARCHIVE):
+    """Three isolated SDK sessions, capped at <172 requests/min in aggregate.
+
+    A gap response is independent of every other day. Bounded parallel GETs keep
+    a large quality audit practical without a service or a shared mutable Session.
+    """
+2026-10-20T18:44:22.680567+00:00 123 []
+{'SPY': (19, 19, 4, []), 'QQQ': (18, 19, 0, ['2026-10-20T18:31:00+00:00']), 'IWM': (19, 19, 4, []), 'XLK': (15, 19, 0, ['2026-10-20T18:23:00+00:00', '2026-10-20T18:27:00+00:00', '2026-10-20T18:29:00+00:00', '2026-10-20T18:40:00+00:00']), 'XLF': (18, 19, 1, ['2026-10-20T18:39:00+00:00']), 'XLE': (19, 19, 4, []), 'SMH': (19, 19, 4, [])}
+
+web search: 
+web search: site.docs.alpaca.markets stock minute bars trade conditions odd lot trade not update bar ...
+web search: 
+web search: https://docs.alpaca.markets/us/docs/market-data-faq
+exec
+/bin/zsh -lc "rg -n 'eligibility\\(|gap_categories|only_ineligible' tests/test_history.py tests/test_market* tests/test_ml03*; ls outputs/ml03/*gap*; .venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+p=Path('outputs/ml03/sip-gap-audit.json')
+r=json.loads(p.read_text());print(list(r));print(str(r)[:1200])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+zsh:1: no matches found: tests/test_ml03*
+outputs/ml03/sip-gap-audit.json
+['gap_categories', 'gap_evidence', 'source_manifest']
+{'gap_categories': {'only_ineligible_trades': 26}, 'gap_evidence': [{'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-04T17:15:00Z', 'trades': 27}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-07T16:49:00Z', 'trades': 27}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-07T17:01:00Z', 'trades': 17}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-07T17:52:00Z', 'trades': 38}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-07T18:28:00Z', 'trades': 34}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-10T17:44:00Z', 'trades': 34}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-10T18:00:00Z', 'trades': 40}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-14T17:14:00Z', 'trades': 31}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-18T15:49:00Z', 'trades': 23}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-18T17:20:00Z', 'trades': 36}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2024-10-21T17:41:00Z', 'trades': 14}, {'category': 'only_ineligible_tr
+
+exec
+/bin/zsh -lc "rg -n 'eligibility\\(|gap_categories|only_ineligible' tests; sed -n '145,185p' src/aquant/history.py; .venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+r=json.loads(Path('outputs/ml03/sip-gap-audit.json').read_text());print(r['source_manifest'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+tests/test_history.py:170:    assert report["gap_categories"] == {
+tests/test_history.py:172:        "only_ineligible_trades": 1,
+tests/test_history.py:175:    assert history.eligibility({"c": ["new-condition"], "z": "A"}) is None
+tests/test_history.py:195:    assert "gap_categories" not in report
+tests/test_history.py:224:            "gap_categories": {"no_reported_trades": count},
+tests/test_history.py:233:    assert report["gap_categories"] == {"no_reported_trades": 7}
+tests/test_research.py:342:    original = {**quality, "gap_categories": {}}
+            sleep(min(60, max(delay, 30 if status == 429 else 0)))
+
+
+def pages(client, route, params, root=ARCHIVE):
+    identity = {"route": route, "params": params, "schema": 1}
+    key = hashlib.sha256(encode(identity)).hexdigest()
+    directory = root / key
+    token, seen = None, set()
+    index = 0
+    while True:
+        query = {**params, **({"page_token": token} if token else {})}
+        path = directory / f"{index:05}.json.gz"
+        if path.exists():
+            record = read(path)
+            if record["request"] != {"route": route, "params": query}:
+                raise AcceptanceError("历史缓存请求链不一致；拒绝覆盖。")
+        else:
+            body, retries = request(client, route, query)
+            record = {
+                "request": {"route": route, "params": query},
+                "response": body,
+                "fetched_at": stamp(datetime.now(UTC)),
+                "retries": retries,
+                "timezone": "UTC",
+                "session_timezone": str(NY),
+                "schema": 1,
+            }
+            try:
+                immutable(path, record)
+            except FileExistsError:
+                record = read(path)
+        yield record
+        token = record["response"].get("next_page_token")
+        if not token:
+            break
+        if token in seen:
+            raise AcceptanceError("API 分页 token 循环，采集不完整。")
+        seen.add(token)
+        index += 1
+
+
+outputs/ml03/dataset-v1/manifest.json
+
+exec
+/bin/zsh -lc "rg --files --hidden --no-ignore outputs/ml03 data/raw/alpaca/market | rg 'json.gz"'$'"' | head -8; sed -n '130,180p' tests/test_history.py; rg -n 'gap' scripts/research/ml03.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ exited 1 in 0ms:
+data/raw/alpaca/market/727902df3122ba22f4b0688c5ca9d7bdb337a6b555f964e04492d035e54deada/00000.json.gz
+data/raw/alpaca/market/727902df3122ba22f4b0688c5ca9d7bdb337a6b555f964e04492d035e54deada/00001.json.gz
+data/raw/alpaca/market/727902df3122ba22f4b0688c5ca9d7bdb337a6b555f964e04492d035e54deada/00003.json.gz
+data/raw/alpaca/market/727902df3122ba22f4b0688c5ca9d7bdb337a6b555f964e04492d035e54deada/00002.json.gz
+data/raw/alpaca/market/727902df3122ba22f4b0688c5ca9d7bdb337a6b555f964e04492d035e54deada/00004.json.gz
+data/raw/alpaca/market/156d3e192528f6c6018b7ab02cfef3b5817599b2e0d07e2d6998f545e1673684/00000.json.gz
+data/raw/alpaca/market/3c899a1abe9f11ddb38e60d830be6a82a2b7dbda785a296f89998f2e0d51b744/00000.json.gz
+data/raw/alpaca/market/3c899a1abe9f11ddb38e60d830be6a82a2b7dbda785a296f89998f2e0d51b744/00001.json.gz
+            history.Transport().send(Request(method, endpoint + suffix, headers=headers).prepare())
+    assert len(calls) == 1
+
+
+def test_corporate_actions_resume_offline_without_credentials(tmp_path, monkeypatch):
+    body = {"corporate_actions": {"cash_dividends": [{"symbol": "SPY", "ex_date": "2025-03-21"}]}}
+    monkeypatch.setattr(history, "request", lambda *args: (body, []))
+    result = history.actions(root=tmp_path, offline=True)
+    assert result == [{"kind": "cash_dividends", "symbol": "SPY", "ex_date": "2025-03-21"}]
+
+    def deny(*args):
+        pytest.fail("offline resume must use immutable archive")
+
+    monkeypatch.setattr(history, "request", deny)
+    assert history.actions(root=tmp_path, offline=True) == result
+
+
+def test_dst_and_early_close_calendar():
+    cal = history.sessions(
+        [
+            {"date": "2025-03-07", "open": "09:30", "close": "16:00"},
+            {"date": "2025-03-10", "open": "09:30", "close": "16:00"},
+            {"date": "2025-11-28", "open": "09:30", "close": "13:00"},
+        ]
+    )
+    assert cal["2025-03-07"][0].hour == 14
+    assert cal["2025-03-10"][0].hour == 13
+    assert (cal["2025-11-28"][1] - cal["2025-11-28"][0]).total_seconds() == 210 * 60
+    intervals = list(history.months(date(2024, 10, 1), date(2026, 10, 16)))
+    assert len(intervals) == 25 and intervals[-1][1] == date(2026, 10, 17)
+    params = history.parameters("sip", *intervals[0])
+    assert params["adjustment"] == "raw" and params["asof"] == "-"
+
+
+def test_gap_evidence_distinguishes_no_trade_odd_lot_and_missing_bar(tmp_path, monkeypatch):
+    times = ["2025-06-02T13:30:00Z", "2025-06-02T13:31:00Z", "2025-06-02T13:32:00Z"]
+    report = {"days": [{"symbol": "SPY", "missing": times}]}
+    trades = [{"t": times[1], "c": ["I"], "z": "A"}, {"t": times[2], "c": ["@"], "z": "A"}]
+    monkeypatch.setattr(history, "request", lambda *args: ({"trades": {"SPY": trades}}, []))
+    history.verify_gaps(Mock(), report, "iex", tmp_path)
+    assert report["gap_categories"] == {
+        "no_reported_trades": 1,
+        "only_ineligible_trades": 1,
+        "eligible_trades_without_bar": 1,
+    }
+    assert history.eligibility({"c": ["new-condition"], "z": "A"}) is None
+
+
+def test_quality_does_not_fill_missing_or_accept_nontrading_minutes():
+    calendar = history.sessions([{"date": "2025-06-02", "open": "09:30", "close": "09:32"}])
+    row = {
+
+codex
+准备核验缺柱原因时，我发现旧的成交条件分类器与 Alpaca 当前官方表有一处差异：它把 `L`、`5`、`6` 等可更新分钟价格的条件判成不可用。我会在隔离研究分支修正并测试，重新核对受影响的缺柱证据；不改原始行情、旧实验结果或运行中的冻结服务。依据是 [Alpaca 官方说明](https://docs.alpaca.markets/us/docs/market-data-faq)。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('src/aquant/history.py');s=p.read_text()
+a=s.index('def eligibility(trade):');b=s.index('\\n\\ndef verify_gaps',a)
+s=s[:a]+'''def eligibility(trade):
+    \"\"\"Minute OHLC eligibility; strictest condition wins, unknown stays unknown.
+
+    Alpaca Market Data FAQ table checked 2026-10-20. This classifies price
+    updates, not volume updates, and never manufactures a bar from trades.
+    \"\"\"
+    conditions = trade.get(\"c\") or [\"@\"]
+    allowed = {\" \", \"@\", \"A\", \"D\", \"E\", \"F\", \"K\", \"L\", \"O\", \"T\", \"X\", \"5\", \"6\"}
+    blocked = {\"C\", \"G\", \"H\", \"I\", \"M\", \"N\", \"P\", \"Q\", \"R\", \"U\", \"V\", \"W\", \"Z\", \"4\", \"7\", \"9\"}
+    if trade.get(\"z\") == \"C\":
+        allowed.update({\"B\", \"Y\"})
+    elif trade.get(\"z\") in {\"A\", \"B\"}:
+        blocked.add(\"B\")
+    if any(c in blocked for c in conditions):
+        return False
+    if all(c in allowed for c in conditions):
+        return True
+    return None
+''' +s[b:]
+p.write_text(s)
+p=Path('tests/test_history.py');s=p.read_text()+'''
+
+@pytest.mark.parametrize(\"condition\", [\"L\", \"5\", \"6\"])
+def test_minute_price_conditions_not_falsely_classified_as_ineligible(condition):
+    assert history.eligibility({\"c\": [condition], \"z\": \"A\"}) is True
+    assert history.eligibility({\"c\": [condition, \"I\"], \"z\": \"A\"}) is False
+
+
+def test_tape_dependent_minute_conditions_and_unknowns():
+    assert history.eligibility({\"c\": [\"Y\"], \"z\": \"C\"}) is True
+    assert history.eligibility({\"c\": [\"Y\"], \"z\": \"A\"}) is None
+    assert history.eligibility({\"c\": [\"B\"], \"z\": \"C\"}) is True
+    assert history.eligibility({\"c\": [\"B\"], \"z\": \"A\"}) is False
+    assert history.eligibility({\"c\": [\"B\"]}) is None
+    assert history.eligibility({\"c\": [\"I\", \"unknown\"], \"z\": \"C\"}) is False
+    assert history.eligibility({\"c\": [\"@\", \"unknown\"], \"z\": \"C\"}) is None
+
+
+def test_gap_evidence_preserves_eligible_closing_trades(tmp_path, monkeypatch):
+    t = \"2025-06-02T19:59:00Z\"
+    monkeypatch.setattr(history, \"request\", lambda *a: ({\"trades\": {\"SPY\": [
+        {\"t\": t, \"c\": [\"6\"], \"z\": \"A\"}]}}, []))
+    r = history.verify_gaps(Mock(), {\"days\": [{\"symbol\": \"SPY\", \"missing\": [t]}]}, \"iex\", tmp_path)
+    assert r[\"gap_categories\"] == {\"eligible_trades_without_bar\": 1}
+''';p.write_text(s)
+PY
+.venv/bin/python -m ruff format src/aquant/history.py tests/test_history.py
+.venv/bin/python -m ruff check src/aquant/history.py tests/test_history.py
+.venv/bin/python -m pytest -q tests/test_history.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 870ms:
+.....................                                                    [100%]
+=============================== warnings summary ===============================
+../../.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+21 passed, 1 warning in 0.11s
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from aquant import history
+import json
+m=json.loads(Path('outputs/ml03/dataset-v1/manifest.json').read_text());print(list(m));print(str(m.get('quality',{}))[:500])
+for p in Path('data/raw/alpaca/market').glob('*/00000.json.gz'):
+ r=history.read(p)
+ if r['request']['route']=='/stocks/trades':print('trade_sample',p,r['request']);break
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 321ms:
+['base', 'calendar', 'code_hash', 'created_at', 'daily_eligibility', 'dataset_hash', 'eligible_common', 'eligible_original', 'features', 'id', 'kind', 'latency_known', 'loss_fraction', 'market_hash', 'panel_all_fraction', 'panel_none_fraction', 'quality', 'real_time_qualified', 'reference_availability_on_common', 'source_frames', 'source_manifest', 'source_manifest_hash', 'spec_hash', 'usage']
+{'iex': {'assets': {'IWM': {'complete_days': 107, 'coverage': 0.9688055430034643, 'empty_days': 1, 'expected': 199170, 'first': '2024-10-01 13:30:00+00:00', 'last': '2026-10-16 20:40:00+00:00', 'latency_known': False, 'raw_rows': 197311, 'regular_rows': 192957}, 'SMH': {'complete_days': 7, 'coverage': 0.8068634834563438, 'empty_days': 1, 'expected': 199170, 'first': '2024-10-01 13:30:00+00:00', 'last': '2026-10-16 19:59:00+00:00', 'latency_known': False, 'raw_rows': 161357, 'regular_rows': 16070
+trade_sample data/raw/alpaca/market/8e05cd4115a9043f78a34a326ee13e903cdd4f9c0cd6f1b54ccab88f92b2645d/00000.json.gz {'params': {'end': '2024-10-21T18:18:59.999999Z', 'feed': 'sip', 'limit': 10000, 'sort': 'asc', 'start': '2024-10-21T17:41:00Z', 'symbols': 'XLK'}, 'route': '/stocks/trades'}
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from collections import Counter
+from aquant import history
+import json,hashlib
+m=json.loads(Path('outputs/ml03/dataset-v1/manifest.json').read_text());print(m['quality']['sip'].keys());print(str(m['quality']['sip'].get('days',[])[:1])[:400])
+class Offline:
+ def get(self,*_):raise AssertionError('Expected cached trade audit pages only')
+r=history.verify_gaps(Offline(),{'days':m['quality']['sip']['days']},'sip',Path('data/raw/alpaca/market'))
+old=json.loads(Path('outputs/ml03/sip-gap-audit.json').read_text())
+comparison={'at':history.stamp(history.datetime.now(history.UTC)),'kind':'HISTORICAL_QUALITY_REAUDIT','source':'outputs/ml03/sip-gap-audit.json','old_hash':hashlib.sha256(Path('outputs/ml03/sip-gap-audit.json').read_bytes()).hexdigest(),'conditions_source':'https://docs.alpaca.markets/us/docs/market-data-faq','gap_categories':r['gap_categories'],'gap_evidence':r['gap_evidence'],'unchanged':r['gap_evidence']==old['gap_evidence'],'network_requests':0}
+history.immutable(Path('outputs/ml03/sip-gap-reaudit-round3.json'),comparison);print('result',r['gap_categories'],comparison['unchanged'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ exited 1 in 253ms:
+Traceback (most recent call last):
+  File "<stdin>", line 8, in <module>
+KeyError: 'days'
+dict_keys(['assets', 'quality'])
+[]
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from aquant import history
+import json,hashlib
+m=json.loads(Path('outputs/ml03/dataset-v1/manifest.json').read_text());q=m['quality']['sip']['quality'];print(q.keys())
+class Offline:
+ def get(self,*_):raise AssertionError('Expected cached trade audit pages only')
+r=history.verify_gaps(Offline(),{'days':q['days']},'sip',Path('data/raw/alpaca/market'))
+old=json.loads(Path('outputs/ml03/sip-gap-audit.json').read_text())
+comparison={'at':history.stamp(history.datetime.now(history.UTC)),'kind':'HISTORICAL_QUALITY_REAUDIT','source':'outputs/ml03/sip-gap-audit.json','old_hash':hashlib.sha256(Path('outputs/ml03/sip-gap-audit.json').read_bytes()).hexdigest(),'conditions_source':'https://docs.alpaca.markets/us/docs/market-data-faq','gap_categories':r['gap_categories'],'gap_evidence':r['gap_evidence'],'unchanged':r['gap_evidence']==old['gap_evidence'],'network_requests':0}
+history.immutable(Path('outputs/ml03/sip-gap-reaudit-round3.json'),comparison);print('result',r['gap_categories'],comparison['unchanged'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 294ms:
+dict_keys(['complete_symbol_days', 'days', 'duplicate_rows', 'extended_rows', 'gap_policy', 'invalid_examples', 'invalid_rows', 'missing_minutes', 'non_session_rows', 'regular_rows', 'rows'])
+result {'only_ineligible_trades': 26} True
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('scripts/research/market.py');s=p.read_text().replace('import argparse\\n','import argparse\\nimport hashlib\\n')
+pos=s.index('\\n\\nif __name__ == \"__main__\":')
+s=s[:pos]+'''
+
+def gaps(root, arrival_folder, output, credential_root=None, instant=None):
+    \"\"\"One-shot delayed trade audit. Never writes arrivals, bars or predictions.\"\"\"
+    if output.exists():
+        raise FileExistsError(\"Gap audit output exists; use a new snapshot path\")
+    instant = pd.Timestamp(instant or datetime.now(UTC))
+    snapshot = history.read(arrival_folder / \"status.json\")
+    report = gap_inputs(snapshot, instant)
+    report.update(
+        kind=\"POSTHOC_DATA_AUDIT\", at=instant.isoformat(), source_snapshot=snapshot,
+        source_hash=hashlib.sha256(history.encode(snapshot)).hexdigest(),
+        condition_code_hash=hashlib.sha256(Path(history.__file__).read_bytes()).hexdigest(),
+        condition_source=\"https://docs.alpaca.markets/us/docs/market-data-faq\",
+        input_feed=\"iex\", audit_feed=\"iex\", used_for_live_decisions=False,
+        orders_authorized=False,
+    )
+
+    class Offline:
+        def get(self, *_):
+            raise ValueError(\"Uncached trade audit requires explicit credential root\")
+
+    client = None
+    if credential_root and report[\"days\"]:
+        client = StockHistoricalDataClient(*credentials(credential_root), raw_data=True)
+        client._session.close()
+        client._session = history.Transport()
+        client._retry = 0
+    try:
+        history.verify_gaps(client or Offline(), report, \"iex\", root)
+    finally:
+        if client:
+            client._session.close()
+    history.immutable(output, report)
+    return report
+
+
+def gap_inputs(snapshot, instant):
+    instant = pd.Timestamp(instant)
+    if instant.tzinfo is None:
+        raise ValueError(\"Aware audit time required\")
+    m = snapshot[\"manifest\"]
+    if m[\"source\"] "'!= "iex_rest_poll" or m["orders_authorized"]:
+        raise ValueError("Only the read-only IEX receipt audit is accepted")
+    days, deferred = [], []
+    begin, close = map(pd.Timestamp, (m["observe_from"], m["closing"]))
+    for symbol, rows in snapshot["assets"].items():
+        ready = []
+        for value in rows["missing_mature"]:
+            t = pd.Timestamp(value)
+            if not begin <= t < close or t != t.floor("min"):
+                raise ValueError("Gap outside registered session")
+            if t + pd.Timedelta(minutes=17) <= instant:
+                ready.append(t.isoformat())
+            else:
+                deferred.append({"symbol": symbol, "t": t.isoformat()})
+        if ready:
+            days.append({"symbol": symbol, "missing": sorted(set(ready))})
+    return {"days": days, "deferred_until_16min_after_minute_end": deferred}
+'"''' +s[pos:]
+s=s.replace('    args = parser.parse_args()\\n    archive(args.archive, args.credential_root)', '''    parser.add_argument(\"--arrival-folder\", type=Path)
+    parser.add_argument(\"--audit-output\", type=Path)
+    args = parser.parse_args()
+    if bool(args.arrival_folder) "'!= bool(args.audit_output):
+        parser.error("--arrival-folder and --audit-output must be provided together")
+    if args.arrival_folder:
+        gaps(args.archive, args.arrival_folder, args.audit_output, args.credential_root)
+    else:
+        archive(args.archive, args.credential_root)'"''')
+p.write_text(s)
+p=Path('tests/test_arrival.py');s=p.read_text()+'''
+
+def test_trade_audit_delay_boundary_and_no_signal_input(tmp_path):
+    from scripts.research.market import gaps
+
+    snapshot = {\"manifest\": {**manifest(), \"source\": \"iex_rest_poll\", \"orders_authorized\": False},
+                \"assets\": {\"XLK\": {\"missing_mature\": [\"2026-10-20T18:30Z\", \"2026-10-20T18:31Z\"]}}}
+    folder = tmp_path / \"arrival\"
+    folder.mkdir()
+    (folder / \"status.json\").write_text(json.dumps(snapshot))
+    before = (folder / \"status.json\").read_bytes()
+    result = gaps(tmp_path / \"archive\", folder, tmp_path / \"audit.json\", instant=\"2026-10-20T18:46:59Z\")
+    assert not result[\"days\"]
+    assert len(result[\"deferred_until_16min_after_minute_end\"]) == 2
+    assert result[\"used_for_live_decisions\"] is False
+    assert (folder / \"status.json\").read_bytes() == before
+    with pytest.raises(FileExistsError):
+        gaps(tmp_path / \"archive\", folder, tmp_path / \"audit.json\")
+
+
+def test_trade_audit_selects_only_mature_registered_minutes():
+    from scripts.research.market import gap_inputs
+
+    snapshot = {\"manifest\": {**manifest(), \"source\": \"iex_rest_poll\", \"orders_authorized\": False},
+                \"assets\": {\"XLK\": {\"missing_mature\": [\"2026-10-20T18:30Z\", \"2026-10-20T18:31Z\"]}}}
+    r = gap_inputs(snapshot, \"2026-10-20T18:47Z\")
+    assert r[\"days\"] == [{\"symbol\": \"XLK\", \"missing\": [\"2026-10-20T18:30:00+00:00\"]}]
+    assert len(r[\"deferred_until_16min_after_minute_end\"]) == 1
+    snapshot[\"assets\"][\"XLK\"][\"missing_mature\"].append(\"2026-10-20T18:29Z\")
+    with pytest.raises(ValueError, match=\"registered\"):
+        gap_inputs(snapshot, \"2026-10-20T18:47Z\")
+
+
+def test_trade_audit_rejects_naive_time_and_other_provenance():
+    from scripts.research.market import gap_inputs
+
+    with pytest.raises(ValueError, match=\"Aware\"):
+        gap_inputs({}, \"2026-10-20T18:47\")
+    with pytest.raises(ValueError, match=\"IEX\"):
+        gap_inputs({\"manifest\": {\"source\": \"sip\"}}, \"2026-10-20T18:47Z\")
+''';p.write_text(s)
+PY
+.venv/bin/python -m ruff format scripts/research/market.py tests/test_arrival.py
+.venv/bin/python -m ruff check .
+.venv/bin/python -m pytest -q tests/test_history.py tests/test_arrival.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 891ms:
+.................................                                        [100%]
+=============================== warnings summary ===============================
+../../.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+33 passed, 1 warning in 0.13s
+
+exec
+/bin/zsh -lc 'git add src/aquant/history.py scripts/research/market.py tests/test_history.py tests/test_arrival.py; git commit -m "fix: audit missing live bars with corrected minute trade eligibility"; .venv/bin/python -m scripts.research.market --archive outputs/ml03/arrival-gap-pages --credential-root /Users/prts/Projects/aquant --arrival-folder outputs/ml03/arrival-20261020 --audit-output outputs/ml03/arrival-gap-audit-round3.json' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 1642ms:
+exec
+/bin/zsh -lc 'DYLD_LIBRARY_PATH=/Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/torch/lib OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 VECLIB_MAXIMUM_THREADS=2 .venv/bin/python -m pytest -q > outputs/ml03/pytest-overnight-3.txt 2>&1' in /Users/prts/Projects/aquant/.worktrees/ml03
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+from collections import Counter
+from aquant import history
+r=json.loads(Path('outputs/ml03/arrival-gap-audit-round3.json').read_text());print(r['at'],r['gap_categories'],r['gap_evidence']);print('deferred',r['deferred_until_16min_after_minute_end'])
+for p in Path('outputs/ml03/arrival-gap-pages').glob('*/*.json.gz'):
+ r=history.read(p);print(r['request']['params'], 'fetched',r['fetched_at']);
+ for sym,trades in (r['response'].get('trades') or {}).items():
+  groups={}
+  for t in trades:groups.setdefault(t['t'][:16],Counter()).update([tuple(t.get('c',[]))])
+  print(sym,groups)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 205ms:
+2026-10-20T18:47:23.879784+00:00 {'only_ineligible_trades': 3} [{'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2026-10-20T18:23:00Z', 'trades': 7}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2026-10-20T18:27:00Z', 'trades': 2}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2026-10-20T18:29:00Z', 'trades': 6}]
+deferred [{'symbol': 'QQQ', 't': '2026-10-20T18:31:00+00:00'}, {'symbol': 'XLK', 't': '2026-10-20T18:40:00+00:00'}, {'symbol': 'XLF', 't': '2026-10-20T18:39:00+00:00'}]
+{'end': '2026-10-20T18:29:59.999999Z', 'feed': 'iex', 'limit': 10000, 'sort': 'asc', 'start': '2026-10-20T18:23:00Z', 'symbols': 'XLK'} fetched 2026-10-20T18:47:25.224202Z
+XLK {'2026-10-20T18:23': Counter({(' ', 'I'): 7}), '2026-10-20T18:24': Counter({(' ', 'I'): 16, (' ',): 2}), '2026-10-20T18:25': Counter({(' ', 'I'): 9, (' ',): 1}), '2026-10-20T18:26': Counter({(' ', 'I'): 9, (' ',): 2}), '2026-10-20T18:27': Counter({(' ', 'I'): 2}), '2026-10-20T18:28': Counter({(' ',): 41, (' ', 'I'): 16}), '2026-10-20T18:29': Counter({(' ', 'I'): 6})}
+
+codex
+已用延迟逐笔数据核实 XLK 的前三个缺柱分钟：分别有 7、2、6 笔成交，全部带 odd-lot 条件，按官方规则不能形成分钟 OHLC。因此这些缺柱符合行情生成规则，不能归为本机丢包，也不能补价。原 ML-03 的 26 个 SIP 缺柱用修正后的分类器离线复核，分类全部不变，模型结论不受影响。
+exec
+/bin/zsh -lc 'date -u; tail -4 outputs/ml03/pytest-overnight-3.txt; .venv/bin/python -m scripts.research.market --archive outputs/ml03/arrival-gap-pages --credential-root /Users/prts/Projects/aquant --arrival-folder outputs/ml03/arrival-20261020 --audit-output outputs/ml03/arrival-gap-audit-round3b.json' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 1644ms:
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+r=json.loads(Path('outputs/ml03/arrival-gap-audit-round3b.json').read_text());print(r['at'],r['gap_categories'],r['gap_evidence']);print('deferred',r['deferred_until_16min_after_minute_end'])
+PY
+sed -n '374,407p' src/aquant/history.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+2026-10-20T18:48:21.000944+00:00 {'only_ineligible_trades': 4} [{'category': 'only_ineligible_trades', 'symbol': 'QQQ', 't': '2026-10-20T18:31:00Z', 'trades': 10}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2026-10-20T18:23:00Z', 'trades': 7}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2026-10-20T18:27:00Z', 'trades': 2}, {'category': 'only_ineligible_trades', 'symbol': 'XLK', 't': '2026-10-20T18:29:00Z', 'trades': 6}]
+deferred [{'symbol': 'XLK', 't': '2026-10-20T18:40:00+00:00'}, {'symbol': 'XLF', 't': '2026-10-20T18:39:00+00:00'}]
+def eligibility(trade):
+    """Minute OHLC eligibility; strictest condition wins, unknown stays unknown.
+
+    Alpaca Market Data FAQ table checked 2026-10-20. This classifies price
+    updates, not volume updates, and never manufactures a bar from trades.
+    """
+    conditions = trade.get("c") or ["@"]
+    allowed = {" ", "@", "A", "D", "E", "F", "K", "L", "O", "T", "X", "5", "6"}
+    blocked = {"C", "G", "H", "I", "M", "N", "P", "Q", "R", "U", "V", "W", "Z", "4", "7", "9"}
+    if trade.get("z") == "C":
+        allowed.update({"B", "Y"})
+    elif trade.get("z") in {"A", "B"}:
+        blocked.add("B")
+    if any(c in blocked for c in conditions):
+        return False
+    if all(c in allowed for c in conditions):
+        return True
+    return None
+
+
+def verify_gaps(client, report, feed, root=ARCHIVE):
+    """Batch gaps by symbol/day; retain complete trade pages without rewriting bars."""
+    import pandas as pd
+
+    counts = {}
+    evidence = []
+    processed = 0
+    for day in report["days"]:
+        times = [pd.Timestamp(t) for t in day["missing"]]
+        for group in [times] if times else []:
+            params = {
+                "symbols": day["symbol"],
+                "feed": feed,
+                "sort": "asc",
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('src/aquant/history.py');s=p.read_text().replace('allowed = {\" \", \"@\", \"A\", \"D\", \"E\", \"F\", \"K\", \"L\", \"O\", \"T\", \"X\", \"5\", \"6\"}', 'allowed = {\" \", \"@\", \"F\", \"K\", \"L\", \"O\", \"T\", \"X\", \"5\", \"6\"}').replace('allowed.update({\"B\", \"Y\"})','allowed.update({\"A\", \"B\", \"D\", \"Y\"})').replace('        blocked.add(\"B\")\\n    if any', '        blocked.add(\"B\")\\n        allowed.add(\"E\")\\n    if any');p.write_text(s)
+p=Path('tests/test_history.py');s=p.read_text()+'''
+
+@pytest.mark.parametrize(\"condition,tape\", [(\"A\", \"C\"), (\"D\", \"C\"), (\"E\", \"A\")])
+def test_tape_specific_price_conditions_require_known_tape(condition, tape):
+    assert history.eligibility({\"c\": [condition], \"z\": tape}) is True
+    assert history.eligibility({\"c\": [condition]}) is None
+    assert history.eligibility({\"c\": [condition], \"z\": \"O\"}) is None
+''';p.write_text(s)
+PY
+.venv/bin/python -m ruff format src/aquant/history.py tests/test_history.py
+.venv/bin/python -m pytest -q tests/test_history.py tests/test_arrival.py
+ git add src/aquant/history.py tests/test_history.py
+ git commit -m \"fix: retain unknown status for tape-specific trade conditions\"" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 1263ms:
+....................................                                     [100%]
+=============================== warnings summary ===============================
+../../.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+36 passed, 1 warning in 0.40s
+[research/ml03-cross-asset-20261020 ffc94e6] fix: retain unknown status for tape-specific trade conditions
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+ succeeded in 99318ms:
+exec
+/bin/zsh -lc 'DYLD_LIBRARY_PATH=/Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/torch/lib OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 VECLIB_MAXIMUM_THREADS=2 .venv/bin/python -m pytest -q > outputs/ml03/pytest-overnight-3-final.txt 2>&1' in /Users/prts/Projects/aquant/.worktrees/ml03
+exec
+/bin/zsh -lc "sed -n '395,470p' /Users/prts/Projects/aquant/.worktrees/ml01/src/aquant/prediction.py; .venv/bin/python - <<'PY'
+import json,sqlite3
+from pathlib import Path
+from datetime import datetime,UTC
+root=Path('/Users/prts/Projects/aquant')
+with sqlite3.connect(f'file:{root}/outputs/research/forward_observations/state.sqlite3?mode=ro',uri=True) as db:
+ print('latest_bar_row',db.execute(\"SELECT rowid,received FROM observations WHERE kind='b' ORDER BY rowid DESC LIMIT 1\").fetchone())
+with sqlite3.connect(f'file:{root}/.worktrees/ml01/outputs/ml01/forward-20261020/prediction.sqlite3?mode=ro',uri=True) as db:
+ s=json.loads(db.execute('SELECT payload FROM state WHERE id=1').fetchone()[0]);print('ml01', {k:s.get(k) for k in ['cursor','heartbeat']});print('predictions',db.execute('SELECT COUNT(*) FROM predictions').fetchone()[0]);print('decisions',db.execute(\"SELECT json_extract(payload,'"'$.reason'"'),COUNT(*) FROM decisions GROUP BY 1\").fetchall())
+print('now',datetime.now(UTC).isoformat())
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+
+
+def run(path):
+    m = json.loads(path.read_text())
+    for name, expected in m["code_hashes"].items():
+        if digest(ROOT / name) != expected:
+            raise ValueError("Frozen observer code changed")
+    with (path.parent / "prediction.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        r = Recorder(path.parent / "prediction.sqlite3", m)
+        try:
+            while pd.Timestamp(now()) < pd.Timestamp(m["closing"]) + pd.Timedelta(minutes=4):
+                if (path.parent / "STOP").exists():
+                    break
+                r.tick()
+                try:
+                    with sqlite3.connect(f"file:{m['source']}?mode=ro", uri=True, timeout=1) as db:
+                        db.execute("PRAGMA query_only=ON")
+                        rows = db.execute(
+                            "SELECT rowid,id,day,received,kind,payload FROM observations "
+                            "WHERE rowid>? AND kind IN ('b','u') ORDER BY rowid LIMIT 1000",
+                            (r.s["cursor"],),
+                        ).fetchall()
+                    r.consume(rows)
+                    r.evaluate()
+                except sqlite3.OperationalError as e:
+                    r.s["interruptions"].append({"at": now(), "type": type(e).__name__})
+                    r.persist()
+                report = r.report()
+                temp = path.parent / "status.tmp"
+                temp.write_text(encode(report))
+                temp.replace(path.parent / "status.json")
+                time.sleep(2)
+        finally:
+            (path.parent / f"report-{datetime.now(UTC).strftime('%H%M%S%f')}.json").write_text(
+                encode(r.report())
+            )
+            r.close()
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    p.add_argument("action", choices=["freeze", "run"])
+    p.add_argument("--manifest", type=Path, required=True)
+    p.add_argument("--source", type=Path)
+    p.add_argument("--experiment", type=Path)
+    p.add_argument("--calendar", type=Path)
+    a = p.parse_args()
+    if a.action == "freeze":
+        freeze(a.manifest, a.source, a.experiment, a.calendar)
+    else:
+        run(a.manifest)
+latest_bar_row (35415, '2026-10-20T18:50:00.327230Z')
+ml01 {'cursor': 35415, 'heartbeat': '2026-10-20T18:50:14.632535+00:00'}
+predictions 396
+decisions [(None, 66), ('input_eligibility', 130), ('revision', 1), ('seed_only_before_registration', 395), ('unfinished_or_stale_receipt', 14)]
+now 2026-10-20T18:50:15.313480+00:00
+
+codex
+QQQ 的 14:31 缺柱也已核实：该分钟的 10 笔 IEX 成交全部是 odd-lot。ML-01 当前游标已追上原流最新分钟事件，已有 396 条预测；仍没有阈值信号。证据表明，缺柱既有运行故障区间，也有成交条件造成的合法空缺；迁移主机只能处理其中的运行可靠性问题。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import sqlite3,json
+from pathlib import Path
+p=Path('/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020')
+with sqlite3.connect(f'file:{p}/prediction.sqlite3?mode=ro',uri=True) as db:print('predictions, threshold signals',db.execute(\"SELECT count(*),sum(json_extract(payload,'"'$.threshold_signal'"')) FROM predictions\").fetchone())
+r=json.loads((p/'status.json').read_text());print({k:(v['predictions'],v['labels']) for k,v in r['models'].items()})
+PY
+tail -4 outputs/ml03/pytest-overnight-3-final.txt" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+predictions, threshold signals (396, 0)
+{'fold5-M0-h15': (66, {'INVALID_MISSING_OR_TIMEOUT': 17, 'PENDING': 17, 'VALID': 32}), 'fold5-M0-h30': (66, {'INVALID_MISSING_OR_TIMEOUT': 25, 'PENDING': 32, 'VALID': 9}), 'fold5-M1-h15': (66, {'INVALID_MISSING_OR_TIMEOUT': 17, 'PENDING': 17, 'VALID': 32}), 'fold5-M1-h30': (66, {'INVALID_MISSING_OR_TIMEOUT': 25, 'PENDING': 32, 'VALID': 9}), 'fold5-M2-h15': (66, {'INVALID_MISSING_OR_TIMEOUT': 17, 'PENDING': 17, 'VALID': 32}), 'fold5-M2-h30': (66, {'INVALID_MISSING_OR_TIMEOUT': 25, 'PENDING': 32, 'VALID': 9})}
+........................................................................ [ 18%]
+........................................................................ [ 28%]
+........................................................................ [ 37%]
+...............................
+exec
+/bin/zsh -lc ".venv/bin/python -m scripts.research.market --archive outputs/ml03/arrival-gap-pages --arrival-folder outputs/ml03/arrival-20261020 --audit-output outputs/ml03/arrival-gap-audit-round3-final.json
+.venv/bin/python - <<'PY'
+from pathlib import Path
+from aquant import history
+import json,hashlib
+m=history.read(Path('outputs/ml03/dataset-v1/manifest.json'))
+class Offline:
+ def get(self,*_):raise AssertionError('No new requests')
+r=history.verify_gaps(Offline(),{'days':m['quality']['sip']['quality']['days']},'sip',Path('data/raw/alpaca/market'))
+old=history.read(Path('outputs/ml03/sip-gap-audit.json'))
+r={k:r[k] for k in ['gap_categories','gap_evidence']}
+r.update(at=history.stamp(history.datetime.now(history.UTC)),kind='HISTORICAL_QUALITY_REAUDIT',network_requests=0,unchanged=r['gap_evidence']==old['gap_evidence'],history_hash=hashlib.sha256(Path(history.__file__).read_bytes()).hexdigest(),source='outputs/ml03/sip-gap-audit.json',source_sha256=hashlib.sha256(Path('outputs/ml03/sip-gap-audit.json').read_bytes()).hexdigest())
+history.immutable(Path('outputs/ml03/sip-gap-reaudit-round3-final.json'),r)
+print('SIP',r['gap_categories'],'unchanged',r['unchanged'])
+a=history.read(Path('outputs/ml03/arrival-gap-audit-round3-final.json'));print('IEX',a['gap_categories'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 745ms:
+SIP {'only_ineligible_trades': 26} unchanged True
+IEX {'only_ineligible_trades': 4}
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,sqlite3,fcntl,subprocess,hashlib
+from pathlib import Path
+from datetime import datetime,UTC
+root=Path('/Users/prts/Projects/aquant'); a=Path('outputs/ml03/arrival-20261020'); c=Path('outputs/ml03/closing-20261020')
+s=json.loads((a/'status.json').read_text());print('arrival',s['at'],s['polls'],len(s['failures']),len(s['poll_gaps']));print({k:(v['mature_present'],v['mature_expected'],v['qualified_16_bar_windows']) for k,v in s['assets'].items()})
+for folder in [a,c]:
+ with next(folder.glob('*.lock')).open() as f:
+  try:fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB);print(folder.name,'NOT HELD');fcntl.flock(f,fcntl.LOCK_UN)
+  except BlockingIOError:print(folder.name,'held')
+ print('log_bytes',(folder/'runtime.log').stat().st_size)
+for p in [root,root/'.worktrees/ml01',root/'.worktrees/ml02']:
+ print(p.name,subprocess.check_output(['git','status','--short'],cwd=p,text=True).strip() or 'CLEAN')
+print('arrival_code_matches',hashlib.sha256(Path('scripts/research/arrival.py').read_bytes()).hexdigest()==s['manifest']['code_hash'])
+print('now',datetime.now(UTC).isoformat())
+PY
+ tail -4 outputs/ml03/pytest-overnight-3-final.txt" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+arrival 2026-10-20T18:51:11.398084+00:00 161 0 0
+{'SPY': (26, 26, 11), 'QQQ': (25, 26, 2), 'IWM': (26, 26, 11), 'XLK': (22, 26, 0), 'XLF': (25, 26, 1), 'XLE': (26, 26, 11), 'SMH': (25, 26, 8)}
+arrival-20261020 held
+log_bytes 0
+closing-20261020 held
+log_bytes 0
+aquant CLEAN
+ml01 CLEAN
+ml02 CLEAN
+arrival_code_matches True
+now 2026-10-20T18:51:21.585181+00:00
+........................................................................ [ 65%]
+........................................................................ [ 75%]
+........................................................................ [ 84%]
+..............................................
+ succeeded in 99729ms:
+exec
+/bin/zsh -lc 'tail -10 outputs/ml03/pytest-overnight-3-final.txt; .venv/bin/python -m ruff check .; .venv/bin/python -m ruff format --check .' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+...............................................                          [100%]
+=============================== warnings summary ===============================
+../../.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/pipeline/test_community_reference_equivalence.py:35: BLOCKED: supplied source has Markdown escapes/fences and lost indentation; readable-logic reproduction tested separately, original never repaired
+766 passed, 1 skipped, 1 warning in 98.88s (0:01:38)
+All checks passed!
+235 files already formatted
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from collections import Counter
+from aquant import history
+for p in Path('outputs/ml03/arrival-gap-pages').glob('*/*.json.gz'):
+ r=history.read(p)
+ if r['request']['params']['symbols']=='QQQ':
+  trades=r['response']['trades']['QQQ'];print('QQQ',len(trades),Counter(tuple(t.get('c',[])) for t in trades))
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 242ms:
+QQQ 10 Counter({('@', 'I'): 10})
+
+codex
+本轮修正和复核已完成：766 项测试通过，1 项既有跳过；Ruff 和格式检查通过。参考测量仍正常运行，161 次请求无失败、无超过 30 秒的轮询间断。XLK 在 26 个成熟分钟中覆盖 22 个，却仍无合格的 16 根连续窗口；这说明分钟覆盖率不能直接代表特征可用率。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+from datetime import datetime,UTC
+import json,sqlite3,hashlib
+from aquant import history
+root=Path('/Users/prts/Projects/aquant');arrival=history.read(Path('outputs/ml03/arrival-20261020/status.json'))
+gaps=history.read(Path('outputs/ml03/arrival-gap-audit-round3-final.json'));past=history.read(Path('outputs/ml03/sip-gap-reaudit-round3-final.json'))
+ml=root/'.worktrees/ml01/outputs/ml01/forward-20261020';status=history.read(ml/'status.json')
+planpath=root/'outputs/alpaca/paper_pnl_reconciliation/plan.json';plan=history.read(planpath)
+evidence={'at':datetime.now(UTC).isoformat(),'kind':'INTRADAY_DATA_QUALITY_AUDIT','code_commits':['9a17ff1','ffc94e6'],'orders_authorized':False,'arrival':arrival,'delayed_iex_gap_audit':gaps,'historical_sip_reaudit':past,'ml01_snapshot':{k:status[k] for k in ['at','heartbeat','cursor','models','rating','pnl','orders_authorized']},'paper_checks':plan['checks'],'paper_plan_hash':hashlib.sha256(planpath.read_bytes()).hexdigest(),'tests':{'passed':766,'skipped':1,'seconds':98.88,'ruff':'PASS','format':'PASS'}}
+history.immutable(Path('docs/overnight/EVIDENCE-2026-10-21-round3.json'),evidence)
+text='''# 缺柱原因核验 · 2026-10-20
+
+状态：14:52 ET盘中核验完成；全日采集仍在进行。ML-03维持拒绝晋级，没有再训练或开启ML-04。
+
+## 已核实的缺柱
+
+复用历史管线，等分钟结束至少16分钟后读取IEX逐笔数据，仅用于事后解释，不进入实时特征，不补价。
+
+|标的 / 纽约分钟|API成交数|条件证据|判断|
+|---|---:|---|---|
+|XLK 14:23|7|全部 "'`空格 + I`|不能形成分钟OHLC|
+|XLK 14:27|2|全部 `空格 + I`|不能形成分钟OHLC|
+|XLK 14:29|6|全部 `空格 + I`|不能形成分钟OHLC|
+|QQQ 14:31|10|全部 `@ + I`|不能形成分钟OHLC|
+
+按[Alpaca官方条件表](https://docs.alpaca.markets/us/docs/market-data-faq)，`I` 是odd-lot：可更新成交量，但不能更新分钟OHLC；缺少必要价格字段不会发出bar。
+这些分钟不是“没有任何成交”，也不能当作本机网络丢包。条件解释符合已获得的逐笔证据，不证明API永远完整。
+当前较新的缺柱尚未越过本审计的延迟窗口，仍为待核验；不把未知原因统一归成odd-lot。
+
+## 分类器修正与影响范围
+
+旧 `history.eligibility` 把 `L/5/6`、纳斯达克 `Y` 等可更新分钟价格的条件误判不可用。
+本研究分支按官方表修正，保留多个条件取最严格规则；`A/B/D/E/Y` 需相应Tape，未知组合保留unknown。这不是策略参数调整。
+原ML-03的26个SIP缺柱全部用原始缓存离线重核，分类仍全部为only_ineligible_trades；没有网络请求或覆盖旧报告。
+原始bar、特征数据集、模型、收益与实验记录未变，ML-03拒绝晋级的结论不变。其他旧报告若引用受影响条件，需按原始逐笔重新核验，不能直接套用旧分类。
+新增一次性审计命令复用market/history，不增加常驻服务或自动交易；原运行采集器代码未动。
+
+## 对实时资格的含义
+
+14:51截面：IWM/XLE为26/26成熟分钟、各11个连续16根窗口；SMH25/26、8个窗口；XLF25/26、1个窗口；XLK22/26、0个窗口。
+五只参考ETF同时满足窗口为0；这不是ML-03的硬性五只齐全条件，原协议允许参考子集并记录coverage，但SPY/QQQ核心32根门禁仍必须满足。
+161次轮询无失败、无>30秒间断，不能据此推断全天无故障。REST可见延迟包含轮询，不能称作WS延迟。
+迁移至不休眠主机有助于运行可靠性，但不会消除成交条件导致的合法缺柱。不能因迁移或提高模型复杂度而宣称输入问题已解决。
+
+ML-01在14:50有396条提前预测、66个SPY窗口，阈值信号0；IEX15/30分钟分别已有32/9个有效目标（每模型），未到期部分仍待定。
+其游标与最新原始分钟事件一致，模型及冻结采集未重启。一天重叠目标和无NBBO条件不支持盈利晋级。
+Paper只读复核仍保留10月20/22日16:15 ET；收盘核验仍等16:40 ET，不能把本报告当成收盘完成。
+
+## 复现与产物
+
+```bash
+cd /Users/prts/Projects/aquant/.worktrees/ml03
+# 新的输出文件名；凭据只读。省略credential-root则仅允许缓存离线复核。
+.venv/bin/python -m scripts.research.market --archive outputs/ml03/arrival-gap-pages '"\\\\
+  --credential-root /Users/prts/Projects/aquant --arrival-folder outputs/ml03/arrival-20261020 \\\\
+  --audit-output outputs/ml03/arrival-gap-audit-next.json
+"'```
+
+机器证据：[本轮JSON](../docs/overnight/EVIDENCE-2026-10-21-round3.json)；原始分页在outputs/ml03/arrival-gap-pages，实时first记录不被改写。
+代码提交9a17ff1、ffc94e6；全量 **766 passed、1 skipped**，98.88秒，Ruff及235文件格式检查通过。
+11项新增测试覆盖成交条件、Tape未知/组合规则、延迟时间边界、登记区间、只读来源及不可覆盖输出。
+没有新增订单、付费行情、消息或launchd任务；方向选择仍待人类。
+'"'''
+with Path('human/gaps-2026-10-20.md').open('x') as f:f.write(text)
+with Path('human/README.md').open('a') as f:f.write('\\n- 2026-10-20缺柱核验（盘中完成，766测试通过）：[合法空缺、分类器修正及实时资格](gaps-2026-10-20.md)\\n')
+print('recorded',evidence['at'], 'arrival',arrival['at'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 261ms:
+recorded 2026-10-20T18:52:36.437541+00:00 arrival 2026-10-20T18:52:25.913111+00:00
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json
+r=json.loads(Path('docs/overnight/EVIDENCE-2026-10-21-round3.json').read_text());s=r['arrival'];print(s['at'],s['polls'],{k:(v['mature_present'],v['mature_expected'],v['qualified_16_bar_windows']) for k,v in s['assets'].items()})
+p=Path('human/gaps-2026-10-20.md');text=p.read_text();old='14:51截面：IWM/XLE为26/26成熟分钟、各11个连续16根窗口；SMH25/26、8个窗口；XLF25/26、1个窗口；XLK22/26、0个窗口。';new=f\"截面{s['at']}：\"+'；'.join(f\"{sym} {s['assets'][sym]['mature_present']}/{s['assets'][sym]['mature_expected']}成熟分钟、{s['assets'][sym]['qualified_16_bar_windows']}个连续16根窗口\" for sym in ['IWM','XLK','XLF','XLE','SMH'])+'。';text=text.replace(old,new).replace('161次轮询无失败',f\"{s['polls']}次轮询无失败\");p.write_text(text)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+2026-10-20T18:52:25.913111+00:00 168 {'IWM': (27, 27, 12), 'QQQ': (26, 27, 3), 'SMH': (26, 27, 8), 'SPY': (27, 27, 12), 'XLE': (27, 27, 12), 'XLF': (26, 27, 1), 'XLK': (22, 27, 0)}
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+with Path('docs/overnight/PENDING.md').open('a') as f:f.write('''
+### 2026-10-21 第3轮：主机可靠性与合法缺柱是两个问题
+
+- XLK14:23/27/29、QQQ14:31的逐笔核验均仅有odd-lot；这四处有成交但不能形成分钟OHLC。不能用迁移主机承诺消除此类缺口，也不能回填价格放宽冻结门禁。
+- 修正研究分支旧成交条件分类器（L/5/6、纳斯达克Y及Tape特定条件）；ML03原26个SIP缺柱离线复核不变，不改模型或收益。其他历史诊断如涉及这些条件须再核对原始逐笔，不能默认旧分类正确。
+- 方向备忘需区分：运行故障可用部署方式改善；IEX局部覆盖与合法空缺是输入条件限制；NBBO仍是执行限制。迁移、付费数据与下一方向均未获默认批准，未开启ML04。
+''')
+with Path('docs/overnight/STATE-2026-10-21.md').open('a') as f:f.write('''
+## 第3轮：纽约14:44–14:54，区分合法缺柱与运行故障
+
+- 开工重读总控评估及human自18:35:15Z增量，仅本线程报告，无人类未提交改动。ML03固定实验不再运行，拒绝晋级保持；原三个工作树clean。
+- 阅读Alpaca当前官方Market Data FAQ条件表发现旧history.eligibility误把L/5/6及纳斯达克Y等分钟价格条件判为不可用。仅ML03研究分支修正，未知Tape/条件保留unknown，组合取严格规则。原生产工作树和已加载冻结服务未改，不触发重启。
+- commit **9a17ff1**：修正分类并在已有scripts/research/market.py增加一次性延迟缺柱审计；复用history分页/只读Transport/不可覆盖缓存，不新增模块、核心类型或后台服务。**ffc94e6**：完善A/D/E的Tape限定。
+- 审计仅选登记以来缺失且分钟结束已超过16分钟的分钟，其他列deferred；数据kind=POSTHOC_DATA_AUDIT、used_for_live_decisions=false。不改任何first记录、bar、特征或预测。
+- 两次新增只读IEX逐笔请求（原始页outputs/ml03/arrival-gap-pages），实际证据：XLK14:23/27/29分别7/2/6笔，QQQ14:31共10笔，全含I odd-lot，符合不产生分钟OHLC的规则。不是无成交，不归为本机丢包。更新的缺口尚待延迟窗口后复查。
+- "'`outputs/ml03/arrival-gap-audit-round3.json`、round3b.json保留实际早期查询；`arrival-gap-audit-round3-final.json`用最终分类器离线重核4个分钟。无新网络、无历史替代实时输入。
+- 原ML03 26个SIP缺柱全部从原缓存重核：仍only_ineligible_trades26，逐条与旧报告一致；`outputs/ml03/sip-gap-reaudit-round3-final.json`保留旧报告hash/新代码hash，原结果未覆盖。未重训模型或修改协议。
+- 14:52:25截面168轮询、0失败、0>30秒间断：IWM27/27、XLK22/27、XLF26/27、XLE27/27、SMH26/27；16根资格窗口12/0/1/12/8，全五0。不能把窗口可用率等同分钟覆盖率，原协议允许参考子集，核心32线门禁仍保留。
+- 14:50最新原始bar row35415与ML01 cursor35415一致；396预测/66个SPY窗口、0阈值信号，IEX每模型15分钟32VALID、30分钟9VALID。心跳正常；没用报价等其他rowid推断bar消费落后。
+- 新增11测试：分钟条件与Tape未知、严格组合、延迟边界、登记区间、来源、不可覆盖输出和不改原始状态。全量**766 passed、1 skipped、1 warning，98.88秒**；Ruff/235格式检查通过。完整日志outputs/ml03/pytest-overnight-3-final.txt（中间763版本日志亦保留）。
+- 证据入库`docs/overnight/EVIDENCE-2026-10-21-round3.json`，新简报`human/gaps-2026-10-20.md`、human入口同步。官方规则链接保存在报告与机器证据中。
+- arrival PID41060及closing PID42585锁仍持有、运行日志无错误；arrival源码hash未变；本轮没有重启任何进程。20/22日16:15账务复核及16:40收盘汇总未改。
+- 下一轮可在15:06之后运行market的同一一次性审计，用新的audit-output文件核实后续缺柱，不要覆盖已有页/记录。收盘后仍须检查实际最终报告，并在一页decision补充“迁移不能修复合法空缺”的证据。完成实际报告和提交后才ALL DONE。
+'"''')
+PY
+ git add docs/overnight/PENDING.md docs/overnight/STATE-2026-10-21.md docs/overnight/EVIDENCE-2026-10-21-round3.json human/README.md human/gaps-2026-10-20.md
+ git commit -m \"report: distinguish odd-lot gaps from collector faults\"
+ git status --short
+ git log -3 --oneline" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+[research/ml03-cross-asset-20261020 36395ec] report: distinguish odd-lot gaps from collector faults
+ 5 files changed, 77 insertions(+)
+ create mode 100644 docs/overnight/EVIDENCE-2026-10-21-round3.json
+ create mode 100644 human/gaps-2026-10-20.md
+36395ec report: distinguish odd-lot gaps from collector faults
+ffc94e6 fix: retain unknown status for tape-specific trade conditions
+9a17ff1 fix: audit missing live bars with corrected minute trade eligibility
+
+exec
+/bin/zsh -lc "date -u; git status --short; .venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+s=json.loads(Path('outputs/ml03/arrival-20261020/status.json').read_text());print('last_poll',s['last_poll'],'polls',s['polls'],'failures',len(s['failures']));print('closing_errors',Path('outputs/ml03/closing-20261020/runtime.log').stat().st_size)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+Tue Oct 20 18:53:46 UTC 2026
+last_poll 2026-10-20T18:53:39.611809+00:00 polls 175 failures 0
+closing_errors 0
+
+codex
+- ML-03 维持拒绝晋级；未追加搜索或开启 ML-04。
+- 修正成交条件分类器；4 个实时缺柱完成逐笔核验，原 ML-03 的 26 个 SIP 缺柱分类不变。
+- 实时采集持续运行：175 次轮询、0 失败；未重启冻结服务。
+- ML-01 在 14:50 已有 396 条预测、0 阈值信号；没有自动交易依据。
+- 全量 **766 passed、1 skipped**；Ruff、格式检查通过。
+- 已提交至 `36395ec`，工作区干净；[缺柱核验报告](/Users/prts/Projects/aquant/.worktrees/ml03/human/gaps-2026-10-20.md)及进度已更新。
+- 仍待实际收盘和 **16:40 ET** 汇总；未下单，未改 launchd、`.env` 或账务复核计划。
+tokens used
+3,431,681
+- ML-03 维持拒绝晋级；未追加搜索或开启 ML-04。
+- 修正成交条件分类器；4 个实时缺柱完成逐笔核验，原 ML-03 的 26 个 SIP 缺柱分类不变。
+- 实时采集持续运行：175 次轮询、0 失败；未重启冻结服务。
+- ML-01 在 14:50 已有 396 条预测、0 阈值信号；没有自动交易依据。
+- 全量 **766 passed、1 skipped**；Ruff、格式检查通过。
+- 已提交至 `36395ec`，工作区干净；[缺柱核验报告](/Users/prts/Projects/aquant/.worktrees/ml03/human/gaps-2026-10-20.md)及进度已更新。
+- 仍待实际收盘和 **16:40 ET** 汇总；未下单，未改 launchd、`.env` 或账务复核计划。

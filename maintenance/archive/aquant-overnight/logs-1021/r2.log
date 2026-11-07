@@ -1,0 +1,1977 @@
+OpenAI Codex v0.155.1
+--------
+workdir: /Users/prts/Projects/aquant
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/prts/Projects/aquant/.git] (network access enabled)
+reasoning effort: high
+reasoning summaries: none
+session id: 01a1532a-c005-7360-a2e8-859f9de0843a
+--------
+user
+[PRTS 总控夜间指令 · 第 2 轮 · 纽约 14:35（16:00 收盘）]
+用户已经睡觉。本线程由 PRTS 总控（Claude）通过 `codex exec resume` 驱动，**不会有人类回复你**。
+
+总控对目前进展的评估在 `~/PRTS/human/reports/2026-10-21-aquant-ml-assessment.md`，开工前先读一遍（只读）。
+
+按优先级推进：
+1. **完成 ML-03**，严格按你手上的指令和 `docs/ml03.json` 执行，不追加参数搜索。M2 如果没有稳定优于 M1，就明确拒绝。
+2. **收盘前**（16:00 ET 之前）：用实时数据测量参考 ETF（IWM、XLK、XLF、XLE、SMH）的 IEX 实时覆盖率和到达延迟，判断它们能否作为实时特征。保持 ML-01 实时旁路、Forward 和 Shadow 继续运行。不重启冻结服务。
+3. **收盘后**：核对 ML-01 今日提前登记的预测和到期标签，写出 2026-10-20 收盘报告。
+4. **最后**：写 `human/decision-2026-10-21.md`，一页纸的方向决策备忘，列出可选方向和各自的证据，供用户醒来决定。**不要自行开启 ML-04。**
+
+硬规则：
+- 禁止任何 Paper 或 Live 订单，禁止付费行情，禁止微信推送，不改 launchd 和 `.env`。
+- 需要人决定的事写进 `docs/overnight/PENDING.md`，然后改做不依赖它的事。
+- 每轮约 25 分钟。在对应的研究分支上小步 commit（`.git` 现在可写），不要提交到 main。进度追加到 `docs/overnight/STATE-2026-10-21.md`。
+- 结束时输出不超过 8 行的摘要。全部做完后，回复的第一行写 `ALL DONE`。
+codex
+我会先重读总控评估和人类文档变更，再核查实时测量、ML-01 标签及原服务状态。本轮继续积累参考 ETF 的连续窗口证据，不追加模型搜索，也不提前生成收盘结论。
+exec
+/bin/zsh -lc 'cat /Users/prts/PRTS/human/reports/2026-10-21-aquant-ml-assessment.md; git log -p --since=2026-10-20T18:31:00Z -- human/; git diff HEAD -- human/; git status --short; date -u; cat docs/ml03.json' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+# aquant ML 进展评估（截至 2026-10-21 03:10 JST / 10-20 14:10 ET）
+
+## 结论
+**过程很严谨，结果是一致的负面：在 SPY/QQQ 分钟级、用免费 IEX 价格特征，目前没有可用的扣成本正期望。**这个负面结论本身可信，也有价值，但继续在同一问题上加 worktree 的边际收益已经很低。今晚应该做完 ML-03、用好最后两小时的实时数据，然后停下来做一次方向决策，而不是开 ML-04。
+
+## 三轮 ML 做了什么
+
+| 轮次 | 假设 | 结果 |
+|---|---|---|
+| ML-01 成本感知 | 11 个价格特征 + Ridge/LightGBM 预测 15/30 分钟收益 | 六折中 12 次选择全部落在零预测；LightGBM 有 +$15.9 代理盈利，但只有 9 笔交易 |
+| ML-02 拉长周期 | 60/120 分钟可能累积漂移，摊薄成本 | 8 个组合 MSE 都不如零预测；最高预测分位的实际收益只有 1–1.6bp，低于约 3.2bp 的往返成本 |
+| ML-03 跨资产 | 加入 IWM/XLK/XLF/XLE/SMH 的相对强弱、相关性、广度 | **进行中**（03:05 提交特征代码，正在下载参考标的行情） |
+
+另有 ML-01 实时诊断旁路：13:08 ET 起提前登记、只读预测，截至 13:30 SPY 有 23 个合格窗口，QQQ 为 0（连续性门禁没有放宽），阈值信号 0。
+
+## 做得好的地方
+- 每轮都先预注册（固定参数、阈值、评价指标），再看结果；负面结果全部保留，没有事后挑选。
+- 因果性和防泄漏处理到位：只用决策时刻已完成的 bar，有 embargo，按交易日分组做 bootstrap。
+- 实时诊断做到了“预测先落盘、再看结果”，这是真正的前向证据。
+
+## 我看到的问题
+1. **问题本身选得太难。**SPY/QQQ 是全世界最有效的标的，分钟级、只用价格、免费 IEX 数据，几乎是散户最难找到 edge 的组合。模型换来换去都输给零预测，说明瓶颈不在模型。
+2. **用 MSE 选模型天然偏向零预测。**信号极弱时，任何非零预测都会抬高 MSE。交易上更有意义的是排序能力（IC）和最高分位扣成本后的收益。ML-02 已经报告了分位收益，这部分做得对；以后的协议可以把 IC 定为主指标。
+3. **多重比较在累积。**ML-01、02、03 加起来已有上百个组合。即使 ML-03 出现“显著”改善，也要按累积的尝试次数打折扣。
+4. **执行数据才是硬约束。**IEX 不满足 NBBO 门禁，就算预测有效，也不能形成合格的模拟成交。
+5. **基础设施拖后腿。**今天开盘的数据缺口来自 Mac 空闲睡眠和合盖（09:27–09:30、11:34–11:42 ET）。采集应该搬到 24 小时不睡的 lain，或者至少保证 Mac 不睡眠（今晚已开 caffeinate）。
+
+## 今晚的安排（总控派发，只读，不下单）
+1. 让你的 Codex 按原指令完成 ML-03，不追加参数搜索；M2 如果不稳定优于 M1，就明确拒绝。
+2. 用好收盘前最后约 2 小时：记录参考 ETF 的实时 IEX 覆盖率和到达延迟，这是 ML-03 能否实盘接入的关键事实；同时让 ML-01 实时旁路和 Shadow 继续跑到收盘。
+3. 收盘后：核对 ML-01 今日提前登记预测和实际标签，写出 10-20 收盘报告。
+4. 最后写一页“方向决策备忘”，列出可选方向供你醒来决定：
+   - 继续日内，但换数据源或换标的（需要付费数据，要你批准）；
+   - 改做日线或多日周期；
+   - 把精力转到 BigQuant 比赛线；
+   - 暂停 aquant 研究，只保留前向观察。
+
+## 待你决定
+- 是否把实时采集迁到 lain。
+- 上面的方向选择（明早看备忘录）。
+commit 6ce2ed55f3940c2acd78b495c5db37b6a7a45b8c
+Author: YijieYing <herryying30@gmail.com>
+Date:   Wed Oct 21 03:34:05 2026 +0900
+
+    report: hand off live reference audit and gated post-close review
+
+diff --git a/human/README.md b/human/README.md
+index 41fbf14..a357932 100644
+--- a/human/README.md
++++ b/human/README.md
+@@ -61,3 +61,5 @@ PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python -m scripts.research.audit_forwa
+ # BigQuant 实验预览
+ PYTHONPATH="$PWD/src" ../aquant/.venv/bin/python scripts/research/run_bigquant_experiments.py --dry-run
+ ```
++
++- 2026-10-20参考ETF实时测量（进行中，747测试通过）：[REST可见性与收盘交接](arrival-2026-10-20.md)
+diff --git a/human/arrival-2026-10-20.md b/human/arrival-2026-10-20.md
+new file mode 100644
+index 0000000..ce6ad60
+--- /dev/null
++++ b/human/arrival-2026-10-20.md
+@@ -0,0 +1,44 @@
++# 参考 ETF 实时可见性 · 2026-10-20
++
++状态：进行中。截面 2026-10-20T18:33:02.224190+00:00（纽约时间减4小时）。
++ML-03固定协议已经完成并拒绝晋级；没有新增参数搜索、ML-03预测或ML-04。
++
++## 本轮实际测量
++
++14:22 ET登记、从14:23起纳入新完成分钟；IEX REST每10秒一次有界查询，与现有WebSocket独立。
++记录原始响应、事件时间、请求/接收时间、持久化顺序、首次观察和随后修订。只接受登记之后的分钟，不补造早盘信号。
++这测量的是REST首次可见延迟，包含轮询、网络和缓存；不是WebSocket原始到达延迟。
++
++|标的|已观察分钟|成熟分钟覆盖|及时覆盖≤90秒|首次可见P50/P95秒|16根合格窗口|
++|---|---:|---:|---:|---:|---:|
++|SPY|10|8/8 (100.0%)|100.0%|6.08/9.86|0|
++|QQQ|9|8/8 (100.0%)|100.0%|4.60/9.90|0|
++|IWM|10|8/8 (100.0%)|100.0%|6.08/9.86|0|
++|XLK|7|5/8 (62.5%)|62.5%|4.35/9.68|0|
++|XLF|10|8/8 (100.0%)|100.0%|6.08/9.86|0|
++|XLE|10|8/8 (100.0%)|100.0%|6.08/9.86|0|
++|SMH|10|8/8 (100.0%)|100.0%|6.08/9.86|0|
++
++请求 60 次；失败 0 次；超过30秒轮询间断 0 次。
++五个参考ETF同时满足16根窗口：0。当前观察时长尚短，不能据此估计全天资格或证明可交易。
++缺柱保留为不可用，不能直接解释为断网；没有SIP填充IEX输入。
++
++## 原观察与后续
++
++14:31 ET原Forward连接正常，Shadow游标33362，ML-01已有47个输入窗口、282条预测；保留compromised及原缺失。
++ML-01每个模型/期限47条，不是282个独立样本；IEX当时39条有效标签、126条失效，其余尚待到期。没有NBBO支持的执行收益仍为N/A。
++原Paper收益复核仍为10月20/22日16:15 ET，当前尚未到首次执行时刻；本轮未查询或改写账户。
++本轮参考测量将在16:03 ET停止；独立收盘核验在16:40 ET执行，等ML-01的16:36延迟标签核验结束。
++收盘核验不调用网络、不改旧预测；若缺标签、版本不符或进程提前停止，输出不完整，不伪造通过。
++计划生成close-2026-10-20.md和decision-2026-10-21.md，实际生成后仍须检查和提交；当前不是收盘结果。
++
++## 产物与检查
++
++- 本截面机器记录：`outputs/ml03/arrival-round1-183307.json`。
++- 持续采集：`outputs/ml03/arrival-20261020/`；收盘程序：`outputs/ml03/closing-20261020/`。
++- 代码：`scripts/research/arrival.py`、`scripts/research/closing.py`；均无订单能力。
++- 全量747 passed、1 skipped（既有损坏参考源）；Ruff及233文件格式检查通过。
++- 新增14项测试覆盖首次记录不可覆盖、重启、缺口/迟到、同步、请求白名单、提前commit、标签路径、收盘门禁和报告恢复。
++- 两个新进程都只是本日一次性进程，不是launchd任务。既有采集、Shadow、模型、.env和授权未改。
++
++本报告是进行中截面，稍后日报提供实际完整统计。方向选择留待用户，不新增算法或交易授权。
+Tue Oct 20 18:35:15 UTC 2026
+{
+  "id": "ML-03",
+  "version": "1.0",
+  "kind": "HISTORICAL_EXPLORATION",
+  "hypothesis": "Relative technology leadership, common market covariance and observed sector breadth may distinguish continuation from idiosyncratic noise. More assets alone are not alpha.",
+  "period": ["2024-10-01", "2026-10-16"],
+  "targets": ["SPY", "QQQ"],
+  "references": ["IWM", "XLK", "XLF", "XLE", "SMH"],
+  "horizons": [15, 30],
+  "features": {
+    "base": "unchanged alpha.FEATURES",
+    "cross": ["relative5", "relative15", "correlation30", "volatility_ratio30", "panel_relative15", "panel_dispersion15", "panel_breadth15", "panel_coverage"],
+    "core": "At target bar t, exact reference timestamp t-1 minute. SPY/QQQ each need 32 contiguous valid completed IEX bars in same session. QQQ minus SPY log returns 5/15; rolling30 correlation of 1min log returns; log(QQQ sigma30/SPY sigma30). No asof/forward fill.",
+    "panel": "Each of five references needs 16 contiguous valid IEX bars ending t-1 for ret15. Available references only: mean(ret15-SPYret15), population std(ret15), fraction ret15>0, available_count/5. With zero available references the first three features are explicit neutral feature sentinels 0 and coverage=0; never synthesize prices.",
+    "receipt_gate": "Live qualification requires every used input received by decision time and completed; latest reference receipt at most90s after its end. Historical archives lack receipts/revision vintages, so event-time eligibility is optimistic and NEVER certifies realtime availability."
+  },
+  "models": {
+    "M0": "zero prediction/no trade",
+    "M1": "base price features, Ridge and LightGBM",
+    "M2": "base plus fixed cross features, Ridge and LightGBM",
+    "sample_control": "M0/M1/M2 fit/calibrate/evaluate on identical core-qualified rows; M1_ALL separately repeats base models on original eligibility, reports same common subset and excluded subset to isolate filtering effects"
+  },
+  "parameters": "Unchanged ML01 Ridge alpha100/train scaler; LGBM100trees/lr0.05/15leaves/depth4/minchild500/l2=10/maxbin63; seed2041, CPU2",
+  "walk_forward": "Unchanged ML01 126 initial train days,42 calibration days,1 whole day embargo at each boundary,63 evaluation days,expanding,6 folds. Purge overlapping label_end; do not drop whole days based on future completeness.",
+  "labels": "Unchanged ML01 SIP open(t+2+h)/open(t+2)-1 bps; common h15/h30 labels; no SIP inputs",
+  "threshold": "Fixed prediction>5.2bp AND calibrated P(y>3.2bp)>=0.55; not tuned",
+  "costs": ["zero", "base", "stress"],
+  "execution": "Reuse backtest delay2 SIP proxy, shared2000USD,1000 per symbol,one entry per symbol/day,stop0.003 target0.006; no NBBO so not executable-profit evidence",
+  "metrics": "RMSE/MAE/direction/IC/calibration/fixed calibration quantiles; paired day-mean squared-error M1 minus M2 CI; paired daily net-profit differences; all models/costs,active days,drawdown,turnover,remove-best-day; month/fold/symbol slices; common/excluded base predictions",
+  "uncertainty": "5-session block bootstrap2000 seed2041, repeated minutes and SPY/QQQ grouped; exploratory unadjusted intervals",
+  "decision": "No deployment unless stable incremental prediction and cost evidence plus actual receipt qualification. No follow-up parameter search on failure. Current day excluded from ML03 independent forward evidence.",
+  "data": "Immutable paginated SIP/IEX archive per monthly request; raw adjustment,asof=-,UTC,official NY calendar; reuse SPY/QQQ archive; never overwrite old files",
+  "orders_authorized": false
+}
+
+exec
+/bin/zsh -lc "cat src/aquant/data/market.py; sed -n '1,180p' /Users/prts/Projects/aquant/.worktrees/ml01/scripts/research/predict.py; ls /Users/prts/Projects/aquant/.worktrees/ml01/scripts/research/*forward*; .venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+s=json.loads(Path('outputs/ml03/arrival-20261020/status.json').read_text()); print('at',s['at'],'polls',s['polls'],'failures',s['failures']); print({k:{x:v[x] for x in ('mature_present','mature_expected','qualified_16_bar_windows')} for k,v in s['assets'].items()})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+"""Causal cross-asset market state; missing features never manufacture prices."""
+
+import numpy as np
+import pandas as pd
+
+REFERENCES = ("IWM", "XLK", "XLF", "XLE", "SMH")
+SYMBOLS = ("SPY", "QQQ", *REFERENCES)
+FEATURES = (
+    "relative5",
+    "relative15",
+    "correlation30",
+    "volatility_ratio30",
+    "panel_relative15",
+    "panel_dispersion15",
+    "panel_breadth15",
+    "panel_coverage",
+)
+
+
+def inputs(bars, calendar):
+    """Input is validated RTH IEX only. Exact lag1 join, never forward/asof fill."""
+    if bars.duplicated(["symbol", "t"]).any():
+        raise ValueError("Duplicate market timestamp")
+    if "feed" in bars and not bars.feed.eq("iex").all():
+        raise ValueError("Market inputs require IEX")
+    result = []
+    for day, (opening, closing) in calendar.items():
+        selected = bars[(bars.t >= opening) & (bars.t < closing)]
+        index = pd.date_range(opening, closing, freq="min", inclusive="left")
+        c = selected.pivot(index="t", columns="symbol", values="c").reindex(
+            index=index, columns=SYMBOLS
+        )
+        c = c.where(np.isfinite(c) & c.gt(0))
+        log = np.log(c)
+        r1, r5, r15 = log.diff(), log.diff(5), log.diff(15)
+        core = c[["SPY", "QQQ"]].notna().rolling(32).sum().eq(32).all(axis=1)
+        panel_valid = c[list(REFERENCES)].notna().rolling(16).sum().eq(16)
+        panel = r15[list(REFERENCES)].where(panel_valid)
+        sigma = r1[["SPY", "QQQ"]].rolling(30).std(ddof=1)
+        g = pd.DataFrame(index=index)
+        g["relative5"] = r5.QQQ - r5.SPY
+        g["relative15"] = r15.QQQ - r15.SPY
+        g["correlation30"] = r1.SPY.rolling(30).corr(r1.QQQ)
+        g["volatility_ratio30"] = np.log(sigma.QQQ / sigma.SPY)
+        count = panel.notna().sum(axis=1)
+        # Sentinel values apply to missing aggregate FEATURES, never to price arrays.
+        g["panel_relative15"] = panel.sub(r15.SPY, axis=0).mean(axis=1).fillna(0)
+        g["panel_dispersion15"] = panel.std(axis=1, ddof=0).fillna(0)
+        g["panel_breadth15"] = (panel.gt(0).sum(axis=1) / count.replace(0, np.nan)).fillna(0)
+        g["panel_coverage"] = count / len(REFERENCES)
+        for symbol in REFERENCES:
+            g[f"available_{symbol}"] = panel_valid[symbol]
+        g["cross_eligible"] = core & np.isfinite(g[list(FEATURES)]).all(axis=1)
+        g["reference_t"] = index
+        g["t"] = index + pd.Timedelta(minutes=1)
+        g["day"] = day
+        result.append(g[g.t < closing].reset_index(drop=True))
+    return pd.concat(result, ignore_index=True)
+
+
+def received(bars, instant):
+    """Explicit point-in-time receipt barrier for prospective use; no archive fallback."""
+    if "received" not in bars:
+        raise ValueError("Historical bar timestamps cannot establish live receipt eligibility")
+    if "feed" not in bars or not bars.feed.eq("iex").all():
+        raise ValueError("Live market state requires explicit IEX provenance")
+    instant = pd.Timestamp(instant)
+    if instant.tzinfo is None:
+        raise ValueError("Timezone-aware decision time required")
+    data = bars.copy()
+    data["received"] = pd.to_datetime(data.received, utc=True)
+    end = data.t + pd.Timedelta(minutes=1)
+    latency = (data.received - end).dt.total_seconds()
+    return data.loc[(data.received <= instant) & (end <= instant) & latency.between(0, 90)].copy()
+#!/usr/bin/env python3
+"""Canonical research prediction entry point."""
+
+from aquant.cli import predict_main
+
+if __name__ == "__main__":
+    predict_main()
+/Users/prts/Projects/aquant/.worktrees/ml01/scripts/research/audit_forward.py
+at 2026-10-20T18:35:33.204389+00:00 polls 74 failures []
+{'SPY': {'mature_present': 11, 'mature_expected': 11, 'qualified_16_bar_windows': 0}, 'QQQ': {'mature_present': 10, 'mature_expected': 11, 'qualified_16_bar_windows': 0}, 'IWM': {'mature_present': 11, 'mature_expected': 11, 'qualified_16_bar_windows': 0}, 'XLK': {'mature_present': 8, 'mature_expected': 11, 'qualified_16_bar_windows': 0}, 'XLF': {'mature_present': 11, 'mature_expected': 11, 'qualified_16_bar_windows': 0}, 'XLE': {'mature_present': 11, 'mature_expected': 11, 'qualified_16_bar_windows': 0}, 'SMH': {'mature_present': 11, 'mature_expected': 11, 'qualified_16_bar_windows': 0}}
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import sqlite3,json
+from pathlib import Path
+p=Path('/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020')
+m=json.loads((p/'manifest.json').read_text()); print(json.dumps({k:v for k,v in m.items() if k not in ['models']},indent=2))
+with sqlite3.connect(f'file:{p}/prediction.sqlite3?mode=ro',uri=True) as db:
+ print('tables',db.execute('SELECT name,sql FROM sqlite_master WHERE type=\"table\"').fetchall())
+ for name in ['predictions','labels','commits']:
+  print(name,db.execute(f'SELECT * FROM {name} LIMIT 1').fetchone())
+print('sip_counts',len(list((p/'sip/final').glob('*.json'))))
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+{
+  "calendar_hash": "adf9f4eadbd94502ce3b400ade0d52f05c9e147f7760bd28c416239b661bc085",
+  "closing": "2026-10-20T16:00:00-04:00",
+  "code_hashes": {
+    "docs/ml01-forward.json": "9303ac2121c7c4b24135de5922ccaab530eb8eaa875090f9f096e285491958c9",
+    "src/aquant/data/alpha.py": "0c02250fec13bcaa52a3bc406393b08f3bac03b4467373ee58a95fe37b2821ae",
+    "src/aquant/models/tabular.py": "ba845b2fbaefebc59c354b0600873fcc098ddd31b84df6e28a81140c6fe3d86e",
+    "src/aquant/prediction.py": "3ea5ff0a733b1cdd994251d28d14bec547a30afc099f5f654aa9ed35de379f75",
+    "src/aquant/signals.py": "f973a38f0f0da16ed5fa48d954b9c0ef34d75e79cdd7a72fdff07cbf9d758857"
+  },
+  "day": "2026-10-20",
+  "frozen_at": "2026-10-20T17:07:12.922823+00:00",
+  "git_commit": "3c6edcdf4eb82609fcfda4af700de048738c50f2",
+  "hypothetical_pnl": null,
+  "kind": "DIAGNOSTIC_FORWARD_OBSERVATION",
+  "opening": "2026-10-20T09:30:00-04:00",
+  "orders_authorized": false,
+  "rating": "NO_DEMONSTRATED_ALPHA",
+  "source": "/Users/prts/Projects/aquant/outputs/research/forward_observations/state.sqlite3",
+  "training_commit": "a4f77d318eae72caba3ac804ba08c55666491a1e"
+}
+tables [('state', 'CREATE TABLE state (id INTEGER PRIMARY KEY,payload TEXT NOT NULL)'), ('bars', 'CREATE TABLE bars (seq INTEGER PRIMARY KEY,payload TEXT NOT NULL)'), ('decisions', 'CREATE TABLE decisions (seq INTEGER PRIMARY KEY,payload TEXT NOT NULL)'), ('predictions', 'CREATE TABLE predictions (id TEXT PRIMARY KEY,payload TEXT NOT NULL)'), ('commits', 'CREATE TABLE commits (seq INTEGER PRIMARY KEY,at TEXT NOT NULL)'), ('labels', 'CREATE TABLE labels (id TEXT,feed TEXT,payload TEXT NOT NULL,\n                                               PRIMARY KEY(id,feed))')]
+predictions ('24080:fold5-M0-h15', '{"completed_at": "2026-10-20T17:08:10.725339+00:00", "cost_probability": 0.3793057459736574, "entry_time": "2026-10-20T17:09:00+00:00", "execution_rejection": "no_eligible_nbbo", "features": {"deviation20": -0.0001326774039975831, "from_open": 0.003931197513288964, "missing60": 0.0, "qqq": 0.0, "range15": 0.0009236613415205761, "ret15": -0.00048122883359295534, "ret30": -0.001468973088158581, "ret5": 0.0002211828084921778, "sigma": 0.00027158926987904796, "time_cos": -0.9378423479332044, "time_sin": -0.34706156575330305}, "git_commit": "3c6edcdf4eb82609fcfda4af700de048738c50f2", "horizon": 15, "input_hash": "a3c90c539530844a9c748c756ce2e85c4ca6f7bd67d92d5b66feb351bbb6677a", "input_ids": [17, 17296, 17411, 17524, 17640, 17757, 17871, 17985, 18102, 18219, 18331, 18448, 18566, 18684, 18800, 18915, 19031, 19148, 19263, 19380, 19497, 19612, 19727, 19841, 19958, 20074, 20187, 20301, 20418, 20534, 20648, 20761, 20875, 20992, 21107, 21221, 21333, 21451, 21565, 21684, 21795, 21907, 22018, 22130, 22240, 22354, 22470, 22587, 22705, 22820, 22937, 23050, 23166, 23282, 23397, 23514, 23627, 23740, 23854, 23968, 24080], "model": "M0", "model_hash": "be3b7a6d0ba9d50aa79315b5a3a6f3f220cdb654947a61076a5822ba23e40509", "model_id": "fold5-M0-h15", "pnl": null, "prediction_bps": 0.0, "received_at": "2026-10-20T17:08:00.247278Z", "source_sequence": 24080, "symbol": "SPY", "t": "2026-10-20T17:07:00+00:00", "target_time": "2026-10-20T17:24:00+00:00", "threshold_signal": false}')
+labels ('24080:fold5-M0-h15', 'iex', '{"actual_bps": 13.0773384688454, "evaluated_at": "2026-10-20T17:25:01.082333+00:00", "feed": "iex", "pnl": null, "source": "original_realtime_receipts", "status": "VALID"}')
+commits (17, '2026-10-20T17:08:10.621672+00:00')
+sip_counts 150
+
+exec
+/bin/zsh -lc "rg -n '"'^def |input_hash|input_ids|features|hash|received_at'"' /Users/prts/Projects/aquant/.worktrees/ml01/src/aquant/prediction.py; sed -n '90,250p' /Users/prts/Projects/aquant/.worktrees/ml01/src/aquant/prediction.py; sed -n '250,390p' /Users/prts/Projects/aquant/.worktrees/ml01/src/aquant/prediction.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+5:import hashlib
+32:def now():
+36:def encode(value):
+40:def digest(path):
+41:    return hashlib.sha256(path.read_bytes()).hexdigest()
+44:def freeze(path, source, experiment, calendar):
+46:    hashes = {}
+51:        hashes[name] = digest(ROOT / name)
+60:            if digest(file) != record["model_hash"]:
+61:                raise ValueError("Model hash mismatch")
+88:        "code_hashes": hashes,
+89:        "calendar_hash": digest(calendar),
+125:                "manifest_hash": hashlib.sha256(encode(manifest).encode()).hexdigest(),
+130:        if self.s["manifest_hash"] != hashlib.sha256(encode(manifest).encode()).hexdigest():
+211:                "received_at": received,
+228:                features = alpha.inputs(frame, self.calendar).iloc[[-1]]
+229:                if not bool(features.eligible.iloc[0]):
+239:                    input_hash = hashlib.sha256(encode(prefix).encode()).hexdigest()
+241:                        score, raw, probability = predict(self.bundles[item["id"]], features)
+250:                            "received_at": received,
+254:                            "model_hash": item["sha256"],
+257:                            "input_hash": input_hash,
+258:                            "input_ids": ids,
+259:                            "features": features[list(alpha.FEATURES)].iloc[0].to_dict(),
+283:                        "received_at": received,
+397:def run(path):
+399:    for name, expected in m["code_hashes"].items():
+        "training_commit": report["intent"]["git_commit"],
+        "rating": "NO_DEMONSTRATED_ALPHA",
+        "hypothetical_pnl": None,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x") as f:
+        f.write(encode(manifest))
+    return manifest
+
+
+class Recorder:
+    def __init__(self, path, manifest, bundles=None, clock=now):
+        self.m, self.clock = manifest, clock
+        if manifest["orders_authorized"]:
+            raise ValueError("Predictions never authorize orders")
+        self.db = sqlite3.connect(path)
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("PRAGMA synchronous=FULL")
+        self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY,payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS bars (seq INTEGER PRIMARY KEY,payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS decisions (seq INTEGER PRIMARY KEY,payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS predictions (id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS commits (seq INTEGER PRIMARY KEY,at TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS labels (id TEXT,feed TEXT,payload TEXT NOT NULL,
+                                               PRIMARY KEY(id,feed));
+        """)
+        old = self.db.execute("SELECT payload FROM state WHERE id=1").fetchone()
+        self.s = (
+            json.loads(old[0])
+            if old
+            else {
+                "cursor": 0,
+                "started_at": self.clock(),
+                "heartbeat": None,
+                "manifest_hash": hashlib.sha256(encode(manifest).encode()).hexdigest(),
+                "interruptions": [],
+                "online_seconds": 0.0,
+            }
+        )
+        if self.s["manifest_hash"] != hashlib.sha256(encode(manifest).encode()).hexdigest():
+            raise ValueError("Restart manifest mismatch")
+        self.calendar = {
+            manifest["day"]: (pd.Timestamp(manifest["opening"]), pd.Timestamp(manifest["closing"]))
+        }
+        self.bundles = bundles or {}
+        if bundles is None:
+            for item in manifest["models"]:
+                path = Path(item["path"])
+                if digest(path) != item["sha256"]:
+                    raise ValueError("Model changed")
+                self.bundles[item["id"]] = joblib.load(path)
+        self.accepted = {}
+        for (payload,) in self.db.execute("SELECT payload FROM bars ORDER BY seq"):
+            bar = json.loads(payload)
+            if bar["valid"]:
+                self.accepted.setdefault(bar["symbol"], {})[bar["t"]] = bar
+        self.persist()
+
+    def persist(self):
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO state VALUES(1,?)", (encode(self.s),))
+
+    def tick(self):
+        instant = self.clock()
+        if self.s["heartbeat"]:
+            gap = (pd.Timestamp(instant) - pd.Timestamp(self.s["heartbeat"])).total_seconds()
+            if 0 <= gap <= 15:
+                self.s["online_seconds"] += gap
+            else:
+                self.s["interruptions"].append({"from": self.s["heartbeat"], "to": instant})
+        self.s["heartbeat"] = instant
+        self.persist()
+
+    def consume(self, rows):
+        for seq, identity, day, received, kind, payload in rows:
+            if seq <= self.s["cursor"]:
+                continue
+            with self.db:
+                if day == self.m["day"]:
+                    self.bar(seq, identity, received, kind, json.loads(payload))
+                self.s["cursor"] = seq
+                self.db.execute("INSERT OR REPLACE INTO state VALUES(1,?)", (encode(self.s),))
+            # Separate durable receipt: crash before this means no qualified forward claim.
+            with self.db:
+                self.db.execute("INSERT OR IGNORE INTO commits VALUES(?,?)", (seq, self.clock()))
+
+    def bar(self, seq, identity, received, kind, message):
+        e = message.get("event", {})
+        instant = pd.Timestamp(self.clock())
+        denied, bar = None, None
+        try:
+            t, receipt = pd.Timestamp(e["t"]), pd.Timestamp(received)
+            symbol = e["S"]
+            opening, closing = self.calendar[self.m["day"]]
+            values = {k: float(e[k]) for k in ("o", "h", "l", "c", "v")}
+            if (
+                t.tzinfo is None
+                or receipt.tzinfo is None
+                or t != t.floor("min")
+                or symbol not in ("SPY", "QQQ")
+                or not opening <= t < closing
+                or not all(math.isfinite(v) and v > 0 for v in values.values())
+                or values["h"] < max(values["o"], values["c"], values["l"])
+                or values["l"] > min(values["o"], values["c"], values["h"])
+            ):
+                raise ValueError("Invalid bar")
+            if receipt > instant:
+                denied = "future_receipt"
+            elif kind != "b":
+                denied = "revision"
+            elif message.get("feed") != "iex" or message.get("source") != "iex_websocket":
+                denied = "not_realtime_iex"
+            elif not 0 <= (receipt - t - pd.Timedelta(minutes=1)).total_seconds() <= 90:
+                denied = "unfinished_or_stale_receipt"
+            elif t.isoformat() in self.accepted.get(symbol, {}):
+                denied = "duplicate_or_revision"
+            bar = values | {
+                "t": t.isoformat(),
+                "symbol": symbol,
+                "day": self.m["day"],
+                "received_at": received,
+                "source_sequence": seq,
+                "source_id": identity,
+                "valid": denied is None,
+                "reason": denied,
+            }
+            self.db.execute("INSERT INTO bars VALUES(?,?)", (seq, encode(bar)))
+            if denied is None:
+                self.accepted.setdefault(symbol, {})[bar["t"]] = bar
+            if receipt < pd.Timestamp(self.m["frozen_at"]):
+                denied = denied or "seed_only_before_registration"
+            elif not 0 <= (instant - receipt).total_seconds() <= 15:
+                denied = denied or "processing_stale_or_future"
+            if denied is None:
+                prefix = [b for k, b in self.accepted[symbol].items() if pd.Timestamp(k) <= t]
+                frame = pd.DataFrame(prefix).sort_values("t")
+                frame["t"] = pd.to_datetime(frame.t, utc=True)
+                features = alpha.inputs(frame, self.calendar).iloc[[-1]]
+                if not bool(features.eligible.iloc[0]):
+                    denied = "input_eligibility"
+                else:
+                    window = frame[frame.t >= t - pd.Timedelta(minutes=59)]
+                    ids = sorted(
+                        set(
+                            window.source_sequence.tolist()
+                            + frame[frame.t == opening].source_sequence.tolist()
+                        )
+                    )
+                    input_hash = hashlib.sha256(encode(prefix).encode()).hexdigest()
+                    for item in self.m["models"]:
+                        score, raw, probability = predict(self.bundles[item["id"]], features)
+                        completed = self.clock()
+                        if pd.Timestamp(completed) >= t + pd.Timedelta(minutes=2):
+                            denied = "prediction_after_entry_proxy"
+                            break
+                        record = {
+                            "source_sequence": seq,
+                            "symbol": symbol,
+                            "t": bar["t"],
+                            "received_at": received,
+                            "received_at": received,
+                            "completed_at": completed,
+                            "model": item["model"],
+                            "horizon": item["horizon"],
+                            "model_hash": item["sha256"],
+                            "model_id": item["id"],
+                            "git_commit": self.m["git_commit"],
+                            "input_hash": input_hash,
+                            "input_ids": ids,
+                            "features": features[list(alpha.FEATURES)].iloc[0].to_dict(),
+                            "prediction_bps": float(score[0]),
+                            "cost_probability": float(probability[0]),
+                            "threshold_signal": bool(score[0] > 5.2 and probability[0] >= 0.55),
+                            "execution_rejection": "no_eligible_nbbo",
+                            "pnl": None,
+                            "entry_time": (t + pd.Timedelta(minutes=2)).isoformat(),
+                            "target_time": (
+                                t + pd.Timedelta(minutes=2 + item["horizon"])
+                            ).isoformat(),
+                        }
+                        self.db.execute(
+                            "INSERT INTO predictions VALUES(?,?)",
+                            (f"{seq}:{item['id']}", encode(record)),
+                        )
+        except (KeyError, ValueError, TypeError, OverflowError):
+            denied = "malformed_or_model_error"
+        self.db.execute(
+            "INSERT INTO decisions VALUES(?,?)",
+            (
+                seq,
+                encode(
+                    {
+                        "reason": denied,
+                        "received_at": received,
+                        "processed_at": self.clock(),
+                        "event_time": e.get("t"),
+                        "source_id": identity,
+                        "kind": kind,
+                        "raw": message if bar is None or denied == "revision" else None,
+                    }
+                ),
+            ),
+        )
+
+    def evaluate(self):
+        instant = pd.Timestamp(self.clock())
+        closing = pd.Timestamp(self.m["closing"])
+        for key, payload, committed in self.db.execute(
+            "SELECT p.id,p.payload,c.at FROM predictions p LEFT JOIN commits c ON "
+            "c.seq=json_extract(p.payload,'$.source_sequence') WHERE NOT EXISTS "
+            "(SELECT 1 FROM labels l WHERE l.id=p.id AND l.feed='iex')"
+        ).fetchall():
+            p = json.loads(payload)
+            t, entry, target = map(pd.Timestamp, (p["t"], p["entry_time"], p["target_time"]))
+            status, value = None, None
+            if not committed or pd.Timestamp(committed) >= entry:
+                status = "INVALID_COMMIT"
+            elif target + pd.Timedelta(minutes=1) > closing:
+                status = "INVALID_SESSION"
+            elif instant < target + pd.Timedelta(minutes=1):
+                continue
+            else:
+                bars = self.accepted.get(p["symbol"], {})
+                expected = pd.date_range(t, target, freq="min")
+                values = [bars.get(x.isoformat()) for x in expected]
+                if all(values):
+                    status = "VALID"
+                    value = (
+                        bars[target.isoformat()]["o"] / bars[entry.isoformat()]["o"] - 1
+                    ) * 10000
+                elif instant >= target + pd.Timedelta(minutes=3):
+                    status = "INVALID_MISSING_OR_TIMEOUT"
+            if status:
+                with self.db:
+                    self.db.execute(
+                        "INSERT INTO labels VALUES(?,?,?)",
+                        (
+                            key,
+                            "iex",
+                            encode(
+                                {
+                                    "status": status,
+                                    "actual_bps": value,
+                                    "evaluated_at": self.clock(),
+                                    "feed": "iex",
+                                    "source": "original_realtime_receipts",
+                                    "pnl": None,
+                                }
+                            ),
+                        ),
+                    )
+
+    def report(self):
+        output = {
+            "at": self.clock(),
+            "kind": self.m["kind"],
+            "rating": self.m["rating"],
+            "started_at": self.s["started_at"],
+            "frozen_at": self.m["frozen_at"],
+            "heartbeat": self.s["heartbeat"],
+            "cursor": self.s["cursor"],
+            "online_seconds": self.s["online_seconds"],
+            "orders_authorized": False,
+            "pnl": None,
+            "rejections": {},
+            "models": {},
+            "interruptions": self.s["interruptions"],
+        }
+        output["rejections"] = dict(
+            Counter(
+                (json.loads(p)["reason"] or "accepted")
+                for (p,) in self.db.execute("SELECT payload FROM decisions")
+            )
+        )
+        rows = self.db.execute(
+            "SELECT p.id,p.payload,l.payload FROM predictions p LEFT JOIN labels l "
+            "ON p.id=l.id AND l.feed='iex'"
+        ).fetchall()
+        for item in self.m["models"]:
+            selected = [
+                (json.loads(p), json.loads(label) if label else {"status": "PENDING"})
+                for _, p, label in rows
+                if json.loads(p)["model_id"] == item["id"]
+            ]
+            valid = [(p, label) for p, label in selected if label["status"] == "VALID"]
+            x = np.array([p["prediction_bps"] for p, _ in valid])
+            y = np.array([label["actual_bps"] for _, label in valid])
+            output["models"][item["id"]] = {
+                "predictions": len(selected),
+                "labels": dict(Counter(label["status"] for _, label in selected)),
+                "first_prediction": min((p["completed_at"] for p, _ in selected), default=None),
+                "last_prediction": max((p["completed_at"] for p, _ in selected), default=None),
+                "threshold_signals": sum(p["threshold_signal"] for p, _ in selected),
+                "rmse_bps": float(np.sqrt(np.mean((x - y) ** 2))) if len(x) else None,
+                "direction_accuracy": float((np.sign(x[x != 0]) == np.sign(y[x != 0])).mean())
+                if (x != 0).any()
+                else None,
+                "correlation": float(np.corrcoef(x, y)[0, 1])
+                if len(x) > 2 and x.std() > 0 and y.std() > 0
+                else None,
+            }
+
+exec
+/bin/zsh -lc "sed -n '1,48p' /Users/prts/Projects/aquant/.worktrees/ml01/src/aquant/prediction.py; sed -n '1,140p' src/aquant/data/alpha.py; cat /Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020/sip/status.json 2>/dev/null | head -12; rg -n 'def status|compromised|interrupt' src/aquant/forward.py | head -20" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+"""One-session ML diagnostic sidecar. SQLite input only; no network or broker client."""
+
+import argparse
+import fcntl
+import hashlib
+import json
+import math
+import sqlite3
+import subprocess
+import time
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+
+from aquant.data import alpha
+from aquant.models.tabular import predict
+
+ROOT = Path(__file__).resolve().parents[2]
+FILES = (
+    "src/aquant/prediction.py",
+    "src/aquant/data/alpha.py",
+    "src/aquant/models/tabular.py",
+    "src/aquant/signals.py",
+    "docs/ml01-forward.json",
+)
+
+
+def now():
+    return datetime.now(UTC).isoformat()
+
+
+def encode(value):
+    return json.dumps(value, sort_keys=True, allow_nan=False)
+
+
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def freeze(path, source, experiment, calendar):
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    hashes = {}
+    for name in FILES:
+        body = (ROOT / name).read_bytes()
+"""IEX causal tabular alpha inputs, separately joined to SIP research labels."""
+
+import hashlib
+
+import numpy as np
+import pandas as pd
+
+from aquant import signals
+from aquant.data.splits import Partition
+
+FEATURES = (
+    "ret5",
+    "ret15",
+    "ret30",
+    "sigma",
+    "deviation20",
+    "range15",
+    "from_open",
+    "time_sin",
+    "time_cos",
+    "qqq",
+    "missing60",
+)
+
+
+def inputs(iex, calendar):
+    groups = []
+    for (_, day), group in signals.features(iex, calendar).groupby(["symbol", "day"]):
+        g = group.sort_values("t").copy()
+        opening, closing = calendar[day]
+        c = g.c.astype(float)
+        for horizon in (5, 15, 30):
+            g[f"ret{horizon}"] = np.log(c / c.shift(horizon))
+        g["deviation20"] = c / c.rolling(20).mean() - 1
+        g["range15"] = (g.h.rolling(15).max() - g.l.rolling(15).min()) / c
+        observed_open = g.loc[g.t == opening, "o"]
+        # Zero is only a missing-feature placeholder on ineligible rows, never a price.
+        g["open_known"] = len(observed_open) == 1
+        g["from_open"] = c / float(observed_open.iloc[0]) - 1 if len(observed_open) else 0.0
+        offset = (g.t - opening).dt.total_seconds() / 60
+        phase = offset / ((closing - opening).total_seconds() / 60)
+        g["time_sin"], g["time_cos"] = np.sin(2 * np.pi * phase), np.cos(2 * np.pi * phase)
+        g["qqq"] = (g.symbol == "QQQ").astype(float)
+        counts = pd.Series(1.0, index=pd.DatetimeIndex(g.t)).rolling("60min").sum().to_numpy()
+        g["missing60"] = 1 - counts / np.minimum(offset.to_numpy() + 1, 60)
+        g["eligible"] = (
+            g.window_valid
+            & g.open_known
+            & (offset >= 31)
+            & (g.t < closing - pd.Timedelta(minutes=35))
+        )
+        g["eligible"] &= np.isfinite(g[list(FEATURES)]).all(axis=1)
+        g["datetime"] = g.t + pd.Timedelta(minutes=1)
+        groups.append(g)
+    return pd.concat(groups, ignore_index=True)
+
+
+def targets(sip):
+    groups = []
+    for _, group in sip.groupby(["symbol", "day"]):
+        g = group.sort_values("t").copy()
+        for horizon in (15, 30):
+            exit_shift = horizon + 2
+            continuous = (g.t.shift(-exit_shift) - g.t).eq(pd.Timedelta(minutes=exit_shift))
+            g[f"y{horizon}"] = ((g.o.shift(-exit_shift) / g.o.shift(-2) - 1) * 10000).where(
+                continuous
+            )
+            g[f"end{horizon}"] = g.t.shift(-exit_shift).where(continuous)
+        groups.append(g[["t", "symbol", "y15", "y30", "end15", "end30"]])
+    return pd.concat(groups, ignore_index=True)
+
+
+def build(iex, sip, calendar):
+    feature = inputs(iex, calendar)
+    data = feature.merge(targets(sip), on=["t", "symbol"], how="left", validate="one_to_one")
+    data["label_end"] = data.end30 + pd.Timedelta(minutes=1)
+    data["label_available"] = data[["y15", "y30"]].notna().all(axis=1)
+    data["input_feed"], data["label_feed"] = "iex", "sip"
+    data["latency_known"] = False  # archive has no real receipt timestamps
+    return data
+
+
+def folds(days, *, train=126, calibration=42, embargo=1, evaluation=63):
+    if min(train, calibration, embargo, evaluation) < 1 or days != sorted(set(days)):
+        raise ValueError("Chronological unique trading days and positive windows required")
+    for start in range(train + calibration + 2 * embargo, len(days), evaluation):
+        train_end = start - calibration - 2 * embargo
+        calibration_start = train_end + embargo
+        calibration_end = start - embargo
+        yield {
+            "train": days[:train_end],
+            "calibration": days[calibration_start:calibration_end],
+            "evaluation": days[start : start + evaluation],
+            "embargo": days[train_end:calibration_start] + days[calibration_end:start],
+        }
+
+
+def partition(data, days, calendar, name):
+    p = Partition(name, calendar[days[0]][0], calendar[days[-1]][1])
+    return (
+        data.loc[data.day.isin(days) & p.mask(data) & data.eligible & data.label_available]
+        .sort_values(["t", "symbol"])
+        .copy()
+    )
+
+
+def fingerprint(frame):
+    return hashlib.sha256(frame.to_json(date_format="iso").encode()).hexdigest()
+{"at": "2026-10-20T18:32:10.040839+00:00", "request_started_at": "2026-10-20T18:32:08.591707+00:00", "feed": "sip", "available_end": "2026-10-20T18:16:07.591707+00:00", "status": "AUDITED", "metrics": {"fold5-M0-h15": {"valid": 25, "rmse_bps": 7.467327487539007, "direction_accuracy": null, "correlation": null}, "fold5-M0-h30": {"valid": 25, "rmse_bps": 8.959659145841451, "direction_accuracy": null, "correlation": null}, "fold5-M1-h15": {"valid": 25, "rmse_bps": 6.490700137509954, "direction_accuracy": 0.8, "correlation": 0.8538623052441983}, "fold5-M1-h30": {"valid": 25, "rmse_bps": 8.712422179794768, "direction_accuracy": 0.64, "correlation": 0.41127793305311966}, "fold5-M2-h15": {"valid": 25, "rmse_bps": 7.261945359027999, "direction_accuracy": 0.84, "correlation": -0.43632681063124723}, "fold5-M2-h30": {"valid": 25, "rmse_bps": 8.82145119432191, "direction_accuracy": 0.88, "correlation": 0.3043872860585257}}, "canonical_status": {"VALID": 150}, "note": "First terminal audit immutable; later snapshots retain revisions, never change predictions", "pnl": null, "orders_authorized": false}184:            "compromised": instant > self.opening.to_pydatetime(),
+211:        elif self.s["compromised"]:
+237:            self.s["compromised"] = True
+430:        if self.s["compromised"] or self.s["prior_unresolved"] or self.s["halted"]:
+432:            gate["reasons"].append("session_interrupted_or_prior_unresolved")
+527:                    self.s["compromised"]
+627:                and not s["compromised"]
+929:def status():
+953:                    for k in ("day", "heartbeat", "connected", "complete", "compromised")
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import sqlite3
+p='/Users/prts/Projects/aquant/outputs/research/forward_observations/state.sqlite3'
+with sqlite3.connect(f'file:{p}?mode=ro',uri=True) as d:
+ print(d.execute(\"SELECT sql FROM sqlite_master WHERE name='observations'\").fetchone()[0])
+ print(d.execute(\"SELECT * FROM observations WHERE seq=24080\").fetchone())
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ exited 1 in 0ms:
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+sqlite3.OperationalError: no such column: seq
+CREATE TABLE observations (id TEXT PRIMARY KEY, day TEXT NOT NULL, received TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL)
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import sqlite3
+with sqlite3.connect('file:/Users/prts/Projects/aquant/outputs/research/forward_observations/state.sqlite3?mode=ro',uri=True) as d:
+ print(d.execute('SELECT rowid,* FROM observations WHERE rowid=24080').fetchone())
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+(24080, 'de52e14b129346cf51b3974ec961f517bbd7e649098e23bfd60d2e7e1df350f6', '2026-10-20', '2026-10-20T17:08:00.247278Z', 'b', '{"event": {"T": "b", "S": "SPY", "o": 768.73, "h": 768.73, "l": 768.67, "c": 768.68, "v": 689, "t": "2026-10-20 17:07:00+00:00", "n": 11, "vw": 768.680933}, "feed": "iex", "source": "iex_websocket", "received_at": "2026-10-20T17:08:00.247278Z", "regular_session_receipt": true}')
+
+codex
+参考 ETF 已开始出现差异：XLK 仍缺柱，QQQ 也出现一个缺失分钟；这会影响连续输入窗口，单看分钟覆盖率不够。ML-03 结论保持拒绝晋级。我会补强收盘核验：将 ML-01 已登记的输入 Hash、特征值和接收时刻逐项对回原始实时记录，不改模型或预测。
+exec
+/bin/zsh -lc "touch outputs/ml03/closing-20261020/STOP; sed -n '1,70p' src/aquant/signals.py; git status --short" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+"""Fixed intraday price hypotheses; no broker, orders, or future labels."""
+
+import numpy as np
+import pandas as pd
+
+VERSION = "1.0"
+NAMES = ("momentum", "reversion", "compression")
+
+
+def features(frame, calendar):
+    """Local rolling inputs only. A missing minute invalidates the next 32-bar window."""
+    groups = []
+    for (_symbol, day), group in frame.groupby(["symbol", "day"], sort=True):
+        g = group.sort_values("t").copy()
+        if g.t.duplicated().any():
+            raise ValueError("Duplicate signal timestamp")
+        opening, closing = calendar[day]
+        if not ((g.t >= opening) & (g.t < closing)).all():
+            raise ValueError("Signals require regular session bars")
+        c = g.c.astype(float)
+        prices = g[["o", "h", "l", "c", "v"]].astype(float)
+        valid = (
+            np.isfinite(prices).all(axis=1)
+            & prices.gt(0).all(axis=1)
+            & (g.h >= g[["o", "c", "l"]].max(axis=1))
+            & (g.l <= g[["o", "c", "h"]].min(axis=1))
+        )
+        g["window_valid"] = valid.rolling(32).sum().eq(32) & (g.t - g.t.shift(31)).eq(
+            pd.Timedelta(minutes=31)
+        )
+        g["sigma"] = np.log(c / c.shift()).shift().rolling(30).std(ddof=0)
+        g["time_valid"] = (g.t >= opening + pd.Timedelta(minutes=30)) & (
+            g.t < closing - pd.Timedelta(minutes=35)
+        )
+        g["vol_valid"] = g.sigma.between(0.0001, 0.003)
+        g["z"] = np.log(c / c.shift(15)) / (g.sigma * np.sqrt(15))
+        g["momentum"] = (g.z >= 1.5) & (c > c.shift(5)) & (c > c.shift(30))
+        mean = c.shift().rolling(20).mean()
+        std = c.shift().rolling(20).std(ddof=0)
+        g["reversion"] = (c <= mean - 2 * std) & (c > c.shift())
+        high = g.h.shift().rolling(15).max()
+        low = g.l.shift().rolling(15).min()
+        earlier = g.h.shift(16).rolling(15).max() - g.l.shift(16).rolling(15).min()
+        g["compression"] = ((high - low) <= 0.6 * earlier) & (c > high)
+        g["regime"] = np.select([g.sigma < 0.0002, g.sigma < 0.0005], ["low", "middle"], "high")
+        hour = g.t.dt.tz_convert("America/New_York").dt.hour
+        g["band"] = np.select([hour < 11, hour < 14], ["before11", "11to14"], "after14")
+        groups.append(g)
+    return pd.concat(groups, ignore_index=True) if groups else pd.DataFrame()
+
+
+def reason(row):
+    for column in ("window_valid", "time_valid", "vol_valid"):
+        if not bool(row[column]):
+            return column
+    return None
+
+
+def events(data, name):
+    """Keep every raw trigger, including rejected triggers; cooldown is causal."""
+    if name not in NAMES:
+        raise ValueError("Unknown hypothesis")
+    records = []
+    for (_, _), group in data.groupby(["symbol", "day"]):
+        previous = None
+        for row in group[group[name]].to_dict("records"):
+            denied = reason(row)
+            if (
+                denied is None
+                and previous is not None
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('scripts/research/closing.py');s=p.read_text().replace('from aquant import history','from aquant import history\\nfrom aquant.data import alpha')
+pos=s.index('\\ndef build(')
+func='''
+def input_proof(p, all_bars, sources, manifest):
+    \"\"\"Rebuild the original causal prefix, never a corrected/historical archive.\"\"\"
+    try:
+        t, completed = pd.Timestamp(p[\"t\"]), pd.Timestamp(p[\"completed_at\"])
+        prefix = [
+            b for b in all_bars
+            if b[\"valid\"] and b[\"source_sequence\"] <= p[\"source_sequence\"]
+            and b[\"symbol\"] == p[\"symbol\"] and pd.Timestamp(b[\"t\"]) <= t
+        ]
+        encoded = json.dumps(prefix, sort_keys=True, allow_nan=False)
+        if hashlib.sha256(encoded.encode()).hexdigest() "'!= p["input_hash"]:
+            return "input_hash_mismatch"
+        if p["git_commit"] != manifest["git_commit"]:
+            return "input_version_mismatch"
+        for b in prefix:
+            original = sources.get(b["source_sequence"])
+            if not original:
+                return "input_original_missing"
+            body, event = original["body"], original["body"].get("event", {})
+            if (
+                original["kind"] != "b" or body.get("feed") != "iex"
+                or body.get("source") != "iex_websocket"
+                or original["id"] != b["source_id"]
+                or original["day"] != b["day"]
+                or original["received"] != b["received_at"]
+                or event.get("S") != b["symbol"]
+                or pd.Timestamp(event["t"]) != pd.Timestamp(b["t"])
+                or any(float(event[k]) != b[k] for k in ("o", "h", "l", "c", "v"))
+            ):
+                return "input_original_mismatch"
+            receipt = pd.Timestamp(b["received_at"])
+            end = pd.Timestamp(b["t"]) + pd.Timedelta(minutes=1)
+            if receipt > completed or not 0 <= (receipt - end).total_seconds() <= 90:
+                return "input_receipt_invalid"
+        if not 0 <= (completed - pd.Timestamp(p["received_at"])).total_seconds() <= 15:
+            return "input_processing_late"
+        opening, close = map(pd.Timestamp, (manifest["opening"], manifest["closing"]))
+        frame = pd.DataFrame(prefix).sort_values("t")
+        frame["t"] = pd.to_datetime(frame.t, utc=True)
+        ids = sorted(set(frame.loc[
+            (frame.t >= t - pd.Timedelta(minutes=59)) | frame.t.eq(opening), "source_sequence"
+        ]))
+        if ids != p["input_ids"]:
+            return "input_ids_mismatch"
+        actual = alpha.inputs(frame, {manifest["day"]: (opening, close)}).iloc[-1]
+        if not actual.eligible or actual.t != t:
+            return "input_not_eligible"
+        if set(p["features"]) != set(alpha.FEATURES) or not all(
+            np.isclose(p["features"][k], actual[k], rtol=1e-10, atol=1e-12)
+            for k in alpha.FEATURES
+        ):
+            return "input_features_mismatch"
+        return None
+    except (KeyError, ValueError, TypeError, IndexError, OverflowError):
+        return "input_malformed"
+
+'"'''
+s=s[:pos]+func+s[pos:]
+s=s.replace('        bars = {}\\n        for (raw,)', '        bars, all_bars = {}, []\\n        for (raw,)')
+s=s.replace('            b = json.loads(raw)\\n            if b[\"valid\"]:', '            b = json.loads(raw)\\n            all_bars.append(b)\\n            if b[\"valid\"]:')
+needle='    sip = {\\n'
+s=s.replace(needle,'''    with read_db(Path(manifest[\"source\"])) as db:
+        sources = {
+            seq: dict(id=identity, day=day, received=received, kind=kind, body=json.loads(body))
+            for seq, identity, day, received, kind, body in db.execute(
+                \"SELECT rowid,id,day,received,kind,payload FROM observations WHERE day=?\",
+                (manifest[\"day\"],),
+            )
+        }
+    feature_hashes = {
+        name: hashlib.sha256((Path(__file__).resolve().parents[2] / name).read_bytes()).hexdigest()
+        == manifest.get(\"code_hashes\", {}).get(name)
+        for name in (\"src/aquant/data/alpha.py\", \"src/aquant/signals.py\")
+    }
+    input_failures = []
+''' +needle)
+s=s.replace('        labels = {\"iex\": iex,', '''        proof = input_proof(p, all_bars, sources, manifest)
+        if not all(feature_hashes.values()):
+            proof = \"input_feature_code_mismatch\"
+        if proof:
+            input_failures.append({\"id\": key, \"reason\": proof})
+            failures.append({\"id\": key, \"reason\": proof})
+        labels = {\"iex\": iex,''')
+s=s.replace('            elif label[\"status\"] == \"VALID\" and feed == \"iex\":', '            elif proof:\\n                label[\"status\"] = \"INVALID_INPUT\"\\n            elif label[\"status\"] == \"VALID\" and feed == \"iex\":')
+s=s.replace('        \"audit_failures\": failures,','        \"audit_failures\": failures,\\n        \"input_audit\": {\"checked\": len(rows), \"failures\": input_failures,\\n                        \"feature_code_hashes_unchanged\": feature_hashes},')
+s=s.replace('        \"IEX是实时路径标签，', '''        f\"原始实时输入逐项重核 {r['input_audit']['checked']} 条；\"
+        f\"输入异常 {len(r['input_audit']['failures'])}。核对前缀Hash、事件与接收时间、输入ID和因果特征；不重新训练。\",
+        \"IEX是实时路径标签，''')
+p.write_text(s)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('tests/test_closing.py');s=p.read_text().replace('from scripts.research import arrival, closing','from aquant.data import alpha\\nfrom scripts.research import arrival, closing')
+s=s.replace('\"CREATE TABLE records(name,value); CREATE TABLE observations(day,kind,payload);\"','\"CREATE TABLE records(name,value); \"\\n            \"CREATE TABLE observations(id,day,received,kind,payload);\"')
+s=s.replace('        frozen_at=\"2026-10-20T18:00Z\",', '        frozen_at=\"2026-10-20T18:00Z\",\\n        git_commit=\"frozen\",\\n        code_hashes={name: hashlib.sha256(Path(name).read_bytes()).hexdigest()\\n                     for name in (\"src/aquant/data/alpha.py\", \"src/aquant/signals.py\")},')
+s=s.replace('        input_ids=list(range(32)),','        git_commit=\"frozen\",\\n        input_ids=list(range(33)),').replace('        source_sequence=31,','        source_sequence=32,')
+start=s.index('        db.execute(\"INSERT INTO predictions VALUES(?,?)\"')
+end=s.index('    (ml / \"sip/final/p.json\").write_text(',start)
+s=s[:start]+'''        prefix = []
+        times = [pd.Timestamp(m[\"opening\"]), *pd.date_range(
+            pd.Timestamp(p[\"t\"]) - pd.Timedelta(minutes=31), p[\"target_time\"], freq=\"min\"
+        )]
+        with sqlite3.connect(source) as raw:
+            for seq, t in enumerate(times):
+                b = dict(valid=True, symbol=\"SPY\", day=m[\"day\"], t=t.isoformat(),
+                         o=100.0, h=101.0, l=99.0, c=100.0, v=10.0,
+                         source_sequence=seq, source_id=f\"bar-{seq}\", reason=None,
+                         received_at=(t + pd.Timedelta(minutes=1, seconds=2)).isoformat())
+                db.execute(\"INSERT INTO bars VALUES(?,?)\", (seq, json.dumps(b)))
+                event = {k: b[k] for k in (\"o\", \"h\", \"l\", \"c\", \"v\", \"t\")}
+                event[\"S\"] = \"SPY\"
+                raw.execute(\"INSERT INTO observations(rowid,id,day,received,kind,payload) \"
+                            \"VALUES(?,?,?,?,?,?)\", (seq, b[\"source_id\"], m[\"day\"],
+                            b[\"received_at\"], \"b\", json.dumps(dict(
+                                event=event, feed=\"iex\", source=\"iex_websocket\"))))
+                if t <= pd.Timestamp(p[\"t\"]):
+                    prefix.append(b)
+        p[\"input_hash\"] = hashlib.sha256(json.dumps(
+            prefix, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        frame = pd.DataFrame(prefix)
+        frame[\"t\"] = pd.to_datetime(frame.t, utc=True)
+        p[\"features\"] = alpha.inputs(frame, {m[\"day\"]: (
+            pd.Timestamp(m[\"opening\"]), pd.Timestamp(m[\"closing\"]))})[list(alpha.FEATURES)].iloc[-1].to_dict()
+        db.execute(\"INSERT INTO predictions VALUES(?,?)\", (\"p\", json.dumps(p)))
+        db.execute(\"INSERT INTO commits VALUES(?,?)\", (32, \"2026-10-20T18:21:05Z\"))
+        db.execute(\"INSERT INTO labels VALUES(?,?,?)\", (\"p\", \"iex\", json.dumps(label)))
+''' +s[end:]
+s=s.replace('DELETE FROM bars WHERE seq=3','DELETE FROM bars WHERE seq=36')
+s+='''
+
+@pytest.mark.parametrize(\"change,expected\", [
+    (\"hash\", \"input_hash_mismatch\"),
+    (\"features\", \"input_features_mismatch\"),
+    (\"ids\", \"input_ids_mismatch\"),
+    (\"version\", \"input_version_mismatch\"),
+    (\"receipt\", \"input_original_mismatch\"),
+    (\"feed\", \"input_original_mismatch\"),
+    (\"future\", \"input_receipt_invalid\"),
+    (\"code\", \"input_feature_code_mismatch\"),
+])
+def test_input_replay_rejects_tampering(tmp_path, change, expected):
+    ml, probe, root, p, m = setup(tmp_path)
+    if change in {\"hash\", \"features\", \"ids\", \"version\"}:
+        if change == \"hash\": p[\"input_hash\"] = \"wrong\"
+        if change == \"features\": p[\"features\"][\"ret5\"] = 1.0
+        if change == \"ids\": p[\"input_ids\"] = p[\"input_ids\"][1:]
+        if change == \"version\": p[\"git_commit\"] = \"changed\"
+        with sqlite3.connect(ml / \"prediction.sqlite3\") as db:
+            db.execute(\"UPDATE predictions SET payload=?\", (json.dumps(p),))
+    elif change == \"code\":
+        m[\"code_hashes\"][\"src/aquant/data/alpha.py\"] = \"changed\"
+        (ml / \"manifest.json\").write_text(json.dumps(m))
+    else:
+        with sqlite3.connect(root / \"source.sqlite3\") as db:
+            if change in {\"receipt\", \"future\"}:
+                db.execute(\"UPDATE observations SET received='2026-10-20T18:22:00+00:00' WHERE rowid=32\")
+            else:
+                body = json.loads(db.execute(\"SELECT payload FROM observations WHERE rowid=32\").fetchone()[0])
+                body[\"feed\"] = \"sip\"
+                db.execute(\"UPDATE observations SET payload=? WHERE rowid=32\", (json.dumps(body),))
+        if change == \"future\":
+            with sqlite3.connect(ml / \"prediction.sqlite3\") as db:
+                b = json.loads(db.execute(\"SELECT payload FROM bars WHERE seq=32\").fetchone()[0])
+                b[\"received_at\"] = \"2026-10-20T18:22:00+00:00\"
+                db.execute(\"UPDATE bars SET payload=? WHERE seq=32\", (json.dumps(b),))
+                prefix = [json.loads(row[0]) for row in db.execute(\"SELECT payload FROM bars WHERE seq<=32 ORDER BY seq\")]
+                p[\"input_hash\"] = hashlib.sha256(json.dumps(prefix, sort_keys=True, allow_nan=False).encode()).hexdigest()
+                db.execute(\"UPDATE predictions SET payload=?\", (json.dumps(p),))
+    r = closing.build(ml, probe, root, \"2026-10-20T20:40Z\")
+    assert r[\"input_audit\"][\"failures\"] == [{\"id\": \"p\", \"reason\": expected}]
+    assert r[\"metrics\"][\"iex\"][\"M\"][\"states\"] == {\"INVALID_INPUT\": 1}
+    assert r[\"status\"] == \"INCOMPLETE_OR_FAILED\"
+'''
+p.write_text(s)
+PY
+.venv/bin/python -m ruff format scripts/research/closing.py tests/test_closing.py
+.venv/bin/python -m ruff check scripts/research/closing.py tests/test_closing.py
+.venv/bin/python -m pytest -q tests/test_closing.py" in /Users/prts/Projects/aquant/.worktrees/ml03
+ exited 1 in 887ms:
+FFFFFFFFFFFFF                                                            [100%]
+=================================== FAILURES ===================================
+___________________ test_close_guard_and_readonly_recompute ____________________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_close_guard_and_readonly_0')
+
+    def test_close_guard_and_readonly_recompute(tmp_path):
+>       ml, probe, root, _, _ = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:163: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x140655b70>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+___________________ test_late_commit_is_not_forward_evidence ___________________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_late_commit_is_not_forwar0')
+
+    def test_late_commit_is_not_forward_evidence(tmp_path):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x1405efca0>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+__________________ test_label_path_and_sip_time_are_rechecked __________________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_label_path_and_sip_time_a0')
+
+    def test_label_path_and_sip_time_are_rechecked(tmp_path):
+>       ml, probe, root, _, _ = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:186: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x1405ef820>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+________ test_missing_terminal_label_and_early_probe_stop_not_complete _________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_missing_terminal_label_an0')
+
+    def test_missing_terminal_label_and_early_probe_stop_not_complete(tmp_path):
+>       ml, probe, root, _, _ = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x1405ef8e0>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+__________________ test_publish_restart_preserves_human_edits __________________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_publish_restart_preserves0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x14065f210>
+
+    def test_publish_restart_preserves_human_edits(tmp_path, monkeypatch):
+>       ml, probe, root, _, _ = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:210: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x14063d330>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+________ test_input_replay_rejects_tampering[hash-input_hash_mismatch] _________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp0')
+change = 'hash', expected = 'input_hash_mismatch'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x14063f280>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+____ test_input_replay_rejects_tampering[features-input_features_mismatch] _____
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp1')
+change = 'features', expected = 'input_features_mismatch'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x1405ef940>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+_________ test_input_replay_rejects_tampering[ids-input_ids_mismatch] __________
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp2')
+change = 'ids', expected = 'input_ids_mismatch'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x1406562f0>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+_____ test_input_replay_rejects_tampering[version-input_version_mismatch] ______
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp3')
+change = 'version', expected = 'input_version_mismatch'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x14063e710>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+_____ test_input_replay_rejects_tampering[receipt-input_original_mismatch] _____
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp4')
+change = 'receipt', expected = 'input_original_mismatch'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x1405ef8e0>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+______ test_input_replay_rejects_tampering[feed-input_original_mismatch] _______
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp5')
+change = 'feed', expected = 'input_original_mismatch'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x14063ead0>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+______ test_input_replay_rejects_tampering[future-input_receipt_invalid] _______
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp6')
+change = 'future', expected = 'input_receipt_invalid'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x14063c4f0>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+____ test_input_replay_rejects_tampering[code-input_feature_code_mismatch] _____
+
+tmp_path = PosixPath('/private/var/folders/sm/m6ps9rs50gs_phzstxslf2bc0000gn/T/pytest-of-prts/pytest-117/test_input_replay_rejects_tamp7')
+change = 'code', expected = 'input_feature_code_mismatch'
+
+    @pytest.mark.parametrize(
+        "change,expected",
+        [
+            ("hash", "input_hash_mismatch"),
+            ("features", "input_features_mismatch"),
+            ("ids", "input_ids_mismatch"),
+            ("version", "input_version_mismatch"),
+            ("receipt", "input_original_mismatch"),
+            ("feed", "input_original_mismatch"),
+            ("future", "input_receipt_invalid"),
+            ("code", "input_feature_code_mismatch"),
+        ],
+    )
+    def test_input_replay_rejects_tampering(tmp_path, change, expected):
+>       ml, probe, root, p, m = setup(tmp_path)
+                                ^^^^^^^^^^^^^^^
+
+tests/test_closing.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_closing.py:42: in setup
+    code_hashes={
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x1405efe80>
+
+        code_hashes={
+>           name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                                 ^^^^
+            for name in ("src/aquant/data/alpha.py", "src/aquant/signals.py")
+        },
+        closing="2026-10-20T20:00Z",
+        opening="2026-10-20T13:30Z",
+        day="2026-10-20",
+        source=str(source),
+        models=[dict(id="M", path=str(model), sha256=digest)],
+    )
+E   NameError: name 'Path' is not defined
+
+tests/test_closing.py:43: NameError
+=============================== warnings summary ===============================
+../../.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_closing.py::test_close_guard_and_readonly_recompute - NameE...
+FAILED tests/test_closing.py::test_late_commit_is_not_forward_evidence - Name...
+FAILED tests/test_closing.py::test_label_path_and_sip_time_are_rechecked - Na...
+FAILED tests/test_closing.py::test_missing_terminal_label_and_early_probe_stop_not_complete
+FAILED tests/test_closing.py::test_publish_restart_preserves_human_edits - Na...
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[hash-input_hash_mismatch]
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[features-input_features_mismatch]
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[ids-input_ids_mismatch]
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[version-input_version_mismatch]
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[receipt-input_original_mismatch]
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[feed-input_original_mismatch]
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[future-input_receipt_invalid]
+FAILED tests/test_closing.py::test_input_replay_rejects_tampering[code-input_feature_code_mismatch]
+13 failed, 1 warning in 0.16s
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('tests/test_closing.py');s=p.read_text().replace('import sqlite3\\n','import sqlite3\\nfrom pathlib import Path\\n');p.write_text(s)
+p=Path('scripts/research/closing.py');s=p.read_text().replace('}。核对前缀Hash、事件与接收时间、输入ID和因果特征；不重新训练。\",','}。\"\\n        \"核对前缀Hash、事件与接收时间、输入ID和因果特征；不重新训练。\",');p.write_text(s)
+PY
+.venv/bin/python -m ruff check scripts/research/closing.py tests/test_closing.py
+.venv/bin/python -m pytest -q tests/test_closing.py --tb=short" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 1385ms:
+.............                                                            [100%]
+=============================== warnings summary ===============================
+../../.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+13 passed, 1 warning in 0.66s
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,sqlite3,hashlib,time
+from pathlib import Path
+from datetime import datetime,UTC
+from collections import Counter
+from scripts.research.closing import input_proof,qualify,metrics,read_db
+ml=Path('/Users/prts/Projects/aquant/.worktrees/ml01/outputs/ml01/forward-20261020')
+m=json.loads((ml/'manifest.json').read_text());started=datetime.now(UTC).isoformat();timer=time.perf_counter()
+with read_db(ml/'prediction.sqlite3') as db:
+ db.execute('BEGIN')
+ rows=[(key,json.loads(p),commit,json.loads(label) if label else {'status':'PENDING'}) for key,p,commit,label in db.execute(\"SELECT p.id,p.payload,c.at,l.payload FROM predictions p LEFT JOIN commits c ON c.seq=json_extract(p.payload,'"'$.source_sequence'"') LEFT JOIN labels l ON l.id=p.id AND l.feed='iex'\")]
+ bars=[json.loads(r[0]) for r in db.execute('SELECT payload FROM bars ORDER BY seq')]
+ state=json.loads(db.execute('SELECT payload FROM state WHERE id=1').fetchone()[0])
+with read_db(Path(m['source'])) as db:
+ source={seq:dict(id=identity,day=day,received=received,kind=kind,body=json.loads(body)) for seq,identity,day,received,kind,body in db.execute('SELECT rowid,id,day,received,kind,payload FROM observations WHERE day=?',(m['day'],))}
+sip={r['prediction_id']:r for r in (json.loads(p.read_text()) for p in (ml/'sip/final').glob('*.json'))}
+failures=[];pairs={'iex':{},'sip':{}};common={};symbols=Counter();signals=0
+for key,p,commit,label in rows:
+ reason=input_proof(p,bars,source,m)
+ if reason or not qualify(p,commit,m):failures.append({'id':key,'reason':reason or 'commit'})
+ labels={'iex':label,'sip':sip.get(key,{'status':'PENDING'})}
+ for feed,l in labels.items():pairs[feed].setdefault(p['model_id'],[]).append((p,l))
+ if all(x['status']=='VALID' for x in labels.values()):common.setdefault(p['model_id'],[]).append((p,labels))
+ symbols[p['symbol']]+=1;signals+=p['threshold_signal']
+result={'kind':'INTRADAY_DIAGNOSTIC_SNAPSHOT','started_at':started,'completed_at':datetime.now(UTC).isoformat(),'seconds':time.perf_counter()-timer,'predictions':len(rows),'windows':len({p['source_sequence'] for _,p,_,_ in rows}),'symbols':dict(symbols),'threshold_signals':signals,'input_failures':failures,'prediction_rows_hash':hashlib.sha256(json.dumps(rows,sort_keys=True).encode()).hexdigest(),'state':state,'metrics':{f:{k:metrics(v) for k,v in groups.items()} for f,groups in pairs.items()},'common_targets':{k:{f:metrics([(p,l[f]) for p,l in v]) for f in ['iex','sip']} for k,v in common.items()},'pnl':None,'orders_authorized':False,'limitations':'Not a closing report. Labels as recorded; full label-path and timing recomputation remains gated until close+40min. One overlapping day, no alpha promotion.'}
+output=Path('outputs/ml03')/('input-audit-'+datetime.now(UTC).strftime('%H%M%S')+'.json')
+with output.open('x') as f:json.dump(result,f,indent=2)
+print(output);print({k:v for k,v in result.items() if k not in ('state','metrics','common_targets')})
+print('metrics',result['metrics']);print('common',result['common_targets'])
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 2688ms:
+outputs/ml03/input-audit-183836.json
+{'kind': 'INTRADAY_DIAGNOSTIC_SNAPSHOT', 'started_at': '2026-10-20T18:38:33.594425+00:00', 'completed_at': '2026-10-20T18:38:36.007547+00:00', 'seconds': 2.413102708000224, 'predictions': 324, 'windows': 54, 'symbols': {'SPY': 324}, 'threshold_signals': 0, 'input_failures': [], 'prediction_rows_hash': '9a088794c50fd2984c7813eea641a17866065141723df54d3fd59f57c3a324b0', 'pnl': None, 'orders_authorized': False, 'limitations': 'Not a closing report. Labels as recorded; full label-path and timing recomputation remains gated until close+40min. One overlapping day, no alpha promotion.'}
+metrics {'iex': {'fold5-M0-h15': {'states': {'VALID': 20, 'INVALID_MISSING_OR_TIMEOUT': 17, 'PENDING': 17}, 'valid': 20, 'rmse_bps': 9.044545527895199, 'direction_accuracy': None, 'correlation': None}, 'fold5-M0-h30': {'states': {'INVALID_MISSING_OR_TIMEOUT': 25, 'PENDING': 29}, 'valid': 0, 'rmse_bps': None, 'direction_accuracy': None, 'correlation': None}, 'fold5-M1-h15': {'states': {'VALID': 20, 'INVALID_MISSING_OR_TIMEOUT': 17, 'PENDING': 17}, 'valid': 20, 'rmse_bps': 8.395649743415387, 'direction_accuracy': 0.55, 'correlation': 0.9708315220034464}, 'fold5-M1-h30': {'states': {'INVALID_MISSING_OR_TIMEOUT': 25, 'PENDING': 29}, 'valid': 0, 'rmse_bps': None, 'direction_accuracy': None, 'correlation': None}, 'fold5-M2-h15': {'states': {'VALID': 20, 'INVALID_MISSING_OR_TIMEOUT': 17, 'PENDING': 17}, 'valid': 20, 'rmse_bps': 9.053939759971557, 'direction_accuracy': 0.35, 'correlation': 0.011170306387769158}, 'fold5-M2-h30': {'states': {'INVALID_MISSING_OR_TIMEOUT': 25, 'PENDING': 29}, 'valid': 0, 'rmse_bps': None, 'direction_accuracy': None, 'correlation': None}}, 'sip': {'fold5-M0-h15': {'states': {'VALID': 25, 'PENDING': 29}, 'valid': 25, 'rmse_bps': 7.467327487539007, 'direction_accuracy': None, 'correlation': None}, 'fold5-M0-h30': {'states': {'VALID': 25, 'PENDING': 29}, 'valid': 25, 'rmse_bps': 8.959659145841451, 'direction_accuracy': None, 'correlation': None}, 'fold5-M1-h15': {'states': {'VALID': 25, 'PENDING': 29}, 'valid': 25, 'rmse_bps': 6.490700137509954, 'direction_accuracy': 0.8, 'correlation': 0.8538623052441981}, 'fold5-M1-h30': {'states': {'VALID': 25, 'PENDING': 29}, 'valid': 25, 'rmse_bps': 8.712422179794768, 'direction_accuracy': 0.64, 'correlation': 0.41127793305311966}, 'fold5-M2-h15': {'states': {'VALID': 25, 'PENDING': 29}, 'valid': 25, 'rmse_bps': 7.261945359027998, 'direction_accuracy': 0.84, 'correlation': -0.43632681063124745}, 'fold5-M2-h30': {'states': {'VALID': 25, 'PENDING': 29}, 'valid': 25, 'rmse_bps': 8.82145119432191, 'direction_accuracy': 0.88, 'correlation': 0.30438728605852566}}}
+common {'fold5-M0-h15': {'iex': {'states': {'VALID': 8}, 'valid': 8, 'rmse_bps': 10.469068971150909, 'direction_accuracy': None, 'correlation': None}, 'sip': {'states': {'VALID': 8}, 'valid': 8, 'rmse_bps': 10.188394332074054, 'direction_accuracy': None, 'correlation': None}}, 'fold5-M1-h15': {'iex': {'states': {'VALID': 8}, 'valid': 8, 'rmse_bps': 8.944945540192876, 'direction_accuracy': 1.0, 'correlation': 0.47829624431282247}, 'sip': {'states': {'VALID': 8}, 'valid': 8, 'rmse_bps': 8.655124622672131, 'direction_accuracy': 1.0, 'correlation': 0.6506563509533613}}, 'fold5-M2-h15': {'iex': {'states': {'VALID': 8}, 'valid': 8, 'rmse_bps': 10.310881972712702, 'direction_accuracy': 0.875, 'correlation': -0.468818503595947}, 'sip': {'states': {'VALID': 8}, 'valid': 8, 'rmse_bps': 10.034689567359647, 'direction_accuracy': 0.875, 'correlation': -0.6592114715076006}}}
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('scripts/research/closing.py');s=p.read_text().replace('        if not 0 <= (completed - pd.Timestamp(p[\"received_at\"])).total_seconds() <= 15:\\n            return \"input_processing_late\"\\n','');p.write_text(s)
+PY
+.venv/bin/python -m ruff format scripts/research/closing.py tests/test_closing.py
+.venv/bin/python -m ruff check .
+.venv/bin/python -m ruff format --check .
+ git diff --stat
+ git add scripts/research/closing.py tests/test_closing.py
+ git commit -m \"test: verify forward input hashes and features against original receipts\"" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+2 files left unchanged
+All checks passed!
+235 files already formatted
+ scripts/research/closing.py |  97 ++++++++++++++++++++++++++++-
+ tests/test_closing.py       | 148 +++++++++++++++++++++++++++++++++++++-------
+ 2 files changed, 223 insertions(+), 22 deletions(-)
+[research/ml03-cross-asset-20261020 f7da3b4] test: verify forward input hashes and features against original receipts
+ 2 files changed, 223 insertions(+), 22 deletions(-)
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import fcntl,json,subprocess
+from pathlib import Path
+from datetime import datetime,UTC
+p=Path('outputs/ml03/closing-20261020')
+with (p/'closing.lock').open() as f:
+ fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)
+ print('prior reporter stopped; lock released')
+old=json.loads((p/'process.json').read_text())
+with (p/'process-round1.json').open('x') as f: json.dump(old,f,indent=2)
+(p/'STOP').unlink()
+with (p/'runtime.log').open('a') as log:
+ child=subprocess.Popen(old['command'],cwd=Path.cwd(),stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+old.update(pid=child.pid,started_at=datetime.now(UTC).isoformat(),restart_reason='Round2 adds input proof to own waiting post-close audit; original collectors untouched',git_commit='f7da3b4')
+(p/'process.json').write_text(json.dumps(old,indent=2)+'\\n')
+print('new waiter',child.pid)
+PY
+DYLD_LIBRARY_PATH=/Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/torch/lib OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 VECLIB_MAXIMUM_THREADS=2 .venv/bin/python -m pytest -q > outputs/ml03/pytest-overnight-2.txt 2>&1" in /Users/prts/Projects/aquant/.worktrees/ml03
+codex
+已核对当前 324 条 ML-01 预测（54 个 SPY 输入窗口）：输入 Hash、原始 IEX 事件、接收时刻和重算特征均一致，阈值信号为 0。15 分钟 IEX 标签现有 20 个有效目标/模型，30 分钟尚无有效目标；缺失区间未用 SIP 补齐。收盘核验已加入这项检查及 8 类篡改反例测试。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,sqlite3
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from datetime import datetime,UTC
+from scripts.research.closing import read_db
+folder=Path('outputs/ml03/arrival-20261020')
+s=json.loads((folder/'status.json').read_text());print('status',s['at'],s['polls'],len(s['failures']))
+for k,v in s['assets'].items():print(k,v['mature_present'],v['mature_expected'],v['qualified_16_bar_windows'],v['latency_seconds'])
+begin=pd.Timestamp(s['manifest']['observe_from']);now=pd.Timestamp(s['at'])
+minutes=pd.date_range(begin,now.floor('min'),freq='min',inclusive='left');minutes=set(minutes[minutes+pd.Timedelta(minutes=1,seconds=90)<=now])
+with read_db(folder/'arrival.sqlite3') as db:
+ rest={(sym,pd.Timestamp(t)):(pd.Timestamp(received),json.loads(body)) for sym,t,received,body in db.execute('SELECT symbol,t,received,payload FROM first')}
+with read_db(Path('/Users/prts/Projects/aquant/outputs/research/forward_observations/state.sqlite3')) as db:
+ ws={}
+ for r,body in db.execute(\"SELECT received,payload FROM observations WHERE day='2026-10-20' AND kind='b' ORDER BY rowid\"):
+  x=json.loads(body);e=x['event'];t=pd.Timestamp(e['t']);sym=e['S']
+  if t in minutes and x.get('source')=='iex_websocket' and x.get('feed')=='iex':ws.setdefault((sym,t),(pd.Timestamp(r),e))
+result={'at':now.isoformat(),'kind':'INTRADAY_ARRIVAL_COMPARISON','minutes':len(minutes),'source':'same feed IEX, distinct REST poll and original WS','assets':{},'orders_authorized':False,'qualification':'No correction or backfill. First observed records only. Differing bars may reflect revisions/aggregation; equal absence alone does not prove no trades.'}
+for sym in ('SPY','QQQ'):
+ a={t for s,t in rest if s==sym}&minutes;b={t for s,t in ws if s==sym}&minutes;common=a&b
+ delays=[(rest[sym,t][0]-ws[sym,t][0]).total_seconds() for t in common]
+ different=[]
+ for t in sorted(common):
+  x,y=rest[sym,t][1],ws[sym,t][1]
+  diff={k:[x[k],y[k]] for k in ('o','h','l','c','v') if float(x[k])"'!=float(y[k])}
+  if diff:different.append({'"'t':t.isoformat(),'differences_rest_ws':diff})
+ result['assets'][sym]={'both':len(common),'rest_only':[t.isoformat() for t in sorted(a-b)],'ws_only':[t.isoformat() for t in sorted(b-a)],'neither':[t.isoformat() for t in sorted(minutes-a-b)],'rest_minus_ws_receipt_seconds_p50':float(np.median(delays)) if delays else None,'different_first_bars':different}
+out=Path('outputs/ml03')/('arrival-comparison-'+datetime.now(UTC).strftime('%H%M%S')+'.json')
+with out.open('x') as f:json.dump(result,f,indent=2)
+print(out);print(json.dumps(result,indent=2))
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 234ms:
+status 2026-10-20T18:39:59.476027+00:00 99 0
+SPY 15 15 0 {'p50': 6.5804635000000005, 'p95': 10.54799, 'max': 11.081909}
+QQQ 14 15 0 {'p50': 6.512784, 'p95': 10.5835846, 'max': 11.081909}
+IWM 15 15 0 {'p50': 6.5804635000000005, 'p95': 10.54799, 'max': 11.081909}
+XLK 12 15 0 {'p50': 6.264854, 'p95': 10.6547738, 'max': 11.081909}
+XLF 15 15 0 {'p50': 6.5804635000000005, 'p95': 10.54799, 'max': 11.081909}
+XLE 15 15 0 {'p50': 6.5804635000000005, 'p95': 10.54799, 'max': 11.081909}
+SMH 15 15 0 {'p50': 6.5804635000000005, 'p95': 10.54799, 'max': 11.081909}
+outputs/ml03/arrival-comparison-184008.json
+{
+  "at": "2026-10-20T18:39:59.476027+00:00",
+  "kind": "INTRADAY_ARRIVAL_COMPARISON",
+  "minutes": 15,
+  "source": "same feed IEX, distinct REST poll and original WS",
+  "assets": {
+    "SPY": {
+      "both": 15,
+      "rest_only": [],
+      "ws_only": [],
+      "neither": [],
+      "rest_minus_ws_receipt_seconds_p50": 6.345608,
+      "different_first_bars": []
+    },
+    "QQQ": {
+      "both": 14,
+      "rest_only": [],
+      "ws_only": [],
+      "neither": [
+        "2026-10-20T18:31:00+00:00"
+      ],
+      "rest_minus_ws_receipt_seconds_p50": 6.217114499999999,
+      "different_first_bars": []
+    }
+  },
+  "orders_authorized": false,
+  "qualification": "No correction or backfill. First observed records only. Differing bars may reflect revisions/aggregation; equal absence alone does not prove no trades."
+}
+
+exec
+/bin/zsh -lc "tail -4 outputs/ml03/pytest-overnight-2.txt; date -u; .venv/bin/python - <<'PY'
+import fcntl,json,subprocess,hashlib
+from pathlib import Path
+root=Path('/Users/prts/Projects/aquant')
+for folder in ['arrival-20261020','closing-20261020']:
+ p=Path('outputs/ml03')/folder
+ with next(p.glob('*.lock')).open() as f:
+  try:fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB);print(folder,'NOT HELD');fcntl.flock(f,fcntl.LOCK_UN)
+  except BlockingIOError:print(folder,'held')
+ print('errors', (p/'runtime.log').stat().st_size)
+m=json.loads((root/'.worktrees/ml01/outputs/ml01/forward-20261020/manifest.json').read_text())
+print('ML01 frozen code matches', {k:hashlib.sha256((root/'.worktrees/ml01'/k).read_bytes()).hexdigest()==v for k,v in m['code_hashes'].items()})
+for p in [root,root/'.worktrees/ml01',root/'.worktrees/ml02']:
+ print(p.name,subprocess.check_output(['git','status','--short'],cwd=p,text=True).strip() or 'CLEAN')
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+........................................................................ [ 19%]
+........................................................................ [ 28%]
+........................................................................ [ 38%]
+.........................Tue Oct 20 18:40:30 UTC 2026
+arrival-20261020 held
+errors 0
+closing-20261020 held
+errors 0
+ML01 frozen code matches {'docs/ml01-forward.json': True, 'src/aquant/data/alpha.py': True, 'src/aquant/models/tabular.py': True, 'src/aquant/prediction.py': True, 'src/aquant/signals.py': True}
+aquant CLEAN
+ml01 CLEAN
+ml02 CLEAN
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,hashlib,sqlite3
+from pathlib import Path
+root=Path('/Users/prts/Projects/aquant'); ml=root/'.worktrees/ml01/outputs/ml01/forward-20261020'
+m=json.loads((ml/'manifest.json').read_text());print('model hashes',{x['id']:hashlib.sha256(Path(x['path']).read_bytes()).hexdigest()==x['sha256'] for x in m['models']})
+for name,path in [('forward',root/'outputs/research/forward_observations/state.sqlite3'),('shadow',root/'outputs/research/phase6-20261020/shadow-v1/shadow.sqlite3'),('ml01',ml/'prediction.sqlite3')]:
+ with sqlite3.connect(f'file:{path}?mode=ro',uri=True) as d:
+  if name=='forward':
+   s=json.loads(d.execute(\"SELECT value FROM records WHERE name='forward:2026-10-20'\").fetchone()[0]);print(name,{k:s.get(k) for k in ['heartbeat','connected','compromised']})
+  else:
+   s=json.loads(d.execute('SELECT payload FROM state LIMIT 1').fetchone()[0]);print(name,{k:s.get(k) for k in ['cursor','heartbeat','last_tick','interruptions']})
+s=json.loads(Path('outputs/ml03/arrival-20261020/status.json').read_text());print('arrival',s['at']);print({k:{x:v[x] for x in ['mature_present','mature_expected','qualified_16_bar_windows']} for k,v in s['assets'].items()})
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+model hashes {'fold5-M0-h15': True, 'fold5-M0-h30': True, 'fold5-M1-h15': True, 'fold5-M1-h30': True, 'fold5-M2-h15': True, 'fold5-M2-h30': True}
+forward {'heartbeat': '2026-10-20T18:40:40.902102Z', 'connected': True, 'compromised': True}
+shadow {'cursor': 34358, 'heartbeat': None, 'last_tick': '2026-10-20T18:40:41.126930+00:00', 'interruptions': [{'at': '2026-10-20T12:43:57.173974+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:43:59.275009+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:01.360126+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:03.459850+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:05.558317+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:07.604106+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:09.692269+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:11.791392+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:13.888566+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:15.982778+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:18.085517+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:20.183379+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:22.274811+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:24.375401+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:26.475767+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:28.575618+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:30.676790+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:32.776104+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:34.877610+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:36.973040+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:39.073194+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:41.166535+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:43.289628+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:45.389219+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:47.488835+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:49.584079+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:51.687936+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:53.787133+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:55.889324+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:44:57.985782+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:00.087637+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:02.188852+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:04.289323+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:06.392330+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:08.493323+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:10.592518+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:12.695607+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:14.793787+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:16.892517+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:18.992402+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:21.094618+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:23.193617+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:25.287749+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:27.388055+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:29.483588+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:31.581500+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:33.683005+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:35.783027+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:37.882902+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:39.976100+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:42.071396+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:44.172774+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:46.270302+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:48.349868+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:50.450116+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:52.553275+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:54.653510+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:56.750139+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:45:58.759138+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:00.859145+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:02.960502+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:05.060418+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:07.161998+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:09.259168+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:11.360269+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:13.461972+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:15.562992+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:17.662132+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:19.763256+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:21.864165+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:23.967400+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:26.069909+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:28.170469+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:30.257666+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:32.357471+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:34.459010+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:36.558695+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:38.649897+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:40.711044+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:42.809050+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:44.908980+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:47.009008+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:49.109051+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:51.207986+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:53.308670+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:55.409445+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:57.508149+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:46:59.608138+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:01.708057+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:03.808500+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:05.907971+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:07.919841+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:10.016675+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:12.075187+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:14.175777+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:16.272218+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:18.372992+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:20.465813+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:22.557226+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:24.658961+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:26.756269+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:28.858076+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:30.954641+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:33.053074+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:35.155505+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:37.249463+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:39.348549+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:41.445304+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:43.542332+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:45.632909+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:47.697538+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:49.800066+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:51.898600+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:54.000057+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:56.100862+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:47:58.189541+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:00.286681+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:02.370386+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:04.450078+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:06.552050+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:08.648492+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:10.744389+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:12.843586+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:14.943460+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:17.045643+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:19.147052+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:21.242228+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:23.334202+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:25.428066+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:27.527591+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:29.625623+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:31.727082+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:33.817158+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:35.913791+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:38.013812+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:40.114048+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:42.209051+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:44.311589+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:46.413278+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:48.515288+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:50.612549+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:52.713055+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:54.806957+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:56.893578+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:48:58.974744+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:01.073041+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:03.179173+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:05.278464+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:07.380209+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:09.483455+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:11.588957+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:13.686579+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:15.770805+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:17.872175+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:19.971790+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:22.073466+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:24.175617+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:26.274810+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:28.377613+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:30.477635+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:32.577380+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:34.677067+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:36.774515+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:38.876646+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:40.979967+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:43.080845+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:45.176767+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:47.275564+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:49.377568+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:51.479042+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:53.575535+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:55.676623+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:57.776888+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:49:59.874984+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:01.977512+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:04.070850+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:06.158883+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:08.291366+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:10.392081+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:12.491974+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:14.591981+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:16.674833+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:18.775825+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:20.879567+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:22.978007+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:25.077964+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:27.172721+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:29.264365+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:31.366092+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:33.458699+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:35.558791+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:37.625407+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:39.727128+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:41.809865+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:43.908867+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:45.925465+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:47.981137+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:50.072980+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:52.173513+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:54.275431+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:56.358891+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:50:58.458373+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:00.542236+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:02.642183+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:04.742225+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:06.786405+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:08.859276+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:10.954275+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:13.050034+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:15.126506+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:17.225349+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:19.326572+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:21.358876+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:23.456315+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:25.546087+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:27.619932+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:29.714378+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:31.812991+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:33.913000+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:36.014365+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:38.127359+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:40.225575+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:42.326592+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:44.425385+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:46.526338+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:48.625660+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:50.720592+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:52.799238+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:54.893283+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:56.992420+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:51:59.094725+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:01.192308+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:03.292422+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:05.392463+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:07.493600+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:09.586214+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:11.684004+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:13.785297+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:15.886977+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:17.990230+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:20.092257+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:22.192442+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:24.292335+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:26.355605+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:28.455868+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:30.550240+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:32.636179+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:34.719765+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:36.819802+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:38.919553+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:41.013965+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:43.108207+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:45.207854+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:47.308946+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:49.402550+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:51.497314+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:53.605888+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:55.704083+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:57.795919+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:52:59.892352+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:01.953137+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:04.048386+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:06.148498+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:08.244290+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:10.343040+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:12.443478+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:14.527215+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:16.624407+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:18.725682+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:20.827143+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:22.901706+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:25.003775+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:27.101297+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:29.201213+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:31.298229+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:33.400522+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:35.404555+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:37.499769+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:39.599312+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:41.694512+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:43.792347+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:45.892143+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:47.995207+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:50.082769+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:52.185056+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:54.212401+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:56.309132+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:53:58.411811+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:00.509054+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:02.602384+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:04.701122+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:06.801258+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:08.893902+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:10.975700+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:13.075750+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:15.166010+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:17.265347+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:19.366960+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:21.458067+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:23.559224+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:25.644633+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:27.742358+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:29.841671+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:31.929413+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:34.027735+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:36.131712+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:38.175752+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:40.279136+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:42.375660+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:44.475735+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:46.576865+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:48.675693+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:50.775612+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:52.872496+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:54.939667+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:57.040502+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:54:59.125474+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:01.222903+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:03.318940+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:05.417229+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:07.520113+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:09.623058+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:11.711800+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:13.784856+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:15.885615+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:17.975682+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:20.075629+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:22.163409+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:24.261479+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:26.363008+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:28.460931+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:30.566254+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:32.662378+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:34.762725+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:36.862509+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:38.964205+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:41.063939+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:43.159558+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:45.255495+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:47.358966+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:49.460803+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:51.563633+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:53.666005+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:55.768409+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:57.861864+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:55:59.961732+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:02.023010+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:04.124633+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:06.207786+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:08.293062+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:10.382599+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:12.486253+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:14.589402+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:16.681422+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:18.779076+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:20.879925+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:22.980752+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:25.083292+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:27.183362+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:29.276761+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:31.372234+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:33.432072+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:35.524858+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:37.624234+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:39.728412+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:41.821325+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:43.919816+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:46.019440+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:48.122337+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:50.218253+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:52.318206+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:54.413061+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:56.498885+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:56:58.600636+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:00.700082+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:02.800166+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:04.903297+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:07.005389+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:09.066135+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:11.161041+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:13.263613+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:15.358757+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:17.459845+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:19.563818+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:21.656833+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:23.726794+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:25.828020+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:27.930708+00:00', 'error': 'OperationalError'}, {'from': '2026-10-20T12:57:30.027909+00:00', 'seconds': 21.537902, 'to': '2026-10-20T12:57:51.565811+00:00'}, {'at': '2026-10-20T12:57:51.565811+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:53.666431+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:55.766959+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:57.863021+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:57:59.959902+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:02.034346+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:04.127667+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:06.179615+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:08.252438+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:10.342119+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:12.442161+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:14.539068+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:16.632874+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:18.726510+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:20.828986+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:22.942084+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:25.045420+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:27.142855+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:29.241225+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:31.344107+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:33.442132+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:35.542867+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:37.640147+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:39.732547+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:41.832485+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:43.927174+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:46.025438+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:48.124547+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:50.226448+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:52.304908+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:54.403269+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:56.504447+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:58:58.603833+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:00.703410+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:02.804006+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:04.903530+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:07.003390+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:09.103602+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:11.203714+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:13.292097+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:15.392478+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:17.494366+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:19.595953+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:21.691898+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:23.792230+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:25.894282+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:28.021339+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:30.126006+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:32.225971+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:34.324590+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:36.425580+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:38.504750+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:40.605369+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:42.684585+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:44.784320+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:46.883472+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:48.948938+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:51.048401+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:53.149780+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:55.249513+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:57.341937+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T12:59:59.440811+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:01.524795+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:03.626238+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:05.726436+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:07.825677+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:09.927474+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:12.026343+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:14.097652+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:16.191594+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:18.283809+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:20.383792+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:22.483629+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:24.585001+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:26.683728+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:28.776604+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:30.878477+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:32.978410+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:35.075627+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:37.178656+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:39.271913+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:41.374982+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:43.476486+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:45.578727+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:47.671073+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:49.767021+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:51.876007+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:53.978277+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:56.076667+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:00:58.179882+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:00.282802+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:02.379196+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:04.475699+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:06.577476+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:08.675726+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:10.774795+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:12.876249+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:14.975735+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:17.078694+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:19.180942+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:21.281381+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:23.341994+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:25.443447+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:27.542416+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:29.644823+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:31.742368+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:33.843467+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:35.922138+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:38.025604+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:40.128505+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:42.231244+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:44.330188+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:46.432698+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:48.533479+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:50.629413+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:52.731393+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:54.831815+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:56.925645+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:01:59.026212+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:01.129055+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:03.226664+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:05.329570+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:07.431994+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:09.531493+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:11.629306+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:13.725843+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:15.828342+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:17.929264+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:20.028603+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:22.128841+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:24.228244+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:26.330370+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:28.429429+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:30.528802+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:32.632577+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:34.736269+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:36.819710+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:38.917661+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:41.018664+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:43.122504+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:45.227614+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:47.326671+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:49.427760+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:51.528140+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:53.630352+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:55.728186+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:57.828860+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:02:59.930282+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:02.030260+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:04.129915+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:06.230295+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:08.328558+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:10.426593+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:12.529587+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:14.548835+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:16.650461+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:18.752939+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:20.852038+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:22.942049+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:25.049780+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:27.142249+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:29.241227+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:31.343226+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:33.444387+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:35.546981+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:37.642298+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:39.742186+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:41.839944+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:43.941450+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:46.041550+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:48.142177+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:50.243836+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:52.342900+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:54.442101+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:56.541768+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:03:58.626668+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:00.729314+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:02.831066+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:04.930280+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:07.025301+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:09.125570+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:11.200811+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:13.301501+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:15.390998+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:17.492248+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:19.595754+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:21.698989+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:23.801592+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:25.896773+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:27.996486+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:30.099980+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:32.192208+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:34.294527+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:36.397251+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:38.499748+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:40.600771+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:42.700293+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:44.796454+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:46.897969+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:48.992663+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:51.092266+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:53.192046+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:55.289894+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:57.392167+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:04:59.493774+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:01.593510+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:03.683229+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:05.786271+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:07.887852+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:09.986350+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:12.078010+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:14.174953+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:16.263226+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:18.342441+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:20.443849+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:22.544952+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:24.647866+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:26.747748+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:28.850851+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:30.931260+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:33.043763+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:35.147563+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:37.249861+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:39.349967+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:41.445940+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:43.541141+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:45.642832+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:47.740761+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:49.830911+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:51.933565+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:54.033300+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:56.121519+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:05:58.187926+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:00.255568+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:02.354122+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:04.455613+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:06.551413+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:08.642100+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:10.743048+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:12.842936+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:14.935791+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:17.038978+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:19.142002+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:21.243318+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:23.344767+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:25.445308+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:27.540891+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:29.642077+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:31.744050+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:33.847299+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:35.939849+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:38.043127+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:40.142093+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:42.216847+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:44.316507+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:46.415485+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:48.516091+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:50.617246+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:52.717203+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:54.800305+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:56.894872+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:06:58.984434+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:01.068221+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:03.166579+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:05.242031+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:07.340830+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:09.443423+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:11.542576+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:13.639227+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:15.741965+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:17.842539+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:19.943620+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:22.046228+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:24.147623+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:26.249797+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:28.351559+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:30.449765+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:32.519276+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:34.621446+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:36.647413+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:38.750799+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:40.847807+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:42.953686+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:45.016933+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:47.119499+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:49.215071+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:51.292063+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:53.375695+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:55.468572+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:57.566242+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:07:59.665954+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:01.730847+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:03.831152+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:05.922944+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:08.025365+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:10.125327+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:12.226338+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:14.326303+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:16.428155+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:18.530783+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:20.629893+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:22.725292+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:24.825248+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:26.917668+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:29.013158+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:31.117219+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:33.218012+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:35.319997+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:37.417884+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:39.513292+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:41.615285+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:43.717617+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:45.819355+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:47.921980+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:50.023763+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:52.110795+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:54.208680+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:56.299597+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:08:58.399756+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:00.500346+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:02.594251+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:04.696206+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:06.800101+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:08.892036+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:10.992975+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:13.094772+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:15.194525+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:17.294525+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:19.397422+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:21.499892+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:23.600606+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:25.686697+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:27.785095+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:29.886632+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:31.990805+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:34.093018+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:36.188043+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:38.290037+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:40.382267+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:42.425277+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:44.527865+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:46.628049+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:48.728857+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:50.829483+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:52.940228+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:55.041783+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:57.142823+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:09:59.240842+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:01.247101+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:03.349956+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:05.447093+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:07.543036+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:09.642746+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:11.739384+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:13.842098+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:15.942178+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:18.042964+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:20.143046+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:22.241633+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:24.344672+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:26.448194+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:28.550695+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:30.642031+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:32.741091+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:34.841815+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:36.941891+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:39.041195+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:41.144532+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:43.208284+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:45.308700+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:47.411911+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:49.516457+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:51.618184+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:53.719548+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:55.821565+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:10:57.925508+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:00.028387+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:02.123618+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:04.219314+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:06.307303+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:08.407879+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:10.509851+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:12.599520+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:14.699688+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:16.799823+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:18.901882+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:21.002407+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:23.105718+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:25.206595+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:27.284784+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:29.379521+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:31.482595+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:33.586373+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:35.686150+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:37.789044+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:39.890912+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:41.990789+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:44.090716+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:46.188017+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:48.276398+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:50.376722+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:52.475615+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:54.575178+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:56.674502+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:11:58.774169+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:00.877194+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:02.975348+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:05.078781+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:07.177984+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:09.277542+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:11.380158+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:13.484475+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:15.586651+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:17.689676+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:19.791840+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:21.885706+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:23.986953+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:26.084442+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:28.193152+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:30.291680+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:32.391874+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:34.493159+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:36.595700+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:38.699084+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:40.801075+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:42.899638+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:44.996637+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:47.099304+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:49.203248+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:51.308198+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:53.406455+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:55.499154+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:57.602673+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:12:59.693389+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:01.794627+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:03.899124+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:05.999593+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:08.102782+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:10.164805+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:12.257095+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:14.359714+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:16.459207+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:18.558637+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:20.660773+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:22.759469+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:24.858726+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:26.954774+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:29.058465+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:31.158758+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:33.258522+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:35.362406+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:37.466433+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:39.567451+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:41.672664+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:43.777239+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:45.874743+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:47.962282+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:50.060320+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:52.158658+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:54.261733+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:56.365811+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:13:58.462489+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:00.561254+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:02.658360+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:04.760271+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:06.862996+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:08.957503+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:11.055928+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:13.158837+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:15.256639+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:17.358527+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:19.457900+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:21.549427+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:23.653804+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:25.757523+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:27.862018+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:29.958436+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:32.061204+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:34.162533+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:36.268607+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:38.300025+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:40.398300+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:42.498994+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:44.583831+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:46.686617+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:48.764527+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:50.854511+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:52.959496+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:55.063325+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:57.166394+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:14:59.270335+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:01.368077+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:03.463788+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:05.566877+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:07.658355+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:09.736619+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:11.836357+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:13.930886+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:16.035859+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:18.135683+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:20.239513+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:22.341112+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:24.441029+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:26.541709+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:28.646556+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:30.746742+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:32.849601+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:34.908292+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:37.010230+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:39.113485+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:41.221440+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:43.326132+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:45.428982+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:47.532121+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:49.630922+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:51.719317+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:53.812362+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:55.914254+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:15:58.017287+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:00.121679+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:02.192723+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:04.290775+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:06.393582+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:08.494413+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:10.597283+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:12.694241+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:14.791678+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:16.893544+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:18.990976+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:21.091712+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:23.191668+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:25.294238+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:27.394067+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:29.493816+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:31.597037+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:33.693183+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:35.794357+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:37.895146+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:39.992082+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:42.093011+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:44.196910+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:46.302088+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:48.404946+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:50.509589+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:52.613543+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:54.708340+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:56.808490+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:16:58.903387+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:01.003519+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:03.112772+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:05.228371+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:07.323316+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:09.407348+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:11.501127+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:13.602446+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:15.703923+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:17.805803+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:19.905114+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:21.991777+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:24.093996+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:26.190975+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:28.268855+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:30.369860+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:32.473967+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:34.576678+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:36.680097+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:38.776868+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:40.878269+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:42.967075+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:45.027629+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:47.128647+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:49.230484+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:51.324514+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:53.425620+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:55.526125+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:57.627553+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:17:59.726787+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:01.822915+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:03.924714+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:06.022389+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:08.124923+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:10.224856+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:12.326184+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:14.425353+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:16.524835+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:18.626033+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:20.718364+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:22.820402+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:24.924826+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:27.026297+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:29.124856+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:31.216617+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:33.319724+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:35.420533+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:37.523927+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:39.623749+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:41.725723+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:43.824945+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:45.925074+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:48.029927+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:50.120590+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:52.222772+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:54.324053+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:56.425082+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:18:58.525094+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:00.623514+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:02.716330+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:04.817724+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:06.907817+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:09.007469+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:11.108225+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:13.209001+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:15.318664+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:17.409106+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:19.511176+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:21.611409+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:23.713944+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:25.800083+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:27.902344+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:30.004584+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:32.108645+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:34.208341+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:36.320177+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:38.419649+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:40.507740+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:42.605259+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:44.707606+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:46.808389+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:48.908301+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:51.009765+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:53.112814+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:55.213221+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:57.317797+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:19:59.420117+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:20:01.516591+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:20:03.620855+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:20:05.718237+00:00', 'error': 'OperationalError'}, {'at': '2026-10-20T13:20:07.818695+00:00', 'error': 'OperationalError'}, {'from': '2026-10-20T13:26:58.491020+00:00', 'seconds': 199.955345, 'to': '2026-10-20T13:30:18.446365+00:00'}, {'from': '2026-10-20T15:34:01.540140+00:00', 'seconds': 29.532388, 'to': '2026-10-20T15:34:31.072528+00:00'}, {'from': '2026-10-20T15:35:17.506126+00:00', 'seconds': 90.568687, 'to': '2026-10-20T15:36:48.074813+00:00'}, {'from': '2026-10-20T15:37:32.059435+00:00', 'seconds': 36.506193, 'to': '2026-10-20T15:38:08.565628+00:00'}, {'from': '2026-10-20T15:40:39.473330+00:00', 'seconds': 54.282458, 'to': '2026-10-20T15:41:33.755788+00:00'}]}
+ml01 {'cursor': 34281, 'heartbeat': '2026-10-20T18:40:40.200500+00:00', 'last_tick': None, 'interruptions': [{'at': '2026-10-20T17:42:14.406313+00:00', 'type': 'OperationalError'}]}
+arrival 2026-10-20T18:40:33.289859+00:00
+{'SPY': {'mature_present': 16, 'mature_expected': 16, 'qualified_16_bar_windows': 1}, 'QQQ': {'mature_present': 15, 'mature_expected': 16, 'qualified_16_bar_windows': 0}, 'IWM': {'mature_present': 16, 'mature_expected': 16, 'qualified_16_bar_windows': 1}, 'XLK': {'mature_present': 13, 'mature_expected': 16, 'qualified_16_bar_windows': 0}, 'XLF': {'mature_present': 16, 'mature_expected': 16, 'qualified_16_bar_windows': 1}, 'XLE': {'mature_present': 16, 'mature_expected': 16, 'qualified_16_bar_windows': 1}, 'SMH': {'mature_present': 16, 'mature_expected': 16, 'qualified_16_bar_windows': 1}}
+
+exec
+/bin/zsh -lc 'tail -5 outputs/ml03/pytest-overnight-2.txt; date -u; git status --short' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+........................................................................ [ 47%]
+........................................................................ [ 57%]
+........................................................................ [ 66%]
+........................................................................ [ 76%]
+.............Tue Oct 20 18:41:11 UTC 2026
+
+ succeeded in 99308ms:
+codex
+首批连续窗口已形成：截至 14:40 ET，IWM、XLF、XLE、SMH 各有一个合格的 16 根窗口，XLK 为零。SPY/QQQ 的重叠区间对照显示，QQQ 的 14:31 分钟在 REST 和原 WebSocket 中都缺失，其余共同分钟的首版 OHLCV 一致。这尚不能确定缺失原因；也不能替代 ML-03 的 32 根核心输入门禁。
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+import json,hashlib,sqlite3
+from pathlib import Path
+from datetime import datetime,UTC
+root=Path('/Users/prts/Projects/aquant')
+arrival=json.loads(Path('outputs/ml03/arrival-20261020/status.json').read_text())
+proof=json.loads(Path('outputs/ml03/input-audit-183836.json').read_text())
+comparison=json.loads(Path('outputs/ml03/arrival-comparison-184008.json').read_text())
+services={}
+for name,path in [('forward',root/'outputs/research/forward_observations/state.sqlite3'),('shadow',root/'outputs/research/phase6-20261020/shadow-v1/shadow.sqlite3'),('ml01',root/'.worktrees/ml01/outputs/ml01/forward-20261020/prediction.sqlite3')]:
+ with sqlite3.connect(f'file:{path}?mode=ro',uri=True) as db:
+  if name=='forward':
+   s=json.loads(db.execute(\"SELECT value FROM records WHERE name='forward:2026-10-20'\").fetchone()[0]);services[name]={k:s.get(k) for k in ['heartbeat','connected','complete','compromised']}
+  else:
+   s=json.loads(db.execute('SELECT payload FROM state LIMIT 1').fetchone()[0]);services[name]={k:s.get(k) for k in ['cursor','last_tick','heartbeat']};services[name]['interruptions_count']=len(s.get('interruptions',[]));services[name]['last_interruption']=s.get('interruptions',[None])[-1]
+planpath=root/'outputs/alpaca/paper_pnl_reconciliation/plan.json';plan=json.loads(planpath.read_text())
+result={'at':datetime.now(UTC).isoformat(),'kind':'INTRADAY_DIAGNOSTIC_SNAPSHOT','code_commit':'f7da3b4','arrival':arrival,'ml01_input_proof':proof,'transport_comparison':comparison,'services':services,'paper_checks':plan['checks'],'paper_plan_hash':hashlib.sha256(planpath.read_bytes()).hexdigest(),'closing_due':'2026-10-20T20:40:00Z','closing_waiter_pid':42585,'orders_authorized':False,'ml03_status':'REJECTED_PROMOTION','ml04_started':False}
+p=Path('docs/overnight/EVIDENCE-2026-10-21-round2.json')
+with p.open('x') as f:json.dump(result,f,indent=2,ensure_ascii=False)
+print(p,result['at']);print('arrival',arrival['at'],arrival['polls'],{k:(v['mature_present'],v['mature_expected'],v['qualified_16_bar_windows']) for k,v in arrival['assets'].items()});print('services',services)
+PY" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+docs/overnight/EVIDENCE-2026-10-21-round2.json 2026-10-20T18:41:45.268256+00:00
+arrival 2026-10-20T18:41:41.309314+00:00 108 {'SPY': (17, 17, 2), 'QQQ': (16, 17, 0), 'IWM': (17, 17, 2), 'XLK': (14, 17, 0), 'XLF': (16, 17, 1), 'XLE': (17, 17, 2), 'SMH': (17, 17, 2)}
+services {'forward': {'heartbeat': '2026-10-20T18:41:41.110421Z', 'connected': True, 'complete': False, 'compromised': True}, 'shadow': {'cursor': 34474, 'last_tick': '2026-10-20T18:41:43.194008+00:00', 'heartbeat': None, 'interruptions_count': 1032, 'last_interruption': {'from': '2026-10-20T15:40:39.473330+00:00', 'seconds': 54.282458, 'to': '2026-10-20T15:41:33.755788+00:00'}}, 'ml01': {'cursor': 34395, 'last_tick': None, 'heartbeat': '2026-10-20T18:41:43.485059+00:00', 'interruptions_count': 1, 'last_interruption': {'at': '2026-10-20T17:42:14.406313+00:00', 'type': 'OperationalError'}}}
+
+exec
+/bin/zsh -lc 'tail -12 outputs/ml03/pytest-overnight-2.txt; .venv/bin/python -m ruff check .; .venv/bin/python -m ruff format --check .' in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+........................................................................ [ 85%]
+........................................................................ [ 95%]
+....................................                                     [100%]
+=============================== warnings summary ===============================
+../../.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/prts/Projects/aquant/.venv/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/pipeline/test_community_reference_equivalence.py:35: BLOCKED: supplied source has Markdown escapes/fences and lost indentation; readable-logic reproduction tested separately, original never repaired
+755 passed, 1 skipped, 1 warning in 98.33s (0:01:38)
+All checks passed!
+235 files already formatted
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+import json
+r=json.loads(Path('docs/overnight/EVIDENCE-2026-10-21-round2.json').read_text());s=r['arrival']
+lines=['','## 第2轮补充 · 14:41 ET（仍在进行）','','ML-03实验及拒绝晋级结论不变，没有再次训练、修改阈值或开启ML-04。','', '|参考ETF|成熟分钟覆盖|16根及时且按时收到的窗口|','|---|---:|---:|']
+for sym in ['IWM','XLK','XLF','XLE','SMH']:
+ v=s['assets'][sym];lines.append(f\"|{sym}|{v['mature_present']}/{v['mature_expected']} ({v['mature_coverage']:.1%})|{v['qualified_16_bar_windows']}|\")
+lines += ['',f\"截至{s['at']}，{s['polls']}次轮询、0失败、0超30秒间断；首次可见P95约11秒。\",'这些只是参考窗口，不是完整ML-03输入资格。原协议允许部分参考ETF可用并显式记录coverage，未要求五只同时齐全；SPY/QQQ的32根核心窗口仍不可省略。', 'REST与原WebSocket在14:23–14:37的15个成熟分钟对照：SPY共同15根、QQQ共同14根；共同首版OHLCV均一致，REST接收时间中位数晚约6.2–6.3秒。QQQ14:31在两者均缺失；不能仅凭此认定无成交或网络原因。没有用REST补原流。', '', '### ML-01实际输入核验', '', '14:38截面：324条提前预测、54个SPY输入窗口，QQQ仍0，阈值信号0。逐条核对输入前缀Hash、原始实时事件/接收时刻、输入ID、版本及重算特征，异常0；2.41秒完成。旧5个代码Hash与6个模型Hash保持一致。', '此项独立核验已加入16:40收盘程序；未改运行模型、原始预测或冻结采集。新8项反例测试证明Hash、特征、ID、版本、来源、接收时间和源码被改时会失效，而非继续算入合格表现。', '', '|ML-01模型|IEX15分钟RMSE（20目标）|SIP15分钟RMSE（25目标）|IEX方向正确率|', '|---|---:|---:|---:|', '|M0零预测|9.045 bp|7.467 bp|N/A|', '|Ridge|8.396 bp|6.491 bp|55%|', '|LightGBM|9.054 bp|7.262 bp|35%|', '', '两源上表不是同一有效子集，不能把误差差异当成源或模型优势。严格共同目标仅8个：M0的IEX/SIP RMSE为10.469/10.188 bp，Ridge8.945/8.655，LightGBM10.311/10.035。30分钟IEX尚无有效标签，SIP25个目标只属于延迟核验。', '同一天大量重叠目标不独立；短截面高相关性不支持晋级。未来未完成部分仍PENDING，不是最终收盘统计；无NBBO支持，执行P&L继续N/A。', '', '### 运行与交接', '', '14:41原Forward心跳正常、compromised仍true；Phase6游标34474，ML01游标34395，均在推进。Shadow旧的盘前OperationalError及睡眠间断保留；ML01原有13:42的单次OperationalError保留，未据此盲目重启。', '只替换本轮自建的等待汇总进程以加载新增核验，PID42585，等待锁实际持有、错误日志为空；原冻结服务、launchd与.env未改。', '全量755 passed、1 skipped，Ruff及235文件格式检查通过；完整日志outputs/ml03/pytest-overnight-2.txt。', '本截面机器证据已入库：[第2轮证据](../docs/overnight/EVIDENCE-2026-10-21-round2.json)。收盘报告和方向备忘仍等待16:40实际核验，不提前宣告完成。']
+with Path('human/arrival-2026-10-20.md').open('a') as f:f.write('\\n'.join(lines)+'\\n')
+with Path('human/README.md').open('a') as f:f.write('\\n- 2026-10-20 14:41 ET更新（进行中，755测试通过）：[参考窗口与ML-01原始输入核验](arrival-2026-10-20.md#第2轮补充--1441-et仍在进行)\\n')
+with Path('docs/overnight/PENDING.md').open('a') as f:f.write('''
+### 2026-10-21 第2轮补充
+
+- 当天54个SPY输入窗口、324预测通过原始输入核验不等于发现Alpha；只有一个交易日且目标重叠，阈值信号0，缺NBBO，不批准自动Paper。
+- REST与WebSocket共同缺少QQQ14:31，不能单凭两源缺柱认定无成交或丢包；不得补入冻结流。参考ETF窗口可用比例要继续按实时证据报告，不能假设五只同时到齐。
+- 方向/数据预算/迁移仍待人类；当前没有新决定需要中断采集，未开启ML-04。收盘汇总需检查实际产物后才能完成本夜任务。
+''')
+with Path('docs/overnight/STATE-2026-10-21.md').open('a') as f:f.write('''
+## 第2轮：纽约14:35–14:43，继续盘中测量及输入证据核验
+
+- 重读总控评估；human自18:31Z只有本线程报告提交，无用户未提交修改。原工作树/ML01/ML02保持clean。未重新训练ML03或扩展参数；拒绝晋级结论保持。
+- 14:41:41 ET参考测量108请求、0失败、0>30秒间断；成熟17分钟：IWM17/17、XLK14/17、XLF16/17、XLE17/17、SMH17/17。相应16根资格窗口2/0/1/2/2；全五同时0。P95首次可见约11秒。并非完整模型资格或可执行利润。
+- "'`outputs/ml03/arrival-comparison-184008.json`：REST/原WS14:23–14:37共同SPY15、QQQ14，首版OHLCV全相同，REST接收中位晚6.35/6.22秒。QQQ14:31两者均无bar，保留缺失，原因未定，不回填。
+- 新代码commit **f7da3b4** 仅增强scripts/research/closing.py：逐条按真实source_sequence重建原始前缀，核对Hash、Git版本、source_id/feed/事件/接收时间、输入ID及因果特征；核验所用alpha/signals源码Hash与冻结清单一致。失败标签INVALID_INPUT，禁止作为有效表现。不修改冻结模型或策略。
+- `outputs/ml03/input-audit-183836.json`：14:38真实截面324预测/54个SPY输入窗口、0阈值信号、0输入核验异常，2.41秒；原6模型+5代码Hash仍匹配。
+- IEX15分钟每模型20有效、17失效、17待定，RMSE M0/Ridge/LightGBM9.045/8.396/9.054bp，方向N/A/55%/35%；IEX30分钟25失效、29待定，无有效。SIP各期限25有效，和IEX共同15分钟目标仅8个，不能跨不同子集推断优势。
+- 14:41原Forward心跳18:41:41Z，connected=true、compromised=true；Phase6 cursor34474，ML01 cursor34395。旧Shadow1032条中断记录（多数盘前OperationalError）和ML01原13:42单次OperationalError均保留，未重启冻结服务。
+- 本轮自建等待汇总PID41806通过STOP退出、锁释放确认后，启动**PID42585**载入新增核验；process-round1.json保留旧记录，process.json含f7da3b4。只动自己的等待汇总程序，原arrival PID41060和冻结服务均持续运行。16:40 ET执行时间未变。
+- 收盘报告生成时间门禁未绕过；14:38输入核验明确INTRADAY_DIAGNOSTIC_SNAPSHOT，不调用build伪造收盘时刻。原Paper检查仍10-20/22 20:15Z，未消费/修改任何槽位。
+- 8项新反例测试覆盖Hash、特征、IDs、版本、接收记录、SIP替代、未来接收和源码不符；13项closing测试通过。全量**755 passed、1 skipped、1 warning，98.33秒**，Ruff/235文件格式检查通过。日志outputs/ml03/pytest-overnight-2.txt。
+- 持久证据`docs/overnight/EVIDENCE-2026-10-21-round2.json`；human/arrival-2026-10-20.md追加本轮，不覆盖旧截面；human/README同步链接；PENDING保持方向决策待人类。
+- 下一步仍是保持测量到16:03、核验16:15账务、16:36延迟标签完成后16:40收盘报告和备忘真实产物；读报告并commit后才ALL DONE。本轮未开ML04、未下单、未付费、未微信、未改launchd/.env。
+'"''')
+PY
+ git diff --stat" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+ docs/overnight/PENDING.md          |  6 ++++++
+ docs/overnight/STATE-2026-10-21.md | 15 +++++++++++++++
+ human/README.md                    |  2 ++
+ human/arrival-2026-10-20.md        | 37 +++++++++++++++++++++++++++++++++++++
+ 4 files changed, 60 insertions(+)
+
+exec
+/bin/zsh -lc ".venv/bin/python - <<'PY'
+from pathlib import Path
+p=Path('human/README.md');s=p.read_text().replace('(arrival-2026-10-20.md#第2轮补充--1441-et仍在进行)','(arrival-2026-10-20.md)');p.write_text(s)
+PY
+ git add docs/overnight/EVIDENCE-2026-10-21-round2.json docs/overnight/PENDING.md docs/overnight/STATE-2026-10-21.md human/README.md human/arrival-2026-10-20.md
+ git commit -m \"report: preserve intraday receipt comparison and causal input evidence\"
+ git status --short
+ git log -2 --oneline" in /Users/prts/Projects/aquant/.worktrees/ml03
+ succeeded in 0ms:
+[research/ml03-cross-asset-20261020 d37165d] report: preserve intraday receipt comparison and causal input evidence
+ 5 files changed, 515 insertions(+)
+ create mode 100644 docs/overnight/EVIDENCE-2026-10-21-round2.json
+d37165d report: preserve intraday receipt comparison and causal input evidence
+f7da3b4 test: verify forward input hashes and features against original receipts
+
+codex
+- ML-03 维持拒绝晋级；未追加搜索、未开启 ML-04。
+- 实时测量继续运行：108 次请求、0 失败；参考 ETF 已出现连续窗口及缺柱差异。
+- ML-01 的 324 条预测、54 个输入窗口逐项核验通过；阈值信号为 0，不构成盈利证据。
+- 新增输入完整性核验；全量 **755 passed、1 skipped**，Ruff、格式检查通过。
+- 原 Forward、Shadow、ML-01 未重启；收盘汇总仍等待 **16:40 ET**，尚未全部完成。
+- 已提交 `f7da3b4`、`d37165d`，工作区干净；[本轮进度](/Users/prts/Projects/aquant/.worktrees/ml03/docs/overnight/STATE-2026-10-21.md)已更新。
+- 未下单，未修改 launchd、`.env` 或账务复核计划。
+tokens used
+3,361,408
+- ML-03 维持拒绝晋级；未追加搜索、未开启 ML-04。
+- 实时测量继续运行：108 次请求、0 失败；参考 ETF 已出现连续窗口及缺柱差异。
+- ML-01 的 324 条预测、54 个输入窗口逐项核验通过；阈值信号为 0，不构成盈利证据。
+- 新增输入完整性核验；全量 **755 passed、1 skipped**，Ruff、格式检查通过。
+- 原 Forward、Shadow、ML-01 未重启；收盘汇总仍等待 **16:40 ET**，尚未全部完成。
+- 已提交 `f7da3b4`、`d37165d`，工作区干净；[本轮进度](/Users/prts/Projects/aquant/.worktrees/ml03/docs/overnight/STATE-2026-10-21.md)已更新。
+- 未下单，未修改 launchd、`.env` 或账务复核计划。
