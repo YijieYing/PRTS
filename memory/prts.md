@@ -124,6 +124,7 @@
 | 2026-11-07 | 重构收尾：Codex `prts-modularize` 提交了 5 个（9a3d20a..448e454）：registry 和 codex 适配层、wake_state、event 队列、notify 分级、测试、模块 README。总控复核时修了 4 处：(a) resume 不写 start 记录，`wait` 会误判，已补上；(b) 新增 `interaction/bin/wait`，并按用户批准在全局 CLAUDE.md 加上「派完在后台 wait」；(c) L0 事件只记录，不进验收队列；(d) 测试继承了调用方的 stdin，被替身程序读住而卡死，改成显式传空 stdin。两套测试在本机通过。AgentConsole：on_event 改成用 shlex 拆分命令，配置指向 `interaction/bin/event from-agentconsole`；未推送提醒挪进 `AgentConsole/plugins/backup/`。实测过：一条事件进队列再 ack、notify log、未推送钩子。`human/inbox.md` 从今天起只由总控写。fork 提出的问题：派 Codex 的 session 收不到结束通知，已用 `wait` 解决。 |
 
 ## 总控待办（2026-10-25 由「PRTS 研究」session 移交）
+- **2026-11-21 前后**：先搜一遍还有谁在用 `~/PRTS/ops/` 的旧路径。要搜的地方：aquant 的 `event.py`、research/PRTS 的 `AGENTS.md`（这两处已发消息让对方改）、各 session 的 prompt。没人用了就删掉 `ops/` 和全局 CLAUDE.md 里那句旧路径提示。`reporter/outbox` 链接先留着，因为用户的 CodexBridge `/auto` 任务还在读旧的 `Reporter/outbox` 路径，要等用户改了才能删。
 - 微信日报（10-27 已证实）：网络已修好（IP-CIDR 43.137/43.171 DIRECT）。ret=-2 = context token 过期：用户 11:25 给 bot 发消息刷新 token 后，11:34 重试第一次就送达了 10-26 日报。结论：bot 只能在用户最近一条消息后约 24h 内推送；用户超过一天不发消息，次日日报就会失败。用户 10-27 决定：不加自动化，自己每天给 bot 发消息。日报失败时先查 context-tokens.json 的修改时间。
 - aquant 日报邮件兜底：用户 10-25 决定不开。
 - 10-25 已推送 ~/PRTS 和 ~/research/PRTS（后者按 E2 设计版本分 6 批：phaseA、v0.3–v0.7）。~/research/alignment 按用户决定暂不配远端，不再提醒。
