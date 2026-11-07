@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Review queue: sole writer; queue changes are serialized with a stable lock."""
+import argparse
+import datetime as dt
+import fcntl
+import json
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+import uuid
+
+I = Path(__file__).resolve().parents[1]
+registry = runpy.run_path(str(I / 'lib/registry'))
+
+def classify(e):
+    kind, title, cwd = e.get('event'), str(e.get('title', ''))[:60], e.get('cwd', '')
+    if kind == 'state' and e.get('to') == 'dormant' and registry['dispatched'](cwd):
+        return 'L1', f'派发任务结束，待总控验收：{title}（{cwd}）'
+    if kind == 'idle_long': return 'L1', f"空闲很久的进程，可以关掉：{title}（pid {e.get('pid', '')}）"
+    if kind == 'stale': return 'L1', f"{e.get('host', '')} 上有 {e.get('count', '')} 个 session 超过 {e.get('days', '')} 天没用，可以在 AgentConsole 里归档"
+    if kind == 'host_down': return 'L2', f"主机不可达：{e.get('host', '')}"
+    return 'L0', json.dumps(e, ensure_ascii=False)
+
+def main():
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest='action', required=True)
+    a = sub.add_parser('add'); a.add_argument('level', choices=['L0', 'L1', 'L2']); a.add_argument('source'); a.add_argument('text')
+    sub.add_parser('from-agentconsole')
+    a = sub.add_parser('list'); a.add_argument('--new', action='store_true')
+    sub.add_parser('ack').add_argument('id')
+    args = p.parse_args()
+    if args.action == 'from-agentconsole':
+        e = json.load(sys.stdin)
+        if not isinstance(e, dict): p.error('event must be an object')
+        args.level, args.text = classify(e); args.source = 'AgentConsole'
+    root = registry['state']() / 'events'; root.mkdir(parents=True, exist_ok=True)
+    queue = root / 'queue.jsonl'
+    alert = None
+    with (root / '.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if args.action in ('add', 'from-agentconsole'):
+            row = dict(id=str(uuid.uuid4()), t=dt.datetime.now(dt.timezone.utc).isoformat(), level=args.level, source=args.source, text=args.text, status='new')
+            with queue.open('a', encoding='utf-8') as f: f.write(json.dumps(row, ensure_ascii=False) + '\n')
+            print(row['id'], flush=True)
+            if args.level == 'L2': alert = row
+        else:
+            rows = [json.loads(l) for l in queue.read_text().splitlines()] if queue.exists() else []
+            if args.action == 'list':
+                for row in rows:
+                    if not args.new or row['status'] == 'new': print(json.dumps(row, ensure_ascii=False))
+            else:
+                matches = [r for r in rows if r['id'] == args.id]
+                if not matches: p.error('unknown event id')
+                for row in matches:
+                    if row['status'] != 'acked':
+                        row.update(status='acked', acked_at=dt.datetime.now(dt.timezone.utc).isoformat())
+                tmp = queue.with_suffix('.tmp')
+                tmp.write_text(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in rows))
+                tmp.replace(queue)
+    if alert:
+        # Persist before delivery: failed notifications remain available for review.
+        return subprocess.run([str(I.parent / 'reporter/bin/notify'), 'alert', '--title', alert['source'], '--text', alert['text']]).returncode
+    return 0
+
+if __name__ == '__main__':
+    try: sys.exit(main())
+    except (OSError, ValueError) as e:
+        print('event: ' + str(e), file=sys.stderr); sys.exit(1)

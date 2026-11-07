@@ -20,9 +20,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)  # reporter/: lib/ code, config/ settings, state/ runtime data
 CFG = tomllib.load(open(os.path.join(ROOT, "config", "config.toml"), "rb"))
 SRC_DIR = os.path.expanduser(CFG.get("aquant_daily_dir", "~/Projects/aquant/outputs/daily"))
-OUT = os.path.join(ROOT, "state", "outbox", "aquant-daily.txt")
-LOG = os.path.join(ROOT, "state", "out", "deliveries.jsonl")
-INBOX = os.path.expanduser("~/PRTS/human/inbox.md")
+STATE = os.environ.get("PRTS_REPORTER_STATE", os.path.join(ROOT, "state"))
+OUT = os.path.join(STATE, "outbox", "aquant-daily.txt")
+LOG = os.path.join(STATE, "out", "deliveries.jsonl")
+EVENT = os.path.join(os.path.dirname(ROOT), "interaction", "bin", "event")
 SECRET = re.compile(r"(PK[A-Z0-9]{16,}|AK[A-Z0-9]{16,}|sk-[A-Za-z0-9]{20,}|APCA_API_(KEY_ID|SECRET_KEY)\s*=\s*\S+)")
 
 
@@ -35,8 +36,7 @@ def log(**kw):
 
 def reject(reason):
     log(status="rejected", reason=reason)
-    with open(INBOX, "a") as fh:
-        fh.write(f"- {time.strftime('%m-%d %H:%M')} aquant 日报没有转发：{reason}\n")
+    subprocess.run([EVENT, "add", "L1", "aquant_daily", f"aquant 日报没有转发：{reason}"], check=True)
     print("rejected:", reason)
     return 1
 
@@ -58,6 +58,7 @@ def main():
         return reject(f"{day} 的微信短版有 {len(text)} 字，超过 900 字")
     if SECRET.search(text):
         return reject(f"{day} 的微信短版里有疑似 key 的字符串")
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
     tmp = OUT + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(text + "\n")
