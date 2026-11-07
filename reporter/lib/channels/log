@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+import datetime as dt
+import fcntl
+import json
+import os
+from pathlib import Path
+import sys
+root = Path(os.environ.get('PRTS_REPORTER_STATE', Path(__file__).resolve().parents[2] / 'state'))
+(root / 'out').mkdir(parents=True, exist_ok=True)
+with (root / 'out/notifications.jsonl').open('a', encoding='utf-8') as f:
+    fcntl.flock(f, fcntl.LOCK_EX)
+    f.write(json.dumps(dict(t=dt.datetime.now(dt.timezone.utc).isoformat(), level='log', title=sys.argv[1], text=sys.argv[2]), ensure_ascii=False) + '\n')

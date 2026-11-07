@@ -19,10 +19,12 @@ from render import render
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)  # reporter/: lib/ code, config/ settings, state/ runtime data
 CFG = tomllib.load(open(os.path.join(ROOT, "config", "config.toml"), "rb"))
-LOG = os.path.join(ROOT, "state", "out", "deliveries.jsonl")
+STATE = os.environ.get("PRTS_REPORTER_STATE", os.path.join(ROOT, "state"))
+LOG = os.path.join(STATE, "out", "deliveries.jsonl")
 
 
 def log(**kw):
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a") as fh:
         fh.write(json.dumps({"t": time.strftime("%Y-%m-%dT%H:%M:%S"), **kw}, ensure_ascii=False) + "\n")
 
@@ -37,13 +39,15 @@ def main():
     title = open(a.weekly, encoding="utf-8").readline().lstrip("# ").strip() or "PRTS 周报"
 
     if not a.email_only:
-        outbox = os.path.expanduser(CFG["wechat_outbox"])
+        outbox = os.path.join(STATE, "outbox", "latest-wechat.txt") if "PRTS_REPORTER_STATE" in os.environ else os.path.expanduser(CFG["wechat_outbox"])
+        os.makedirs(os.path.dirname(outbox), exist_ok=True)
         shutil.copyfile(a.wechat, outbox)
         log(channel="wechat", status="staged", file=outbox)
         print(f"wechat: staged at {outbox}")
 
     if not a.no_email:
-        html_path = os.path.join(HERE, "out", os.path.basename(a.weekly).replace(".md", ".html"))
+        html_path = os.path.join(STATE, "out", os.path.basename(a.weekly).replace(".md", ".html"))
+        os.makedirs(os.path.dirname(html_path), exist_ok=True)
         with open(html_path, "w", encoding="utf-8") as fh:
             fh.write(render(open(a.weekly, encoding="utf-8").read()))
         r = subprocess.run(["osascript", os.path.join(HERE, "send_mail.applescript"), title, a.weekly, CFG["email_to"], html_path],
