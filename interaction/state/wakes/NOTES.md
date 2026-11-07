@@ -1,6 +1,6 @@
 # One-shot Codex wakes
 
-`wake.sh` manages schedules; `wake_run.sh` delivers them. Requires macOS, a logged-in
+`interaction/bin/wake` manages schedules; `interaction/lib/wake_fire` delivers them (state changes in `lib/wake_state`, Codex calls in `lib/codex`). Requires macOS, a logged-in
 GUI user, Python 3.9+ and Codex on PATH. Bash owns the command array, retries and
 completion trap; embedded Python handles timezone conversion, JSON, plist and an
 advisory lock. The canonical concept is `wake`; no existing names were replaced.
@@ -8,11 +8,11 @@ advisory lock. The canonical concept is `wake`; no existing names were replaced.
 ## Usage (README excerpt, five lines)
 
 ```sh
-ops/wake.sh add '2026-11-01T05:00+09:00' <UUID-or-exact-name> prompt.txt --name earnings
-ops/wake.sh add '05:00' <UUID-or-exact-name> prompt.txt --mode resume # JST; past HH:MM means tomorrow
-WAKE_DRY=1 ops/wake.sh add '05:00' <UUID-or-exact-name> prompt.txt --name dry
-ops/wake.sh list
-ops/wake.sh cancel <id>
+interaction/bin/wake add '2026-11-01T05:00+09:00' <UUID-or-exact-name> prompt.txt --name earnings
+interaction/bin/wake add '05:00' <UUID-or-exact-name> prompt.txt --mode resume # JST; past HH:MM means tomorrow
+WAKE_DRY=1 interaction/bin/wake add '05:00' <UUID-or-exact-name> prompt.txt --name dry
+interaction/bin/wake list
+interaction/bin/wake cancel <id>
 ```
 
 `--mode resume` is the default; `queue` requires explicit selection. `add` captures
@@ -31,15 +31,15 @@ fails rather than overwriting its history. Host-local calendar fields are genera
 from the absolute instant; reschedule if the host timezone changes afterward.
 
 Each directory contains a prompt copy, 0600 spec, private logs, and last response.
-The LaunchAgent plist is also 0600. `ops/wakes/.gitignore` ignores per-wake
+The LaunchAgent plist is also 0600. `interaction/state/wakes/.gitignore` ignores per-wake
 directories and the lock; source documentation stays tracked. Registry uses the
 existing `t`, `name`, `event`, `rc` conventions, adding id, target and mode:
 `wake_scheduled`, `wake_fired` (with `delay_minutes`), `wake_capacity`,
 `wake_result` (with rc), `wake_cancelled`, and `wake_schedule_failed`.
 `list` shows all scheduled/running wakes plus the latest 20 terminal records.
 
-Resume reads the prompt from stdin (`-`); queue passes it as one quoted array
-argument. Neither uses eval or shell interpolation of message contents. Capacity
+Since the 2026-11-07 refactor both resume and queue pass the prompt as one quoted
+array argument, with stdin closed (`/dev/null`). Neither uses eval or shell interpolation of message contents. Capacity
 responses retry six times with 600-second gaps (`WAKE_TRIES` / `WAKE_GAP` overrides
 for direct runner tests). Exhaustion records rc=75. Queue success means accepted,
 not proof of consumption. Dry runs persist at scheduling time and log commands
@@ -77,8 +77,8 @@ year field, hence removal after execution is essential.
 
 ## Verification
 
-`bash -n ops/wake.sh ops/wake_run.sh ops/test_wake.sh`, ShellCheck, and
-`ops/test_wake.sh` check time parsing, past/invalid rejection, tomorrow rollover,
+`bash -n` on the wake scripts (then under `ops/`), ShellCheck, and
+`interaction/tests/test_wake.sh` check time parsing, past/invalid rejection, tomorrow rollover,
 UUID/name deduplication, permissions, cancellation, early/repeated execution,
 dry mode, command delivery, injection resistance, result/cleanup, and capacity
 exhaustion. The shell test uses a temporary HOME, fake launchctl/Codex and isolated
@@ -96,7 +96,7 @@ Real attempts in this restricted agent environment:
   Operation not permitted`. No test session ID was returned, so a real resume
   wake could not be scheduled. No existing session was used.
 
-Raw attempt logs are in ignored `ops/wakes/verification/`. Both requested real
+Raw attempt logs are in ignored `interaction/state/wakes/verification/`. Both requested real
 end-to-end checks remain unverified, blocked by environment permissions, not
 replaced by the mocked tests. To repeat from an unrestricted user terminal: create
 that disposable pong session, take its `thread.started` UUID, schedule separate
@@ -104,4 +104,4 @@ dry and resume wakes at least two minutes ahead, then inspect `wake_fired`,
 `wake_result`, `last.md`, spec status, plist absence and `launchctl print` absence.
 The transcript must show a new completed turn for that same disposable UUID.
 
-`ops/README.md` is intentionally untouched because the controller owns its edit.
+Module docs: `~/PRTS/README.md` and `interaction/README.md` (controller-owned).

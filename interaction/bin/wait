@@ -1,0 +1,28 @@
+#!/bin/bash
+# Block until a dispatched/resumed task's current run ends, then print its report.
+# usage: wait <task> [poll_s]
+# Meant to run as a background command from the session that dispatched the task:
+# when it exits, the Claude app wakes that session. Exit code = the run's rc (75 = gave up).
+name=${1:?usage: wait <task> [poll_s]}; poll=${2:-30}
+S=${PRTS_INTERACTION_STATE:-$HOME/PRTS/interaction/state}
+python3 - "$S/registry.jsonl" "$name" "$poll" <<'PY'
+import json, sys, time
+reg, name, poll = sys.argv[1], sys.argv[2], int(sys.argv[3])
+while True:
+    rc = None; started = False
+    for line in open(reg, encoding="utf-8"):
+        try: e = json.loads(line)
+        except ValueError: continue
+        if e.get("name") != name: continue
+        if e.get("event") == "start": started, rc = True, None   # a new run resets
+        elif e.get("event") == "exit": rc = e.get("rc", 0)
+        elif e.get("event") == "gave_up": rc = 75
+    if rc is not None: sys.exit(rc)
+    if not started: sys.stderr.write(f"no run named {name} in registry\n"); sys.exit(2)
+    time.sleep(poll)
+PY
+rc=$?
+[ $rc -eq 2 ] && exit 2
+echo "== $name finished, rc=$rc =="
+cat "$S/tasks/$name/last.md" 2>/dev/null || echo "(no last.md)"
+exit $rc

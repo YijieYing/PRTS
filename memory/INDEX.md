@@ -16,9 +16,10 @@
 | yyj.md | 用户画像：机器、目录、七个方向、合作约定、偏好 | 涉及用户环境或偏好时 |
 | people.md | 用户身边的人：GitHub/邮箱对照、各人 profile、待问清单 | 用户提到某人、仓库或对话里出现陌生人时 |
 | [~/research/PRTS/](../../research/PRTS/README.md) | 研究层：实验状态表（README）、E2 设计、E3/E4 笔记 | 讨论研究或实验时先读它的 README |
-| ../ops/ | 派发脚本、Codex 任务 prompt（jobs/）、运行日志 | 复用或排查派发 |
+| ../README.md、../GLOSSARY.md | PRTS 的模块（interaction、reporter、maintenance）和名词 | 改 PRTS 工具前 |
+| ../interaction/state/tasks/ | 每个 Codex 任务的 prompt.md 和 last.md | 复用或排查派发 |
 | ../human/reports/ | 给人看的报告（也是事实记录） | 回顾某次运行 |
-| ../ops/backups/claude/ | Claude 对话备份（`ops/backup_claude.sh` 生成）；先看 INDEX.tsv 找会话，再读对应 jsonl | 需要追溯过去 Claude 总控的对话时 |
+| ../maintenance/backups/claude/ | Claude 对话备份（AgentConsole backup 插件生成）；先看 INDEX.tsv 找会话，再读对应 jsonl | 需要追溯过去 Claude 总控的对话时 |
 
 规则：
 - 每个共享文件只有一个写者：memory/ 只由总控写；worker 写在各自的项目里。
@@ -26,7 +27,7 @@
 - 检索结果只是线索：引用前要回到原文件确认。
 - **检索顺序（2026-10-28 事故后）**：用户提到人、话题或以前的讨论，而本目录里没有时：
   1. 先用 `search_session_transcripts` 搜所有 session 的对话。
-  2. 再 grep 文件；对话备份在 `ops/backups/claude/`，可能比实时对话旧。
+  2. 再 grep 文件；对话备份在 `maintenance/backups/claude/`，可能比实时对话旧。
   3. 多条命中时，读最新的那条。
   - 事故经过：10-28 用户提到胡瑞，总控只搜了文件，停在 10-15 的 PPT 上，漏掉了 DigitalFly session「果蝇主动决策模型可行性评估」10-23 和用户的讨论。
 - 等文件多到 grep 找不准时，再考虑 embedding。

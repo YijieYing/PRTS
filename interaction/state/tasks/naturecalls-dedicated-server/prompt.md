@@ -1,3 +1,9 @@
+# 重要边界（本次运行没有沙盒，请严格遵守）
+- 只在 `/Users/prts/Projects/NatureCalls-server` 内修改文件与运行 Unity；不要读写 `/Users/prts/Projects/NatureCalls` 或用户主目录下的其他项目、配置、密钥。
+- 联网只用于：`git fetch/push`（origin 仓库）、`gh pr create`（不合并）、以及用 `~/.ssh/id_ed25519` SSH 到课程服务器 `ubuntu@49.233.132.244` 部署游戏服务器。不要修改服务器的 SSH、防火墙或用户配置，不要安装与本任务无关的软件。
+- 不删除 UnityLockfile，不结束不是你启动的进程，不改写 git 历史，不强推。
+- 上一次运行因沙盒限制没有开始实现（无网络、Unity IPC 被拒），本次从头开始。
+
 # 任务：NatureCalls 专用服务器（给 Codex）
 
 ## 分支与起点

@@ -93,3 +93,132 @@
 - 10-26 16:23 主机不可达：lain
 - 10-27 08:54 主机不可达：lain
 - 10-27 10:35 主机不可达：lain
+- 10-27 13:15 主机不可达：lain
+- 10-27 17:25 空闲很久的进程，可以关掉：Ear 项目架构理解（pid 34993）
+- 10-27 17:54 派发任务结束，待总控验收：# 任务：CodexBridge 微信秘书自动执行记录指令（/Users/prts/Projects/CodexBridge/app/.worktrees/record-actions）
+- 10-27 18:19 空闲很久的进程，可以关掉：重跑录音并说明EAR输出格式（pid 36707）
+- 10-27 18:37 主机不可达：lain
+- 10-28 04:11 空闲很久的进程，可以关掉：启动 tanngo 应用（pid 48030）
+- 10-28 08:54 主机不可达：lain
+- 10-28 10:39 主机不可达：lain
+- 10-28 13:33 空闲很久的进程，可以关掉：读取文件 /Users/prts/PRTS/Reporter/outbox/aquant-daily.txt。如果文件第（pid 52248）
+- 10-28 15:58 派发任务结束，待总控验收：E3 更新:AgentConsole 与多 Agent 通信（/Users/prts/research/PRTS）
+- 10-28 15:58 派发任务结束，待总控验收：PRTS 研究统筹（/Users/prts/research/PRTS）
+- 10-29 04:40 主机不可达：lain
+- 10-29 06:32 空闲很久的进程，可以关掉：验证 Tailscale Exit Node（pid 34802）
+- 10-29 07:31 空闲很久的进程，可以关掉：启动 newapi+sub2api 中转站（pid 33490）
+- 10-29 08:36 空闲很久的进程，可以关掉：初始化 Unity 工程协作环境（pid 38009）
+- 10-29 09:27 主机不可达：lain
+- 10-29 11:47 主机不可达：lain
+- 10-29 13:17 主机不可达：lain
+- 10-29 13:57 主机不可达：lain
+- 10-29 15:47 主机不可达：lain
+- 10-29 16:02 空闲很久的进程，可以关掉：读取文件 /Users/prts/PRTS/Reporter/outbox/aquant-daily.txt。如果文件第（pid 787）
+- 10-29 21:45 主机不可达：lain
+- 10-29 23:57 主机不可达：lain
+- 10-30 02:39 派发任务结束，待总控验收：# AgentConsole: merge Claude desktop-app sessions by the app（/Users/prts/PRTS/AgentConsole）
+- 10-30 03:13 空闲很久的进程，可以关掉：阅读文档并实现NotHuman首版循环（pid 49260）
+- 10-30 04:30 派发任务结束，待总控验收：# CodexBridge: let local programs push WeChat messages, and （/Users/prts/Projects/CodexBridge/app）
+- 10-30 10:31 空闲很久的进程，可以关掉：PRTS 总控（pid 65844）
+- 10-30 10:34 空闲很久的进程，可以关掉：监控 Amazon 财报及科技股影响（pid 65630）
+- 10-30 10:43 主机不可达：lain
+- 10-30 12:09 派发任务结束，待总控验收：You are doing a literature and open-source survey for the aq（/Users/prts/Projects/aquant）
+- 10-30 12:23 派发任务结束，待总控验收：自动交易机器人 aquant（/Users/prts/Projects/aquant）
+- 10-30 13:33 空闲很久的进程，可以关掉：读取文件 /Users/prts/PRTS/Reporter/outbox/aquant-daily.txt。如果文件第（pid 68510）
+- 10-30 13:45 空闲很久的进程，可以关掉：读取 /Users/prts/PRTS/Reporter/outbox/amzn-earnings.txt。如果第一行日（pid 68510）
+- 10-30 16:13 主机不可达：lain
+- 10-30 16:35 主机不可达：lain
+- 10-30 17:25 派发任务结束，待总控验收：自动交易机器人 aquant（/Users/prts/Projects/aquant）
+- 10-30 17:36 主机不可达：lain
+- 10-30 18:16 派发任务结束，待总控验收：Implement and run the pre-registered E1 earnings-reaction st（/Users/prts/Projects/aquant）
+- 10-30 18:26 派发任务结束，待总控验收：Build the post-close earnings alert for aquant (/Users/prts/（/Users/prts/Projects/aquant）
+- 10-30 18:37 派发任务结束，待总控验收：# PRTS ops：wake.sh，在指定时间唤醒一个 agent session（/Users/prts/PRTS）
+- 10-30 23:28 派发任务结束，待总控验收：自动交易机器人 aquant（/Users/prts/Projects/aquant）
+- 10-31 00:46 主机不可达：lain
+- 10-31 01:18 主机不可达：lain
+- 2026-10-31 /Users/prts/PRTS 有 11 个已提交但未推送到 GitHub 的提交（最早的已 2 天）。需要时对总控说“推 github”。
+- 2026-10-31 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 2 天）。需要时对总控说“推 github”。
+- 11-01 01:33 空闲很久的进程，可以关掉：同步仓库并查看 aytony 分组提交（pid 78231）
+- 11-01 02:04 空闲很久的进程，可以关掉：PRTS 总控（pid 83498）
+- 11-01 02:04 空闲很久的进程，可以关掉：Codex 角色迁移与备份方案（pid 83650）
+- 11-01 02:20 空闲很久的进程，可以关掉：按文档要求完成作业（pid 84176）
+- 2026-11-01 /Users/prts/PRTS 有 11 个已提交但未推送到 GitHub 的提交（最早的已 3 天）。需要时对总控说“推 github”。
+- 2026-11-01 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 3 天）。需要时对总控说“推 github”。
+- 11-01 05:24 空闲很久的进程，可以关掉：Ear 项目架构理解 (fork)（pid 83365）
+- 11-01 06:38 空闲很久的进程，可以关掉：检查 Scala SDK 安装状态（pid 704）
+- 11-01 07:39 空闲很久的进程，可以关掉：代码风格（pid 82145）
+- 11-01 14:50 主机不可达：lain
+- 11-01 19:11 主机不可达：lain
+- 11-01 22:31 主机不可达：lain
+- 11-01 22:58 派发任务结束，待总控验收：自动交易机器人 aquant（/Users/prts/Projects/aquant）
+- 11-01 23:57 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-01 23:57 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-01 23:57 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-01 23:58 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-01 23:58 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-01 23:59 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-01 23:59 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 00:07 派发任务结束，待总控验收：你要实现网页游戏 NOT HUMAN 的**整个前端**。仓库：/Users/prts/school/26秋速通作业/类（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 00:16 派发任务结束，待总控验收：你要实现网页游戏 NOT HUMAN 的**整个后端**（Scala 3）。仓库：/Users/prts/school/（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 02:18 派发任务结束，待总控验收：阅读文档并实现NotHuman首版循环（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 2026-11-02 /Users/prts/PRTS 有 11 个已提交但未推送到 GitHub 的提交（最早的已 4 天）。需要时对总控说“推 github”。
+- 2026-11-02 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 4 天）。需要时对总控说“推 github”。
+- 11-02 07:38 空闲很久的进程，可以关掉：PRTS 总控（pid 80959）
+- 11-02 07:38 空闲很久的进程，可以关掉：代码风格（pid 80985）
+- 11-02 09:01 主机不可达：lain
+- 11-02 09:47 主机不可达：lain
+- 11-02 09:55 主机不可达：lain
+- 11-02 12:06 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 12:06 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 12:06 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 12:07 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 12:07 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 12:07 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 12:07 派发任务结束，待总控验收：你在为网页游戏 NOT HUMAN 并行编写剧本（YAML 数据，不写代码）。仓库：/Users/prts/school（/Users/prts/school/26秋速通作业/类型安全/NotHuman）
+- 11-02 16:17 主机不可达：lain
+- 11-02 17:02 派发任务结束，待总控验收：PRTS 研究统筹（/Users/prts/research/PRTS）
+- 11-02 18:03 空闲很久的进程，可以关掉：Ear 项目架构理解 (fork)（pid 98474）
+- 11-02 21:56 空闲很久的进程，可以关掉：UGVR 项目申请准备（pid 1116）
+- 11-02 22:58 主机不可达：lain
+- 11-03 00:24 派发任务结束，待总控验收：自动交易机器人 aquant（/Users/prts/Projects/aquant）
+- 2026-11-03 /Users/prts/PRTS 有 15 个已提交但未推送到 GitHub 的提交（最早的已 5 天）。需要时对总控说“推 github”。
+- 2026-11-03 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 5 天）。需要时对总控说“推 github”。
+- 11-03 07:44 空闲很久的进程，可以关掉：代码库架构概览（pid 44739）
+- 11-03 10:44 主机不可达：lain
+- 11-03 12:26 主机不可达：lain
+- 2026-11-04 /Users/prts/PRTS 有 15 个已提交但未推送到 GitHub 的提交（最早的已 6 天）。需要时对总控说“推 github”。
+- 2026-11-04 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 6 天）。需要时对总控说“推 github”。
+- 11-04 14:23 主机不可达：lain
+- 11-04 14:35 空闲很久的进程，可以关掉：热传导期中速查表（pid 1389）
+- 11-04 22:21 主机不可达：lain
+- 11-04 23:54 主机不可达：lain
+- 2026-11-05 /Users/prts/PRTS 有 15 个已提交但未推送到 GitHub 的提交（最早的已 7 天）。需要时对总控说“推 github”。
+- 2026-11-05 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 7 天）。需要时对总控说“推 github”。
+- 11-05 05:05 空闲很久的进程，可以关掉：Ear 项目架构理解 (fork)（pid 32816）
+- 11-05 12:28 主机不可达：lain
+- 11-05 16:56 主机不可达：lain
+- 11-05 18:30 派发任务结束，待总控验收：E3 更新:AgentConsole 与多 Agent 通信（/Users/prts/research/PRTS）
+- 11-05 18:49 空闲很久的进程，可以关掉：Ear/Lifegraph 服务开发（pid 57252）
+- 11-05 19:00 空闲很久的进程，可以关掉：代码库架构概览（pid 54300）
+- 11-05 20:48 主机不可达：lain
+- 11-05 21:40 主机不可达：lain
+- 11-05 22:12 空闲很久的进程，可以关掉：旧 Ear 补 GET /api/captures 列录音接口（pid 64376）
+- 11-05 22:12 空闲很久的进程，可以关掉：排查 Octopus service 子进程路由不恢复（pid 66255）
+- 11-06 00:29 空闲很久的进程，可以关掉：仓库同步（pid 82555）
+- 11-06 00:45 空闲很久的进程，可以关掉：Superagent 思路对比（pid 82794）
+- 11-06 01:51 空闲很久的进程，可以关掉：UGVR 项目申请准备（pid 86237）
+- 2026-11-06 /Users/prts/PRTS 有 15 个已提交但未推送到 GitHub 的提交（最早的已 8 天）。需要时对总控说“推 github”。
+- 2026-11-06 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 8 天）。需要时对总控说“推 github”。
+- 11-06 12:20 派发任务结束，待总控验收：Superagent 思路对比（/Users/prts/research/PRTS）
+- 2026-11-07 /Users/prts/PRTS 有 15 个已提交但未推送到 GitHub 的提交（最早的已 9 天）。需要时对总控说“推 github”。
+- 2026-11-07 /Users/prts/research/PRTS 有 10 个已提交但未推送到 GitHub 的提交（最早的已 9 天）。需要时对总控说“推 github”。
+- 11-07 08:55 空闲很久的进程，可以关掉：线虫网络参数反推验证（pid 30607）
+- 11-07 09:01 空闲很久的进程，可以关掉：Ear 项目架构理解 (fork)（pid 31334）
+- 11-07 09:07 空闲很久的进程，可以关掉：仓库任务5进度检查（pid 31190）
+- 11-07 09:09 空闲很久的进程，可以关掉：Adapter 音频处理与 ASR 基线（pid 30259）
+- 11-07 09:09 空闲很久的进程，可以关掉：Codex 角色迁移与备份方案（pid 33250）
+- 11-07 17:35 主机不可达：lain
+- 11-07 23:06 派发任务结束，待总控验收：# 任务：NatureCalls 专用服务器（给 Codex）（/Users/prts/Projects/NatureCalls-server）
+- 11-07 23:30（总控）从今天起，这个文件只由总控写：各处的事件先进 `interaction/state/events/queue.jsonl`，总控验收后整理到这里。
+- 11-07 23:30（总控）NatureCalls 专用服务器任务第二次运行被 `Temp/UnityLockfile` 卡住：请关掉 NatureCalls-server 的 Unity 窗口；如果没开着，确认这个锁是不是上次运行留下的。
+- 11-07 23:30（总控）PRTS 有 24 个、research/PRTS 有 10 个提交还没推到 GitHub（最早的已经 10 天）。需要时对总控说“推 github”。

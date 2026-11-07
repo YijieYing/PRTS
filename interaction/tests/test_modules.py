@@ -41,7 +41,7 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         subprocess.run(['git', 'init', '-q', str(self.repo)], check=True)
         self.prompt = self.root / 'prompt'; self.prompt.write_text('你好 "quote" $(touch INJECTED)\n')
 
-    def run_cmd(self, cmd, *args, input=None, rc=0, env=None):
+    def run_cmd(self, cmd, *args, input='', rc=0, env=None):  # never inherit our stdin: the stubs read it
         r = subprocess.run([str(self.root / cmd), *map(str, args)], input=input, text=True,
                            capture_output=True, cwd=self.root, env=env or self.env)
         self.assertEqual(r.returncode, rc, r.stdout + r.stderr)
@@ -64,11 +64,11 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
 
     def test_event_add_list_ack(self):
         ident = self.run_cmd('interaction/bin/event', 'add', 'L1', 'test', '多行\n"内容"').strip()
-        self.run_cmd('interaction/bin/event', 'add', 'L0', 'test', 'quiet')
-        self.assertEqual(len(self.rows('interaction/bin/event', 'list', '--new')), 2)
-        self.run_cmd('interaction/bin/event', 'ack', ident)
-        self.run_cmd('interaction/bin/event', 'ack', ident)
+        self.run_cmd('interaction/bin/event', 'add', 'L0', 'test', 'quiet')  # L0 is recorded, not queued for review
         self.assertEqual(len(self.rows('interaction/bin/event', 'list', '--new')), 1)
+        self.run_cmd('interaction/bin/event', 'ack', ident)
+        self.run_cmd('interaction/bin/event', 'ack', ident)
+        self.assertEqual(len(self.rows('interaction/bin/event', 'list', '--new')), 0)
         self.assertEqual(len(self.rows('interaction/bin/event', 'list')), 2)
         self.run_cmd('interaction/bin/event', 'ack', 'missing', rc=2)
         self.assertFalse(self.calls.exists())
@@ -134,7 +134,11 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         self.assertFalse((self.root / 'INJECTED').exists())
         env = dict(self.env, TEST_CAPACITY='1')
         self.run_cmd('interaction/bin/resume', 'full', 'uuid', self.repo, self.prompt, '2', '0', env=env, rc=75)
-        self.assertEqual([r['event'] for r in self.rows('interaction/bin/status', 'full')], ['capacity','capacity','gave_up'])
+        self.assertEqual([r['event'] for r in self.rows('interaction/bin/status', 'full')], ['start','capacity','capacity','gave_up'])
+        # wait: returns the latest run's rc and prints its report; a new start resets an earlier exit
+        out = self.run_cmd('interaction/bin/wait', 'full', '1', rc=75)
+        self.assertIn('full finished, rc=75', out)
+        self.run_cmd('interaction/bin/wait', 'nosuch', '1', rc=2)
 
     def test_dispatch_real_stub(self):
         self.run_cmd('interaction/bin/dispatch', 'short', self.repo, self.prompt)

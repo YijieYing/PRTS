@@ -54,7 +54,7 @@ Mac 上目前有：
 - Unity Hub 模板目录改为 `~/.unity/templates`（原 ~/Unity user templates 是空的，已删）。
 - `~/school`、`~/outreach`。
 
-**额度分工（2026-10-27）**：Codex 额度充足，Claude 额度紧张。Claude 只做决策和思考（定方案、审查、验收）；写代码、写测试、跑测试等执行工作交给 Codex（`~/PRTS/ops/dispatch.sh`），除非直接做明显比写任务说明更省 Claude 的 token。
+**额度分工（2026-10-27）**：Codex 额度充足，Claude 额度紧张。Claude 只做决策和思考（定方案、审查、验收）；写代码、写测试、跑测试等执行工作交给 Codex（`~/PRTS/interaction/bin/dispatch`），除非直接做明显比写任务说明更省 Claude 的 token。
 
 ## 4. 七个长期方向
 

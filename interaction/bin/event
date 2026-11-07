@@ -40,7 +40,8 @@ def main():
     with (root / '.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if args.action in ('add', 'from-agentconsole'):
-            row = dict(id=str(uuid.uuid4()), t=dt.datetime.now(dt.timezone.utc).isoformat(), level=args.level, source=args.source, text=args.text, status='new')
+            row = dict(id=str(uuid.uuid4()), t=dt.datetime.now(dt.timezone.utc).isoformat(), level=args.level, source=args.source, text=args.text,
+                       status='logged' if args.level == 'L0' else 'new')  # L0 is record-only, not for review
             with queue.open('a', encoding='utf-8') as f: f.write(json.dumps(row, ensure_ascii=False) + '\n')
             print(row['id'], flush=True)
             if args.level == 'L2': alert = row
