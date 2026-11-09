@@ -3,6 +3,7 @@
 本页的作用：说明 PRTS 由哪些模块组成，并分清哪些是 PRTS 自己写的，哪些是 Codex、cc、macOS 本来就有的。
 - 名词和目录的完整解释在 [GLOSSARY.md](GLOSSARY.md)。
 - 给人看的入口在 [human/README.md](human/README.md)。
+- 接下来要做什么在 [ROADMAP.md](ROADMAP.md)。
 - 新加工具时，在这里补一行。
 
 ## 一、现成功能（不是 PRTS 写的，PRTS 只是在调用）

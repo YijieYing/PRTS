@@ -26,6 +26,7 @@
 | `maintenance/` | maintenance | 一次性维护脚本和备份，不承诺接口 | — |
 | `ops/` | legacy links | 过渡期：只剩指向新位置的链接，2026-11-21 前后删除 | — |
 | `GLOSSARY.md` | glossary | 本文件 | 总控 |
+| `ROADMAP.md` | roadmap | 唯一的计划表：下一步、候选池、已完成 | 总控 |
 
 ## interaction/（与 agent 交互 / agent interaction）
 ### 对象 / Objects

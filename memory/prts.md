@@ -110,6 +110,8 @@
 | 2026-10-24 | 主阶段 4032 个单元全部完成（¥187.6）。初步结果（部分判分）：无存根时被逐出的信息几乎全部变成静默缺页，有存根时转为显式取回；TYPE、CC、CODEX 固定保留用户消息，对用户探针很有效；文件探针上 CODEX 不如 FIFO；8k 有存根时，取回后放不下的单元很多（文件探针 34/49），原因是被取回的页本身就有 3–8k、一次常取回多页，与是否推理无关。修复：合法的 JSON 片段不再算格式错误（实际只影响 3 条）；人工队列不再收录机器能判定的异常（从 1021 条降到 336 条）。用户同意做 E3 分词器实测和 E2 真实 token 重算；不急着写论文，改为调研：已有工作和更好的压缩方法写入 `research/PRTS/reference/`，美国教授（12–15 位高契合度）写入 `research/PRTS/outreach/`。已派发 e2-token-recount（直接用日志里的 prompt_tokens，不需要下载）、ref-compression-survey、outreach-professors。E3 需要下载分词器（tiktoken 和 HF 上的 tokenizer.json），**等用户批准下载**。 |
 | 2026-10-24 | 用户批准 E3 下载。总控从官方 HF 仓库下载了 DeepSeek-V3 和 Qwen2.5 的 tokenizer.json，并在 `.venv-tok` 中装了 tiktoken 和 tokenizers（tokenizers/ 已加入 gitignore），已派发 e3-tokenizers。三项任务完成：(1) 真实 token 重算（f5e211f）：真实 token 与代理单位之比的中位数为 1.043，W=8k 约等于 8.6k 真实 token。(2) reference/（3c39a70）：最相关的已有工作是 Pichay、ReadAgent、Factory 的压缩评测；建议优先尝试“页内分段取回 + 可寻址摘要”，最小实验 12 个条件、864 个单元。(3) outreach/（7834234）：12 位教授，契合度 5/5 的有 Yongfeng Zhang、Joseph Gonzalez、Kai-Wei Chang、Graham Neubig、Mohit Bansal、James Zou；另附英文研究简介草稿。 |
 | 2026-10-24 | E3 分词器实测完成（5d45ee0）：以中文为 1，英文约 0.7–0.9，日文约 1.2，法文约 0.9–1.1；改成列表或 JSON 格式可省 25–29%。E2 全部运行完成：64k 重跑 ¥27（重跑后无截断），噪声重复 ¥42（被预算闸门停在 267/288，总控补跑完）。Codex 判分完成，人工队列 364 条（`main-review/终裁表.md`）。初步结果报告：`human/reports/2026-10-24-E2-main.md`。要点：存根把静默缺页几乎全部转成显式缺页，但 3179 次 recall 只有 289 次取到 p*；用户消息固定保留就几乎不丢；文件探针上 CODEX 明显不如 FIFO；OPT 不比 FIFO 更能保住所需信息；噪声翻转率 0–23%。E2 总花费约 ¥280，余额 ¥143 左右。**等用户审查 364 条终裁表。** |
+| 2026-10-27 | 微信秘书自动建记录：秘书回复末尾输出 ```codexbridge 指令块，bridge 去掉后代为执行（只放行新建 /remind /todo /note /log，每次最多 5 条，自动建的提醒直接生效；定时任务和补发回复不执行）。Codex 实现并测试（94c20af，在 CodexBridge 部署分支 fix/durable-weixin-replies 上，未 push），已重启服务。**待用户在微信实测一次**。已知风险：没有去重，保存成功但投递失败时手动重发会重复建。 |
+| 2026-10-27 | secretary/PROJECTS.md 重写为当前路径，AGENTS.md 规定路径只看 PROJECTS.md；~/.claude/CLAUDE.md 和 ~/.codex/AGENTS.md 加了“改动时同步更新文档”规则（备份在 ops/backups/）；yyj.md 记录 Claude 决策、Codex 执行的额度分工。 |
 | 2026-10-28 | 用户提出两条新线：AgentConsole 从观察升级为能分工、回传失败、提醒和接受人工干预的系统（参考 QED、LibreChat），以及把果蝇/线虫的刺激—响应辨识当 autoresearch 试验场，并要求避免 overnight 结果看不懂。Claude 写了可行性评估（`human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md`）：两件事绑在一起做。GPT 提的 5 节点网络在 worm_effectome 的 Exp1 已有 300 节点版本，现在改作人能逐项核对的考场，并按真值阶梯逐级放开；研究题改为比较合作结构下人的核查成本。设计问题池第 6 条。等用户定顺序。 |
 | 2026-10-28 | 用户决定：借 QED，不用 LibreChat；PRTS 每个研究方向一个专用 session，另设研究统筹 session「PRTS 研究统筹：新建研究方向与状态表」（`local_3c429145-cee0-478c-8517-f533a99ac312`）负责新建方向、维护 `research/PRTS/README.md`。写权限按目录划分：统筹写根目录、notes、reference、outreach，各方向只写自己的 `experiments/E<n>/`、`results/E<n>/` 和 `STATUS.md`，互相只读，只提交自己的路径。已让统筹登记总纲和 E5（多 agent 合作结构 × 人的核查成本）。用户澄清：果蝇目前是按步骤管控的研究，不是 autoresearch；理想的 autoresearch 是"给一个 benchmark，让 AI 一直干到超过为止，人尽量不管"。候选试验场：胡瑞的计划（用 fast weight 给脑网络加容量去赢 MLP），由 autoresearch 尽力实现，同时对照打乱图、随机图和同参数 MLP，用来检验他的方案能否证明连接组的作用。评估写在可行性报告 §5。总控最初只看了他的 PPT，漏掉了 DigitalFly 10-23 的讨论，已加入检索顺序规则（INDEX.md、全局 CLAUDE.md）。研究统筹已脱离总控，成为顶层 session，更新时通知各方向 session，不再回报总控。 |
 | 2026-10-30 | AgentConsole 修复（3d81008，未推送）：Claude 桌面 app 换 transcript 后，旧 transcript 被当成另一个 session 显示（例如 E2 改名前的「PRTS 项目尝试」）。现在改读 app 的元数据 `~/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json`（`cliSessionId`、`priorCliSessionIds`、`title`、`isArchived`），把旧 transcript 折叠到当前 session 下，标题以 app 的为准，app 里已归档的默认隐藏，也不再计数或发提醒。5 个测试通过，已重启服务并核对。过期清理按设计只做提醒（14 天）；dormant 共 92 个，都在 14 天以内，其中 62 个是已经结束的 codex exec 派发任务。是否自动归档已验收的派发任务，等用户决定。 |
@@ -122,108 +124,16 @@
 | 2026-11-07 | NatureCalls「代码库架构概览」session 说“没法直接联系 Codex”，把任务说明丢给用户转交。原因：派 Codex 的规则只写在 `/Users/prts` 的自动记忆、yyj.md 和 AGENTS.md 里，在别的目录启动的 session 看不到。修复：全局 `~/.claude/CLAUDE.md` 新增「写代码交给 Codex」一节（用户批准），并转告了该 session。重构时这一节的路径要一起改（列入第 5 步）。另：af926c4 的大小写改名只提交了内容改动，已补提交。重构计划已给出（5 步，等用户确认）。 |
 | 2026-11-07 | **PRTS 按 GLOSSARY 重构**（用户批准）。(1) `maintenance/`：codex_trim、lain 修复、backups（865M，不进 git）、`archive/aquant-overnight`（af09c85）。(2) `reporter/` 分成 bin/lib/config/state；launchd 日报改成调用 `bin/report daily`，测试通过；保留 `reporter/outbox` 链接，因为用户的 CodexBridge `/auto` 任务还读旧路径。(3) `interaction/`：bin/{dispatch,resume,wake}、lib/wake_fire、state/{tasks,wakes,registry.jsonl}；ops/jobs 和 ops/prompts 合并成 `state/tasks/<任务>/`（ad1dba6）。用新路径实测了一次 dry 唤醒：延迟 0.06 分钟，plist 已删除。重构时 NatureCalls 派的 Codex 任务正在跑，它通过旧路径链接正常写回了 exit 和 last.md。它自己因为网络代理不可达，没能开始工作。(4) `ops/` 只留链接，约 11-21 删除。(5) 代码部分（registry 和 codex 适配层、wake 内部、event 队列、notify 分级、inbox 只由总控写、测试）派给 Codex（任务名 `prts-modularize`）。文档：GLOSSARY v0.2、根目录 README（由 ops/README 改写）、AGENTS.md、human/README、INDEX、全局 CLAUDE.md、自动记忆。 |
 | 2026-11-07 | 重构收尾：Codex `prts-modularize` 提交了 5 个（9a3d20a..448e454）：registry 和 codex 适配层、wake_state、event 队列、notify 分级、测试、模块 README。总控复核时修了 4 处：(a) resume 不写 start 记录，`wait` 会误判，已补上；(b) 新增 `interaction/bin/wait`，并按用户批准在全局 CLAUDE.md 加上「派完在后台 wait」；(c) L0 事件只记录，不进验收队列；(d) 测试继承了调用方的 stdin，被替身程序读住而卡死，改成显式传空 stdin。两套测试在本机通过。AgentConsole：on_event 改成用 shlex 拆分命令，配置指向 `interaction/bin/event from-agentconsole`；未推送提醒挪进 `AgentConsole/plugins/backup/`。实测过：一条事件进队列再 ack、notify log、未推送钩子。`human/inbox.md` 从今天起只由总控写。fork 提出的问题：派 Codex 的 session 收不到结束通知，已用 `wait` 解决。 |
+| 2026-11-09 | 新建 `~/PRTS/ROADMAP.md`（用户要求）作为唯一的计划表。合并了 prts.md 的总控待办、待讨论、设计问题池、AgentConsole 功能候选，以及 AgentConsole README 的「方向」，原处改成链接，并给出旧编号的对应关系。用户同意 AgentConsole 改名为 monitor（R3，和 11-21 的清理一起做）。用户指出 quiet hours 和 digest 时间是用户属性，不该写进 reporter 的 config，应归一个新的用户状态模块（R2，暂名 presence，名字待定）；推送不应过度依赖微信（R4）。顺手把 prts.md 末尾两条误放的 10-27 记录挪回了日志。 |
 
-## 总控待办（2026-10-25 由「PRTS 研究」session 移交）
-- **2026-11-21 前后**：先搜一遍还有谁在用 `~/PRTS/ops/` 的旧路径。要搜的地方：aquant 的 `event.py`、research/PRTS 的 `AGENTS.md`（这两处已发消息让对方改）、各 session 的 prompt。没人用了就删掉 `ops/` 和全局 CLAUDE.md 里那句旧路径提示。`reporter/outbox` 链接先留着，因为用户的 CodexBridge `/auto` 任务还在读旧的 `Reporter/outbox` 路径，要等用户改了才能删。
-- 微信日报（10-27 已证实）：网络已修好（IP-CIDR 43.137/43.171 DIRECT）。ret=-2 = context token 过期：用户 11:25 给 bot 发消息刷新 token 后，11:34 重试第一次就送达了 10-26 日报。结论：bot 只能在用户最近一条消息后约 24h 内推送；用户超过一天不发消息，次日日报就会失败。用户 10-27 决定：不加自动化，自己每天给 bot 发消息。日报失败时先查 context-tokens.json 的修改时间。
-- aquant 日报邮件兜底：用户 10-25 决定不开。
-- 10-25 已推送 ~/PRTS 和 ~/research/PRTS（后者按 E2 设计版本分 6 批：phaseA、v0.3–v0.7）。~/research/alignment 按用户决定暂不配远端，不再提醒。
-- ops/dispatch.sh 新增 CODEX_TOP 环境变量（传 --search 等顶层参数），已提交。
-- 研究进展此后以 ~/research/PRTS 为准：各方向 `experiments/E<n>/STATUS.md`，README 状态表由研究统筹 session 同步（2026-10-28 起）；本文件 E2 记录截至 10-24（主阶段完成，等人工终裁 364 条）。
+## 计划与待办
 
-## 待讨论
-- 第一步"调查现有技术"的具体形式和范围。Codex 读开源代码即可，不需要研究 Claude Code 的源码。
-
-
-## 设计问题池（2026-10-19 用户提出，均未决定）
-
-1. **话题路由**：主 session 应该能判断当前话题是否属于某个子 thread/session（比如 Codex 原理 → `research/LearnCodex`），并把后续讨论和记录转过去。可参考 CodexBridge：微信只有一个对话框，它必须判断当前 thread、要不要切换（见 LearnCodex/notes/02）。
-2. **总控台内部分工**：至少包括以下几个职能：
-   - 决策
-   - 监督各 agent 的报告并汇总给人
-   - 执行、调度、启动新 agent
-   - 记录与小 demo
-   目前全部混在一个 session 里。
-   - **Claude 提案（2026-10-19，未决定）**：按"状态 vs 推理"拆分，不按职能拆成多个平级的长期 session。
-     - 记录：确定性的文件 + git，单一写者。
-     - 执行和调度：脚本化的派发工具，例如 `codex exec` + 任务登记表。
-     - 监督：由事件触发，用短命的子 agent 抽查，不做持续盯梢。
-     - 决策：主 session 加人，只读摘要和登记表。
-     - 依据：CC 和 Codex 的子 agent 都只提供上下文隔离和结果回传，不提供文件一致性（见 LearnCodex/notes/01 §3）。
-3. **共享目录的一致性**：职能拆开后，多个部分会同时改家目录或共享文件，例如执行部分改了 AGENTS.md，决策部分却没看到。这个问题对所有多 agent 共享目录的场景都存在。候选手段：
-   - 单写者 / 文件所有权
-   - 追加式事件日志
-   - 读后写的版本检查（git / mtime）
-   - 决策时现读状态，不依赖记忆
-   需要先调查 CC 和 Codex 的子 agent 能解决到什么程度。
-   - **2026-10-28 已决定（研究层先行）**：文件结构对应 agent 结构，即单写者 / 目录所有权。根目录和索引由统筹写，叶子目录由各自的方向 session 写，互相只读；要改别人的文件，就给对方发消息。共用一个 checkout 时，只提交自己的路径。规则写在 `research/PRTS/AGENTS.md`。
-4. **Agent 树状监视前端**：以工程目录树为骨架，显示每个目录下运行的 agent、子 agent 及其从属关系。现有 CC 和 Codex 的界面都是侧边栏列表。前端问题，不急，先记着。
-5. **"已尝试"与"已验证"要分开**：Codex 曾把"发出了操作指令"误当成"操作已经成功"（GUI 焦点问题，在 Enter 前没有确认输入框已获得焦点、路径已写入）；lain 修复时，人报告"跑完了"也早于真实完成。可以考虑把这条作为全局规则写进 `~/.codex/AGENTS.md`，但要先弄清它的加载机制（见 LearnCodex/notes/01）。
-6. **AgentConsole 从观察走向协作与干预（2026-10-28 用户提出）**：目标是分工、传递结果和失败反馈、人工提醒、人工干预。参考 QED（文件协议：plan DAG、两层核查、三级失败升级、`human_help/`）和 LibreChat（只借 Trace Viewer）。GPT 建议做成 Research Dashboard，五个操作是打开证据、要求复现、提反例、调目标、在检查点停止，每个都落成文件动作。Claude 评估：与果蝇 autoresearch 绑在一起做，先做真值考场，再只搭它需要的部分。研究角度：比较不同合作结构下“人要花多少核查精力才能信任一条结论”，单纯比较角色分工是否有效的工作已经很多。详见 `human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md`。2026-10-28：用户同意借 QED、不用 LibreChat；顺序仍未定。
-
-7. **总控怎么主动问用户（2026-11-02 用户提出；Claude 提案 v1，未决定）**
-   - **难点**：agent 只在被叫醒时运行，也只能在运行时说话。所以要解决三件事：谁来叫醒它、问题怎么送到人、答案怎么回来。另外还要决定哪些事值得占用人的注意力（见 §2.6）。
-   - **对象**：问题（question）属于 interaction 模块，和 task、wake 并列。每条问题的字段：
-     - `id`、`question`；
-     - `why`：答案能解锁哪个决定；
-     - `default`：没人回答时总控怎么做；
-     - `urgency`：blocking（卡住了，而且有截止时间）、soon、whenever；
-     - `expires`、`source`、`dedupe_key`。
-     - 数据放 `interaction/state/questions.jsonl`，现阶段先放 `ops/questions.jsonl`，只有总控写。
-     - `human/questions.md` 是给人看的视图，由总控生成；人可以直接在里面写答案。
-   - **值不值得问**：
-     - 能自己查到的不问（先搜对话和文件）。
-     - 必须写得出 `default`；写不出说明问题没想清楚。
-     - 有合理的 `default` 且不急：攒着，等用户下次来时一起问。
-     - 只有 blocking 才推送。
-     - 推送上限：每天最多 2 条，夜里不推。
-     - 用户说「不重要」的问题降级，除非情况变了。例：陌生 GitHub 用户的提交继续增多。
-   - **叫醒、送达、回收**：
-     | 环节 | 现有手段 | 缺什么 |
-     |---|---|---|
-     | 叫醒 | Codex 用 `wake.sh`；Claude 用 scheduled-tasks（按时间新开一个 Claude session，现在一个都没建）；AgentConsole 事件 | 没有「每天整理一次问题」的定时任务 |
-     | 送达（用户在场） | session 里的 wrap_up 提问 | 无 |
-     | 送达（用户不在） | 微信（`wechat-notify.sh`）、Claude app 推送（只有 session 在运行时能发）、Gmail（每封都要用户批准，不适合） | 无 |
-     | 回收 | 在 session 里回答；改 `human/questions.md` | 微信里的回复进的是 CodexBridge 秘书，到不了总控 |
-   - **分三步做**：
-     1. 先不写代码。问题写进队列，总控开工时把未答的问题一次性问完（INDEX 开工流程加一步）。blocking 的问题在有 session 运行时用 PushNotification 推送。
-     2. 建一个 Claude scheduled task，每天固定时间整理队列：过期的关掉，要问的用微信发一条汇总。
-     3. 给 CodexBridge 加 `/答 <id> <内容>`：秘书把答案追加到 `questions.jsonl`，总控下次运行时写进记忆。这样微信就成了完整的问答通道。
-   - **研究价值**：可以和 §2.6 结合，记录每条问题的结果（答了、忽略、过期），统计「问题 → 打扰成本」。这是「人类注意力是资源」的一个可测量的版本。
-   - **第一个实例**：陌生 GitHub 提交者（INDEX 开工流程第 6 步）。
-   - **2026-11-02 用户反馈与修订**：
-     - 已同意：问题对象，`human/questions.md`，「值不值得问」的规则，研究角度。
-     - **位置**：问题队列、送达和收答案都归 reporter（唯一面对人的模块）。具体：
-       - 数据放 `reporter/state/questions.jsonl`；
-       - 总控只决定问不问、拿答案做什么；
-       - 接口两条：`reporter ask`、`reporter answers`。
-       - `interaction/` 目前只是 GLOSSARY 里的目标名，还不存在。
-     - **按紧急度扫描**：扫描本身是代码，不用 agent。
-       - blocking：每 30 分钟查一次，没回答就最多每 30 分钟提醒一次，直到回答或过期；
-       - soon：每天一次汇总；
-       - whenever：只在下次开 session 时问。
-     - **一次少问**：每批（一次推送或一次开工）最多 3 条，按优先级排；只有全部都是「干活之前必须解决」时才可以超过。在自然的停顿点问（开工、做完一件事），不在干活中途问。
-     - **用户不在时的送达渠道**：
-       - 微信受 24 小时 token 限制（用户 24 小时内没发过消息，就只能等下一条消息后补发），不稳定，只作辅助；
-       - 候选：定时 Claude session 发 app 推送，用户点开直接在那个 session 回答；Bark 或 ntfy（iOS 推送，靠一个 HTTP 请求，没有 token 过期）；邮件改成从 iCloud 发到 Gmail（不同账户，提醒正常）；iMessage。
-       - 都没测过。
-     - **记录的数据结构**：每条问题一串只追加的事件 `created / delivered(channel) / opened / answered / closed(outcome)`。
-       - outcome 的取值：`answered`、`deferred`（用户说以后）、`delegated`（你定，用 default）、`rejected`（问题本身不该问）、`expired_unseen`（没有打开的证据）、`expired_seen`（打开过但没回答）。
-       - 「为什么没回」不追问；推送里带「以后 / 你定 / 别问」按钮，让用户一下就能表态。
-       - 额外记录：回答用了多久、当批有几条、发出的时间段，以及 `default_ok`（用了 default 以后，用户有没有改过它）。
-       - 用途：如果 default 大多是对的，以后就少问。
+已合并进 [`~/PRTS/ROADMAP.md`](../ROADMAP.md)（2026-11-09）。原来的「总控待办」「待讨论」「设计问题池」「AgentConsole 功能候选」都在那里，按编号引用（R1、M1、D1……）。
+- 进度日志里提到的「设计问题池第 N 条」对应关系：1→D1，2→D2，3→已完成（单写者），4→D3，5→D4，6→M8，7→R1。
+- 「AgentConsole 功能候选第 N 条」对应 M1–M7。
 
 ## 研究线 E2：上下文压缩 = 页面置换
 设计和状态见 `~/research/PRTS/`（README 是实验状态表）。背景见 `human/reports/2026-10-20-context-paging.md`。关键点：缺页可能是静默的，所以评价指标必须包括隐式缺页（因为缺信息而犯的错）。下一步是用本机 rollout 做离线重放。
-
-## AgentConsole（supervisor）功能候选（2026-10-20，Claude 提案）
-1. **等待人类的检测**：Codex 的审批请求、Claude 的 blocked 提问 → L2 通知。这是最直接节省人类注意力的一项。
-2. **冲突检测**：同一个 git 根目录或分支上有 2 个以上 agent 同时处于 working → L1 警告。
-3. **卡死检测**：已登记的派发任务进程还活着，但 rollout 10 分钟没有增长 → L2。这正是 stdin 卡住那次事故的情况。
-4. **派发任务自动验收**：任务退出后自动起一个验收 agent。
-5. **额度和中转站路由**：统计每个 provider 的用量（5 小时限额）。
-6. **每日摘要**：用一条汇总代替多条零散提醒。
-7. **项目登记表**：session → 项目 → human 入口，作为话题路由的数据基础。
 
 ## 实验设计草案 E1：总控台 vs 单 agent vs 子 agent（2026-10-20，未执行）
 
@@ -1250,5 +1160,4 @@ PRTS 的长期愿景是：
 
 > **当 Agent 能力已经足以承担长期任务时，我们需要怎样的系统机制，使自主执行、共享状态、资源管理与人类决策能够可靠地协同？**
 
-这不是一个已经确定答案的问题。PRTS 应当首先成为探索它的工具和实验平台，而非预先假定自己就是答案。- 2026-10-27 微信秘书自动建记录：秘书回复末尾输出 ```codexbridge 指令块，bridge 去掉后代为执行（只放行新建 /remind /todo /note /log，每次最多 5 条，自动建的提醒直接生效；定时任务和补发回复不执行）。Codex 实现并测试（94c20af，在 CodexBridge 部署分支 fix/durable-weixin-replies 上，未 push），已重启服务。**待用户在微信实测一次**。已知风险：没有去重，保存成功但投递失败时手动重发会重复建。
-- 同日：secretary/PROJECTS.md 重写为当前路径，AGENTS.md 规定路径只看 PROJECTS.md；~/.claude/CLAUDE.md 和 ~/.codex/AGENTS.md 加了“改动时同步更新文档”规则（备份在 ops/backups/）；yyj.md 记录 Claude 决策、Codex 执行的额度分工。
+这不是一个已经确定答案的问题。PRTS 应当首先成为探索它的工具和实验平台，而非预先假定自己就是答案。

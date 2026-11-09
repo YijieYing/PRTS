@@ -25,6 +25,7 @@
 - 待你过目的事件：[inbox.md](inbox.md)
 - PRTS 有哪些模块、哪些工具是 PRTS 新加的、哪些是 Codex/cc 原有的：[README.md](../README.md)
 - 目录和名词解释（中英对照）：[GLOSSARY.md](../GLOSSARY.md)
+- PRTS 接下来要做什么（路线图）：[ROADMAP.md](../ROADMAP.md)
 - 记账：`~/Projects/ledger/human/README.md`，账本 `~/Projects/ledger/human/账本.xlsx`
 
 ## 研究
