@@ -84,7 +84,10 @@ def main():
                 rc = subprocess.run(cmd, cwd=a.cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT).returncode
             except OSError as e:
                 f.write(str(e) + '\n'); rc = 127
-        if 'at capacity' not in log.read_text(errors='replace').lower():
+        # Only a failed run whose last lines report capacity is retried: a successful run's log can
+        # quote the phrase (e.g. while reading this file), and retrying would redo the whole task.
+        tail = log.read_text(errors='replace').lower().splitlines()[-20:]
+        if rc == 0 or not any('at capacity' in line for line in tail):
             if not a.wake_id:
                 registry['append'](dict(name=a.name, event='exit', rc=rc, via=a.mode) | {'try': i})
             return rc
