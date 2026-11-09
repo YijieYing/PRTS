@@ -20,9 +20,11 @@ for ((i=0; i<30; i++)); do
   sleep 2
   if ! kill -0 "$pid" 2>/dev/null; then
     rc=0; wait "$pid" || rc=$?
+    "$I/lib/codex" thread "$name" "$LOG/run.log"
     echo "EXIT $name rc=$rc log=$LOG/run.log"; exit "$rc"
   fi
   if [ -f "$LOG/run.log" ] && [ "$(grep -cvE '^(Reading additional input from stdin|[[:space:]]*)$' "$LOG/run.log")" -gt 8 ]; then
+    "$I/lib/codex" thread "$name" "$LOG/run.log"
     echo "OK $name pid=$pid log=$LOG/run.log"; exit 0
   fi
 done

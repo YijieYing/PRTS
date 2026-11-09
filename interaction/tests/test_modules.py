@@ -24,6 +24,8 @@ class Modules(unittest.TestCase):
         self.env = dict(os.environ, HOME=str(self.home), CODEX_HOME=str(self.home / '.codex'),
                         PRTS_INTERACTION_STATE=str(self.state), PRTS_REPORTER_STATE=str(self.root / 'reporter-data'),
                         CODEX_GAP='0', CODEX_TRIES='2')
+        for key in ('CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'):
+            self.env.pop(key, None)
         self.stub = self.root / 'stubs'; self.stub.mkdir()
         self.env['PATH'] = str(self.stub) + ':' + os.environ['PATH']
         self.calls = self.root / 'calls'
@@ -134,7 +136,7 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         self.assertFalse((self.root / 'INJECTED').exists())
         env = dict(self.env, TEST_CAPACITY='1')
         self.run_cmd('interaction/bin/resume', 'full', 'uuid', self.repo, self.prompt, '2', '0', env=env, rc=75)
-        self.assertEqual([r['event'] for r in self.rows('interaction/bin/status', 'full')], ['start','capacity','capacity','gave_up'])
+        self.assertEqual([r['event'] for r in self.rows('interaction/bin/status', 'full')], ['start','thread','capacity','capacity','gave_up'])
         # wait: returns the latest run's rc and prints its report; a new start resets an earlier exit
         out = self.run_cmd('interaction/bin/wait', 'full', '1', rc=75)
         self.assertIn('full finished, rc=75', out)
@@ -145,6 +147,40 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         rows = self.rows('interaction/bin/status', 'short')
         self.assertEqual([r['event'] for r in rows], ['start','exit'])
         self.assertEqual(rows[-1]['rc'], 0)
+
+    def test_caller_and_thread(self):
+        thread = '12345678-1234-1234-1234-123456789abc'
+        stub = self.stub / 'codex'
+        stub.write_text(stub.read_text() + "\nimport time\nprint('session id: " + thread + "', flush=True)\n"
+                        + "print('activity\\n' * 10, flush=True)\ntime.sleep(float(os.environ.get('TEST_SLEEP', '0')))\n")
+        for kind, caller_env in [('claude', {'CLAUDE_CODE_SESSION_ID': 'claude-parent', 'CODEX_THREAD_ID': 'codex-parent'}),
+                                 ('codex', {'CODEX_THREAD_ID': 'codex-parent'}), ('none', {})]:
+            for mode in ('dispatch', 'resume'):
+                name = mode + '-' + kind
+                env = dict(self.env, **caller_env)
+                args = (name, self.repo, self.prompt) if mode == 'dispatch' else (name, thread, self.repo, self.prompt)
+                self.run_cmd('interaction/bin/' + mode, *args, env=env)
+                rows = self.rows('interaction/bin/status', name)
+                start = next(r for r in rows if r['event'] == 'start')
+                if kind == 'none':
+                    self.assertNotIn('caller', start)
+                else:
+                    self.assertEqual(start['caller'], {'kind': kind, 'id': kind + '-parent'})
+                self.assertEqual([r['thread'] for r in rows if r['event'] == 'thread'], [thread])
+        # Exercise the still-running confirmation branch as well as fast exits.
+        self.run_cmd('interaction/bin/dispatch', 'running', self.repo, self.prompt,
+                     env=dict(self.env, TEST_SLEEP='3', CODEX_THREAD_ID='codex-parent'))
+        links = self.rows('interaction/bin/status', 'links')
+        self.assertEqual(len(links), 5)
+        self.assertEqual(next(r for r in links if r['task'] == 'dispatch-claude'),
+                         {'child': thread, 'parent': 'claude-parent', 'parent_kind': 'claude', 'task': 'dispatch-claude'})
+        self.assertTrue(all(r['child'] == thread for r in links))
+        self.assertTrue(all(json.loads(l)['stdin'] == '' for l in self.calls.read_text().splitlines()))
+        # A new run cannot inherit a previous caller or thread; legacy rows are not guessed.
+        self.registry(name='running', event='start')
+        self.registry(name='legacy', event='thread', thread=thread)
+        self.registry(name='incomplete', event='start', caller={'kind': 'codex', 'id': 'parent'})
+        self.assertEqual(len(self.rows('interaction/bin/status', 'links')), 4)
 
     def test_wake_private_commands(self):
         self.run_cmd('interaction/bin/wake', '_claim', 'fake', rc=2)

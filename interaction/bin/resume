@@ -6,4 +6,4 @@ name=${1:?name required}; tid=${2:?thread required}; cwd=${3:?cwd required}; msg
 [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo 'invalid task name' >&2; exit 2; }
 L=${PRTS_INTERACTION_STATE:-$I/state}/tasks/$name
 mkdir -p "$L"
-exec "$I/lib/codex" --cwd "$cwd" --target "$tid" --prompt "$msg" --name "$name" --start --output "$L/last.md" --log "$L/run-resume-{i}.log" --tries "${5:-6}" --gap "${6:-600}" resume
+exec "$I/lib/codex" --cwd "$cwd" --target "$tid" --thread "$tid" --prompt "$msg" --name "$name" --start --output "$L/last.md" --log "$L/run-resume-{i}.log" --tries "${5:-6}" --gap "${6:-600}" resume
