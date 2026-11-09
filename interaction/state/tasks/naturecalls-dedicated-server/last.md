@@ -1,13 +1,21 @@
-当前被 Unity 锁阻塞，尚未修改代码、提交或部署。
+已完成实现并部署 **1 个房间：`49.233.132.244:8000`（UDP）**。
 
-已核实：
+- [PR #18](https://github.com/HPZ07-end/NatureCalls/pull/18)：无房主设施状态＋领队，提交 `125d0be`。
+- [PR #19](https://github.com/HPZ07-end/NatureCalls/pull/19)：服务器入口、Linux 构建与部署，提交 `5b03702`、`4197249`。
+- 均已推送、**未合并**。#19 暂基于第一步分支，需先合并 #18，再改基线为 `dev`。
 
-- 当前分支 `feat/dedicated-server`，HEAD 为 `40fbb4b`，工作区干净。
-- `git fetch origin --prune` 成功；当前 `origin/dev` 为 `8aaf363`，已包含在 HEAD 中。
-- 已阅读要求的规则与架构；领队规则已在本分支提交 `28f304d` 中。
-- `python3 scripts/unity.py detect` 通过：6000.3.26f1。
-- `python3 scripts/unity.py validate` **失败，退出码 1**：检测到本工作目录的 `Temp/UnityLockfile`，Editor 未启动，因此本次没有生成验收 Artifacts。
+设施状态由服务器拥有的 `Facilities` 保存，`FacilitySync` 保留玩家 RPC；已移除 `FindHost` 依赖并替换房主权限接口。
 
-请关闭 **NatureCalls-server** 工程的 Unity GUI；若它未打开，请人工确认锁是否为上次运行遗留并处理。仅凭锁文件无法判断原因。
+| 验证 | 结果 |
+|---|---|
+| EditMode | 20/20 |
+| 本地 PlayMode | 17/17 |
+| 原双进程、服务器＋两客户端探针 | 通过 |
+| macOS、Linux 专用服务器构建 | 通过 |
+| Python 单测、仓库检查 | 21/21、通过 |
 
-按照你的边界及 `AGENTS.md`，我没有删除锁或结束进程。EditMode、PlayMode、双进程探针、构建均未执行；无提交、PR、部署进程或端口变更。文档未修改，因为尚无实现变化。
+服务器 `naturecalls@8000` 已启用自动启动，PID `1844231`，监听 `0.0.0.0:8000/UDP`，无失败重启，内存约 117 MiB。Unity 首次生成的自身配置已迁至 `/var/lib/naturecalls-8000`，并启用 `ProtectHome`。日志：`journalctl -u naturecalls@8000 -n 100 --no-pager`。
+
+**未执行**：公网客户端连接、Windows、Relay、人工手感及负载测试。默认 PlayMode 因 Relay 跳过而判失败；过程中编译与 IPv6 测试失败均已修复。
+
+[完整命令、失败恢复及 Artifacts 路径](/Users/prts/Projects/NatureCalls-server/Artifacts/run-report.md)。已更新架构、开发、测试、状态、Playground、路线及开发记录文档。

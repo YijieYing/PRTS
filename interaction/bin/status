@@ -12,6 +12,8 @@ if sys.argv[1:] == ['links']:
         name = row.get('name')
         if row.get('event') == 'start':
             tasks[name] = {'caller': row.get('caller')}
+        elif row.get('event') == 'caller':   # backfilled for runs started before callers were recorded
+            tasks.setdefault(name, {})['caller'] = row.get('caller')
         elif row.get('event') == 'thread':
             tasks.setdefault(name, {})['thread'] = row.get('thread')
     for name, task in tasks.items():
