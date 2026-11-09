@@ -23,6 +23,7 @@
 | `interaction/` | agent interaction | 和 agent 打交道：派发、续跑、定时唤醒、事件队列 | 本模块 |
 | `reporter/` | reporting & notification | 生成内容并送达你：周报、日报、单条通知；以后还负责向你提问 | 本模块 |
 | `AgentConsole/` | monitor | 只观察、产生事件，不做判断（独立仓库） | 本模块 |
+| `pulse/` | user state（计划中，ROADMAP R2） | 感知用户此刻是否方便被打扰，以及休息时段等用户属性；reporter 推送前问它 | 本模块 |
 | `maintenance/` | maintenance | 一次性维护脚本和备份，不承诺接口 | — |
 | `ops/` | legacy links | 过渡期：只剩指向新位置的链接，2026-11-21 前后删除 | — |
 | `GLOSSARY.md` | glossary | 本文件 | 总控 |
