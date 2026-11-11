@@ -337,7 +337,7 @@ def check(data, at, c, state, dry, no_classify=False, classification_file=None):
         for key, notice in notices:
             if key in history and abs(at-history[key]) < c['check']['cooldown_minutes']*60: continue
             if not dry:
-                result = run([os.environ.get('PULSE_ASK',str(ROOT/'reporter/bin/ask')), 'add',notice,'--why','确认后可把排障执行交给 agent，减少用户介入','--default','无人回答则不执行，保留建议','--urgency','whenever','--source','pulse','--dedupe',key])
+                result = run([os.environ.get('PULSE_ASK',str(ROOT/'reporter/bin/ask')), 'add',notice,'--why','确认后可把排障执行交给 agent，减少用户介入','--default','无人回答则不执行，保留建议','--urgency','timely','--source','pulse','--dedupe',key])
                 if result.returncode or not result.stdout.strip(): raise RuntimeError('ask 提交失败: '+result.stderr)
                 history[key] = at
                 atomic(path,json.dumps(history,ensure_ascii=False,indent=2))

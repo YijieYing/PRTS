@@ -50,6 +50,14 @@ class Questions(unittest.TestCase):
     def due(self, now):
         return self.run_cmd('due', '--channel', 'claude', '--now', now)
 
+    def test_timely_pushes_once_and_respects_quiet(self):
+        self.stub('true')
+        q = self.add('timely', 'quiet-one').strip()
+        self.assertEqual(self.due('2026-11-12T10:00:00+09:00'), '')     # quiet: held back
+        self.stub('false')
+        self.assertIn(q, self.due('2026-11-12T10:05:00+09:00'))          # pushed at the next due run
+        self.assertEqual(self.due('2026-11-12T11:00:00+09:00'), '')     # never repeated
+
     def test_fold_dedupe_concurrency(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             ids = list(pool.map(lambda _: self.add(key='same'), range(16)))

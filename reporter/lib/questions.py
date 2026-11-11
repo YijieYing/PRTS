@@ -14,7 +14,7 @@ import tomllib
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-URGENCY = ('blocking', 'soon', 'whenever')
+URGENCY = ('blocking', 'timely', 'soon', 'whenever')  # timely: push once at the next due run, never repeat
 OUTCOMES = ('answered', 'deferred', 'delegated', 'rejected', 'expired_unseen', 'expired_seen', 'superseded')
 VIA = ('session', 'file', 'wechat', 'claude')
 HELP = '直接回复「{q} 你的答案」，或「{q} 你定」（用默认答案）、「{q} 以后」、「{q} 别问」。'
@@ -193,6 +193,8 @@ def execute(a):
                 deliveries = q['deliveries']
                 if q['urgency'] == 'blocking':
                     return len(batches) < limit and (not deliveries or now - max(stamp(e['t']) for e in deliveries) >= timedelta(minutes=interval))
+                if q['urgency'] == 'timely':
+                    return not deliveries and not is_quiet
                 return (q['urgency'] == 'soon' and not is_quiet and (now.hour, now.minute) >= (hour, minute)
                         and not any(stamp(e['t']).date() == day for e in deliveries))
             items = [q for q in items if due(q)][:cap]
