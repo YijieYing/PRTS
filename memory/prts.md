@@ -127,6 +127,7 @@
 | 2026-11-09 | 新建 `~/PRTS/ROADMAP.md`（用户要求）作为唯一的计划表。合并了 prts.md 的总控待办、待讨论、设计问题池、AgentConsole 功能候选，以及 AgentConsole README 的「方向」，原处改成链接，并给出旧编号的对应关系。用户同意 AgentConsole 改名为 monitor（R3，和 11-21 的清理一起做）。用户指出 quiet hours 和 digest 时间是用户属性，不该写进 reporter 的 config，应归一个新的用户状态模块（R2，暂名 presence，名字待定）；推送不应过度依赖微信（R4）。顺手把 prts.md 末尾两条误放的 10-27 记录挪回了日志。 |
 | 2026-11-09 | AgentConsole 嵌套显示：(1) 由桌面 app 启动的 session 按元数据 `spawnedFrom` 挂到启动者下面（d082c89）；(2) Codex 派发任务挂到派发者下面：Codex 让 dispatch 和 resume 记录 `caller` 与 `thread`，新增 `status links`，AgentConsole 新增配置项 `links`（PRTS 6a65831，AgentConsole c0306b8）；(3) 总控按证据回填了 44 条旧关系：thread 取自 run.log，caller 取自对话记录里的派发命令，按记录自带的 sessionId 计，避免把 fork 的副本算成派发者；13 个有歧义的跳过。查明：NOT HUMAN 的剧本、前后端任务是「代码风格」11-01 派的，只有 v2 和修订一的后端是 NOT HUMAN 自己派的。**修了一个 bug**：`lib/codex` 在整份日志里找 "at capacity"，日志里只要引用了这句话（比如读到 lib/codex 源码），已经完成的任务就会被当成满载重跑。dispatch-links 因此白跑了 3 遍，已停掉；现在只在失败、且最后 20 行里出现这句话时才重试，并加了回归测试（f407d61）。`wait` 首次实际使用：按设计唤醒了总控。 |
 | 2026-11-09 | 用户状态模块定名为 `pulse`（R2）。ROADMAP 和 GLOSSARY 已更新。 |
+| 2026-11-12 | 用户回顾 11-11：想不起学了什么、产出了什么。总控遍历了全部 Claude 和 Codex 对话、git 提交，给出带时间戳的回顾，结论是大部分时间花在工程杂务上。但那次回顾漏掉了用户下午在网页版 GPT 上的学习（有效连接和结构连接）。用户定义了**输入（学习）、输出（创造）、杂务**，要求杂务尽量交给 agent。已写入：`pulse/README.md` 设计稿 v0.1（先做每日回顾）、`AGENTS.md` 第一条规则、prts.md 附录 D 第 11 条、yyj.md §2，以及 ROADMAP R2 和 GLOSSARY。 |
 
 ## 计划与待办
 
@@ -1150,6 +1151,8 @@ https://arxiv.org/abs/2610.04838
 
 10. **允许项目持续演化。** 当前最重要的不是给 PRTS 画出最终架构，而是找到足够真实、重要且可以验证的研究问题。
 
+
+11. **把用户的有效时间留给输入和输出。**（2026-11-12 用户补充，总控记录）用户的有效大脑时间应主要用于学习（输入）和创造（输出）：读文献、教学材料和 AI 概括，和 agent 讨论概念；设计实验、设计项目的输入输出和用户体验、发散、手写代码、写作。工程实现的杂务（包括和 agent 讨论架构）应尽可能交给 agent 完成。PRTS 好不好，最终要看它是否增加了用户的输入和输出时间。定义见 `~/PRTS/pulse/README.md`。
 ---
 
 # 最终定位
