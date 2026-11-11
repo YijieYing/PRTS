@@ -42,8 +42,12 @@ def project(cwd, mapping):
     if not cwd:
         return '未归属'
     path = str(Path(cwd).expanduser()).rstrip('/')
+    if path == str(Path.home()).rstrip('/'):
+        return '未归属'
     for item in mapping:
         prefix = str(Path(item['path']).expanduser()).rstrip('/')
+        if prefix == str(Path.home()).rstrip('/'):
+            continue
         if path == prefix or (not item.get('exact') and path.startswith(prefix + '/')):
             return item['name']
     return Path(path).name or '未归属'
@@ -70,18 +74,28 @@ def claude(config, start, end, mapping, warnings):
             try: t = stamp(r['timestamp'])
             except (KeyError, ValueError, TypeError): continue
             if not start <= t < end: continue
-            value = r.get('message', {}).get('content')
-            if r['type'] == 'user' and isinstance(value, list):
-                value = [x for x in value if isinstance(x, dict) and x.get('type') == 'text' and not x.get('text', '').lstrip().startswith('<')]
-            text = content(value).strip()
-            if not text: continue
-            if r['type'] == 'user' and (r.get('isCompactSummary') or text.startswith('This session is being continued from a previous conversation')): continue
-            if r['type'] == 'user' and (text.startswith('<') or r.get('isMeta') or (isinstance(value, list) and any(x.get('type') == 'tool_result' for x in value if isinstance(x, dict)))): continue
+            message = r.get('message', {})
+            value = message.get('content')
+            blocks = value if isinstance(value, list) else []
+            tool_result = any(x.get('type') == 'tool_result' for x in blocks if isinstance(x, dict))
             meta = titles.get(sid, {})
             cwd = r.get('cwd') or meta.get('cwd', '')
-            events.append(dict(time=t, source='claude', session=sid, uuid=uid,
-                               role=r['type'], text=text, title=meta.get('title') or sid,
-                               local_id=meta.get('local_id'), cwd=cwd, project=project(cwd, mapping)))
+            base = dict(time=t, source='claude', session=sid, uuid=uid,
+                        title=meta.get('title') or sid, local_id=meta.get('local_id'),
+                        cwd=cwd, project=project(cwd, mapping))
+            # Tool payloads are never retained; timestamps and turn completion are evidence for held.
+            if tool_result:
+                events.append(base | dict(role='tool', text='', final=False))
+                continue
+            if r['type'] == 'user' and isinstance(value, list):
+                value = [x for x in value if isinstance(x, dict) and x.get('type') == 'text'
+                         and (not x.get('text', '').lstrip().startswith('<') or x.get('text', '').lstrip().startswith('<pasted_content'))]
+            text = content(value).strip()
+            if r['type'] == 'user':
+                if not text or r.get('isMeta') or r.get('isCompactSummary') or text.startswith('This session is being continued from a previous conversation'): continue
+                if text.startswith('<') and not text.startswith('<pasted_content'): continue
+            events.append(base | dict(role=r['type'], text=text,
+                                     final=r['type']=='assistant' and message.get('stop_reason') == 'end_turn'))
     return events
 
 
@@ -89,7 +103,7 @@ def chrome(config, start, end, warnings):
     path = Path(config['chrome']).expanduser()
     if not path.exists():
         warnings.add('Chrome History 不存在'); return []
-    events, projects = [], {}
+    events, projects, visits = [], {}, []
     epoch = 11644473600
     try:
         with tempfile.TemporaryDirectory(prefix='pulse-chrome-') as tmp:
@@ -97,8 +111,8 @@ def chrome(config, start, end, warnings):
             shutil.copyfile(path, copy)
             with closing(sqlite3.connect(copy.as_uri() + '?mode=ro', uri=True)) as db:
                 # Only ChatGPT rows are read, including project titles for prefix mapping.
-                rows = db.execute("SELECT urls.url, urls.title, CAST(visits.visit_time AS INTEGER) FROM visits JOIN urls ON visits.url=urls.id WHERE urls.url LIKE '%chatgpt.com%' AND CAST(visits.visit_time AS INTEGER) < ? ORDER BY CAST(visits.visit_time AS INTEGER)", (int((end + epoch) * 1e6),))
-                for url, title, micros in rows:
+                rows = db.execute("SELECT urls.url, urls.title, CAST(visits.visit_time AS INTEGER), CAST(visits.visit_duration AS INTEGER) FROM visits JOIN urls ON visits.url=urls.id WHERE urls.url LIKE '%chatgpt.com%' AND CAST(visits.visit_time AS INTEGER) < ? ORDER BY CAST(visits.visit_time AS INTEGER), visits.rowid", (int((end + epoch) * 1e6),))
+                for url, title, micros, duration in rows:
                     u = urlparse(url)
                     if u.hostname not in ('chatgpt.com', 'www.chatgpt.com'): continue
                     parts = u.path.split('/')
@@ -106,6 +120,7 @@ def chrome(config, start, end, warnings):
                     if title.startswith('ChatGPT - ') and prefix:
                         projects[prefix] = title[len('ChatGPT - '):]
                     t = micros / 1e6 - epoch
+                    visits.append(t)
                     if not start <= t < end: continue
                     # Project pages supply attribution, not conversation time.
                     if title.startswith('ChatGPT - '): continue
@@ -113,8 +128,10 @@ def chrome(config, start, end, warnings):
                     conversation = u.path.split('/c/', 1)[1].split('/')[0]
                     events.append(dict(time=t, source='chatgpt', session=conversation,
                                        role='user', text=title, title=title, url=url,
-                                       prefix=prefix, project='未归属'))
+                                       prefix=prefix, project='未归属', visit_index=len(visits)-1, visit_duration=max(0, (duration or 0)/1e6)))
         for e in events:
+            i = e.pop('visit_index')+1
+            e['next_visit'] = visits[i] if i < len(visits) else end
             e['project'] = projects.get(e.pop('prefix'), '未归属')
     except (OSError, sqlite3.Error) as e:
         warnings.add(f'Chrome History 未读到: {e}')

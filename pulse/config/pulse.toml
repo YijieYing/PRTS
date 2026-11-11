@@ -2,12 +2,21 @@ timezone = "Asia/Tokyo"
 day_start_hour = 5
 gap_minutes = 20
 cap_minutes = 20
+chatgpt_cap_minutes = 45
+held_cap_minutes = 60
+
+[timing]
+writing_chars_per_minute = 40
+paste_chars_per_minute = 400
+reading_chars_per_minute = 400
+writing_cap_minutes = 15
+reading_cap_minutes = 15
+paste_min_chars = 400
 
 [check]
 window_minutes = 90
-minimum_minutes = 30
 chore_ratio = 0.5
-chore_minutes = 30
+chore_minutes = 60
 continuous_minutes = 30
 cooldown_minutes = 180
 
