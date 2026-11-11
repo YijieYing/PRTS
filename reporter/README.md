@@ -89,4 +89,4 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 - `prts-reminders.md`：每小时一次（cron `7 9-23,0 * * *`）。先运行 `pulse check`，再运行 `ask due --channel claude`。有待推送的问题就展示出来，并用 PushNotification 推到手机；用户在那个 session 里的回复，交给 `ask reply` 记录。
 - `prts-daily-recap.md`：每晚 23:40 运行 `pulse day`，把回顾推给用户。
 
-定时任务要在 Claude app 里创建：总控通过 scheduled-tasks 工具创建时，被权限检查拦下了，需要用户允许或自己创建。
+2026-11-12 已按用户批准创建，保存为 Auto 模式，可以在 app 侧边栏的 Scheduled 里修改。Claude app 开着时才会运行；app 关着的话，在下次打开时补跑。
