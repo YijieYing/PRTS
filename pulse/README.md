@@ -42,7 +42,7 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
 | Ear 的录音结果 | 线下的课、讨论 | 以后再接 |
 
 ## 三、杂务过多时提醒用户（11-12 用户提出）
-- pulse 持续统计用户最近一段时间的杂务占比。比如过去 90 分钟里杂务超过一半，或者同一件杂务连续拖了 30 分钟以上，就通过 question queue（ROADMAP R1）提醒用户。
+- pulse 持续统计用户最近一段时间的杂务占比。v1 按 active（亲自操作）与 held（被占用）分开估计：过去 90 分钟里杂务 active + held 至少 60 分钟且占窗口至少一半，或者同一件杂务连续超过 30 分钟，就通过 question queue（ROADMAP R1）提醒用户。
 - 提醒的写法是给出一个能交出去的具体事项，比如：「过去 90 分钟有 70% 在处理 NatureCalls 的部署。要不要把『部署失败自动排查』交给 agent？」。不只是报一个数字。
 - 遵守 R1 的规则：每批最多 3 条；`pulse now` 判断用户正在专注输入或输出时，不打断。
 - 阈值先用上面的数，再按用户对提醒的反应（采纳、忽略、嫌烦）调整。
@@ -80,17 +80,22 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 九、v1 实现与使用
 
-已实现 `bin/pulse day [YYYY-MM-DD]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry]`、`bin/pulse now`。`next-available`、活动类别的实时识别、定时调度留待后续。
+已实现 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别、定时调度留待后续。
 
 - `day` 默认取当地日历的昨天（凌晨 0–6 点也取前一天），窗口为 Asia/Tokyo 05:00 至次日 05:00。日期显式指定时不受运行时刻影响。
 - `config/pulse.toml` 配置时区、切日、20 分钟分段间隔与估计上限、检测阈值、数据路径和 `[user]` 空闲/休息时段。初始休息时段 05:00–12:00 是可调整的默认值，不代表已确认的用户作息。支持跨午夜时段。
-- Claude 仅保留用户文本块和 assistant 文本；过滤注入块、tool_result、isMeta、压缩摘要；fork 按记录 `(sessionId, uuid)` 去重，不按所在文件名判断。标题取本机 local JSON。
-- 同一来源、同一会话，相邻用户消息/网页访问不超过 20 分钟为一段。Claude 相邻用户消息的间隔取实际值或上限；跨段长间隔的上限归前段。最后一条用户消息不凭空补时长。assistant 仅作为分类上下文，不延长用户时间。窗口边缘裁剪区间；回放不读未来消息。ChatGPT 每段首末访问之差最多 20 分钟，单次访问计 0，全部标低置信度。段的原始估计保留在 `user_seconds`；汇总将重叠区间等分给活动段，`seconds` 为分摊后的时间，避免同时聊天/浏览重复计时。
-- 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；无匹配时用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
+- Claude 用户/assistant 正文用于分类；注入块、tool_result 内容、isMeta、压缩摘要不算用户消息。工具调用/结果和 assistant 的时间戳、`stop_reason=end_turn` 单独保留作为 held 证据，不保留工具返回内容。fork 按记录 `(sessionId, uuid)` 去重；`<pasted_content>` 是粘贴正文标记，保留。
+- Claude 同会话相邻用户消息不超过 20 分钟为一段。每条用户消息估计写作（40 字/分钟）及阅读上一条 assistant 文本（400 字/分钟），各自最多 15 分钟；两项相加后与到下一条用户消息的间隔（最多 20 分钟）取较大值，不相加重复计时。没有后续用户消息时仍计读写，最后的完整 assistant 回复另计一次阅读。写作/阅读估计放在发言前，较大的间隔部分向后延展；末次回复阅读放在回复后。这是估计区间，不是键鼠实测。
+- 显式 `<pasted_content>`、代码围栏，以及至少 400 字的多行文本块按粘贴速度 400 字/分钟计算，其余文字按写作速度计算；去掉空白后数 Unicode 字符。粘贴启发式、各速度及上限均在 `[timing]` 配置，无法识别的粘贴可能高估写作时间。
+- ChatGPT 每次访问 active = min(`visit_duration` 微秒换算、距下一次 chatgpt.com 访问开始的时间、`chatgpt_cap_minutes` 默认 45 分钟)。下一次访问包括项目页；不读取其他站点。相同 URL 的多次访问合成一段，不论间隔；各次区间先合并，避免重复。全部标低置信度，单次访问也有停留时长。
+- held 只给已分类为 chore 的会话：用户消息之后，已有 assistant/tool 工作证据时，计到第一次回复结束或下一条用户消息（较早者），每条最多 `held_cap_minutes`（60 分钟）。在回放截止时尚未结束的 turn，可估到截止时刻，但仍受 60 分钟上限约束；没有任何工作证据则不补 held。最终回复后的无消息等待不自动延长。窗口边缘裁剪，不读取 `--at` 之后的消息/工具记录。JSON 保存候选区间及完整时间戳证据，未分类候选不算 held。
+- `user_seconds` 是段内合并后的原始 active 估计；`active_seconds`（兼容字段 `seconds`）为跨段重叠等分后的 active。held 先扣除所有 active 区间，再在杂务段之间等分，写入 `held_seconds`。总表/项目表单列 held，active 占比的分母只含 active。小于 0.05 分钟的非零值显示 `<0.1`，避免“0.0 分钟却有高占比”；项目括号百分比以该项目的 active 为分母。
+- 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；家目录本身固定为「未归属」，忽略项目登记里的家目录前缀（含 exact 项），只有更具体路径才可匹配；其他无匹配路径仍用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
 - Chrome History 复制到受限临时目录，以只读 SQLite 查询；SQL 仅查含 chatgpt.com 的记录，另校验精确 hostname，显式 CAST 时间为 INTEGER。不读取其他网站记录，退出时删除副本。项目页归属可参考窗口之前的 ChatGPT 项目页。
 - Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，用户时间恒为 0。git 提交存在不证明由用户手写；agent 自述标为未核实。
-- 一次 `day` / 达到最低时长的 `check` 只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
-- `check` 在合并重叠后的用户时间少于 30 分钟时不调 LLM。杂务占比严格大于 50% 且至少 30 分钟，或同主题无间断观测区间严格超过 30 分钟，才提交建议；每次最多 3 条。日期/项目/主题为去重键，成功入队后 3 小时内不重复；有锁避免并发重复，失败不登记成功。`--dry` 只打印，不提交、不消耗去重。实际通知是否打扰由 reporter 决定。
+- 正常分类模式的一次 `day` / 达到候选时长的 `check` 只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
+- `check` 杂务 active + held ≥ 60 分钟且占整个窗口 ≥ 50%，或同项目/同主题连续区间严格超过 30 分钟时提交建议。分类前用 active 与全部 held 候选的并集做上界，不再只因 active 少于 30 分钟就漏掉被占用的时间；不可能达到任一阈值才跳过 LLM。提醒文字分别给出 active 和 held；每次最多 3 条。日期/项目/主题为去重键，成功入队后 3 小时内不重复；有锁避免并发重复，失败不登记成功。`--dry` 不提交、不消耗去重，最终是否通知仍由 reporter 决定。
+- `--no-classify` 不调用 Codex；默认从对应日 `state/days/日期.json` 复用已有分类，也可用 `--classification-file` 指定。Claude 以真实用户 UUID 覆盖匹配、ChatGPT 以精确 URL 匹配，并要求分类与主题唯一；无法匹配则标「未分类」，不猜成杂务。缓存可能来自事后全天分析，因此此模式验证采集/计时/阈值，不验证当时实时分类是否相同。`day` 写独立的 `日期.timing.json/.md`，保留原分类报告。`check --no-classify` 必须同时 `--dry`，输出触发结果与时间证据。每次 check 保存 `state/checks/当地时刻.json`，含 active/held 明细及证据。
 - `now` 输出 `{status, idle_seconds, app, quiet, at}`，status 为 active / away / unknown；键鼠空闲严格超过配置值（默认 600 秒）为 away。探测失败为 null / unknown，不假称正在输入或输出。
 
 数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法观察持续阅读、线下活动或用户是否真的关注页面，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
@@ -104,4 +109,4 @@ python3 interaction/tests/test_modules.py
 bash interaction/tests/test_wake.sh
 ```
 
-代码沿用 `segment`（活动段）、`project`、`category` 和 interaction 的 `run`，没有新增重叠概念层。实现分 `lib/sources.py`（采集）与 `lib/pulse.py`（分段、分类、命令），跨模块只执行 bin 接口；读取项目配置是任务明确允许的例外。
+代码沿用 `segment`（活动段）、`project`、`category` 和 interaction 的 `run`；计时明确使用 `active` 与 `held`，没有新增重叠概念层。实现分 `lib/sources.py`（采集）与 `lib/pulse.py`（分段、分类、命令），跨模块只执行 bin 接口；读取项目配置是任务明确允许的例外。
