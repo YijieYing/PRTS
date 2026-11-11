@@ -28,6 +28,7 @@
 | [interaction/](interaction/README.md) | 和 agent 打交道：派发、续跑、定时唤醒、事件队列 | `dispatch`、`resume`、`wake`、`event` |
 | [reporter/](reporter/README.md) | 送达你：周报、aquant 日报、单条通知 | `report`、`notify` |
 | `AgentConsole/` | 全机 agent 监视（http://127.0.0.1:7788，独立仓库），产生事件交给 `interaction/bin/event` | — |
+| [pulse/](pulse/README.md) | （设计中）用户本人的状态：每日回顾有效时间花在输入、输出还是杂务上；此刻是否方便被打扰 | `pulse day`、`pulse now`（计划） |
 | `maintenance/` | 一次性维护脚本、备份、已结束实验的存档 | — |
 | `human/`、`memory/` | 给你看的入口；总控的记忆 | — |
 | `ops/` | 过渡期只剩指向新位置的链接，约 2026-11-21 删除 | — |
