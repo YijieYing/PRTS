@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 
 registry = runpy.run_path(str(Path(__file__).with_name('registry')))
@@ -35,6 +36,28 @@ def record_thread(name, log):
     if match:
         thread = str(uuid.UUID(match[1]))
         registry['append'](dict(name=name, event='thread', thread=thread))
+
+
+def run_sync(argv):
+    """One read-only execution; no registry writes, retries or inherited stdin."""
+    p = argparse.ArgumentParser(prog='interaction/bin/run')
+    p.add_argument('prompt', help='UTF-8 prompt file')
+    p.add_argument('--output-schema')
+    p.add_argument('-o', '--output')
+    a = p.parse_args(argv)
+    prompt = Path(a.prompt).read_text()
+    with tempfile.TemporaryDirectory(prefix='interaction-run-') as tmp:
+        output = Path(a.output).resolve() if a.output else Path(tmp) / 'last.txt'
+        output.unlink(missing_ok=True)
+        cmd = ['codex', 'exec', '--sandbox', 'read-only', '-c', 'approval_policy="never"',
+               '--ephemeral', '-o', str(output)]
+        if a.output_schema: cmd += ['--output-schema', str(Path(a.output_schema).resolve())]
+        cmd += ['--', prompt]
+        result = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=sys.stderr, stderr=sys.stderr)
+        if result.returncode: return result.returncode
+        if not output.is_file(): raise ValueError('Codex succeeded without a final response')
+        print(output.read_text(), end='')
+        return 0
 
 
 def main():
@@ -100,7 +123,9 @@ def main():
 
 if __name__ == '__main__':
     try:
-        if len(sys.argv) == 4 and sys.argv[1] == 'thread':
+        if len(sys.argv) > 1 and sys.argv[1] == 'run':
+            sys.exit(run_sync(sys.argv[2:]))
+        elif len(sys.argv) == 4 and sys.argv[1] == 'thread':
             record_thread(*sys.argv[2:])
         else:
             sys.exit(main())
