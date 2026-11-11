@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 URGENCY = ('blocking', 'soon', 'whenever')
 OUTCOMES = ('answered', 'deferred', 'delegated', 'rejected', 'expired_unseen', 'expired_seen', 'superseded')
 VIA = ('session', 'file', 'wechat', 'claude')
-HELP = '直接回复「Q12 你的答案」，或「Q12 你定」（用默认答案）、「Q12 以后」、「Q12 别问」。'
+HELP = '直接回复「{q} 你的答案」，或「{q} 你定」（用默认答案）、「{q} 以后」、「{q} 别问」。'
 
 
 def stamp(value):
@@ -88,7 +88,7 @@ def display(items):
     for q in items:
         lines.extend([f"{q['qid']} · {' '.join(q['question'].split())}",
                       f"没人回答时：{' '.join(q['default'].split())}"])
-    return '\n'.join(lines + [HELP]) if lines else ''
+    return '\n'.join(lines + [HELP.format(q=items[0]['qid'])]) if lines else ''  # example uses a real id
 
 
 def positive(value):
@@ -183,7 +183,7 @@ def execute(a):
         if a.cmd in ('next', 'render', 'due'):
             items = ordered(qs, now)
             if a.cmd == 'render':
-                return '# 待回答的问题\n\n' + (display(items) or '暂无待回答的问题。\n' + HELP) + '\n\n也可让 session 调用 ask answer Q12 "答案" --via file；本视图不会自动导入文件修改。'
+                return '# 待回答的问题\n\n' + (display(items) or '暂无待回答的问题。\n' + HELP.format(q='Q12')) + '\n\n也可让 session 调用 ask answer Q12 "答案" --via file；本视图不会自动导入文件修改。'
             if a.cmd == 'next':
                 return display(items[:min(cap, a.max or cap)])
             day = now.date()
