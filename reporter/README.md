@@ -86,7 +86,12 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 
 ## 送达到 Claude 桌面和手机 app（2026-11-12）
 两个 Claude 定时任务，prompt 放在 `config/claude-tasks/`：
-- `prts-reminders.md`：每小时一次（cron `7 9-23,0 * * *`）。先运行 `pulse check`，再运行 `ask due --channel claude`。有待推送的问题就展示出来，并用 PushNotification 推到手机；用户在那个 session 里的回复，交给 `ask reply` 记录。
+- `prts-reminders.md`：每小时一次（cron `7 9-23,0 * * *`）。先运行 `pulse check`，再运行 `ask due --channel claude`。有待推送的问题就展示出来，并用 `notify alert` 推到手机（Bark）和电脑（macOS 通知）；用户在那个 session 里的回复，交给 `ask reply` 记录。
 - `prts-daily-recap.md`：每晚 23:40 运行 `pulse day`，把回顾推给用户。
 
 2026-11-12 已按用户批准创建，保存为 Auto 模式，可以在 app 侧边栏的 Scheduled 里修改。Claude app 开着时才会运行；app 关着的话，在下次打开时补跑。
+
+### 手机渠道：Bark（2026-11-12）
+- `notify phone` 用 Bark 推到 iPhone；`notify alert` = Bark + macOS 通知（之前是微信 + macOS 通知）。`notify wechat` 仍然保留。
+- 设备 key 在 `config/secrets.toml`，权限 600，已加入 `.gitignore`，不进 git。
+- 为什么不用 Claude app 推送：定时任务的 session 不连 Remote Control，也不能为它打开，PushNotification 到不了手机（11-12 实测）。

@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""Bark (iPhone) push: bark <title> <text>. Key in config/secrets.toml (not in git)."""
+import json, sys, tomllib, urllib.request
+from pathlib import Path
+cfg = tomllib.loads((Path(__file__).resolve().parents[2] / 'config/secrets.toml').read_text())
+title, text = sys.argv[1], sys.argv[2]
+body = json.dumps({'device_key': cfg['bark_device_key'], 'title': title, 'body': text[:3500],
+                   'group': 'PRTS'}).encode()
+req = urllib.request.Request(cfg.get('bark_server', 'https://api.day.app') + '/push', data=body,
+                             headers={'Content-Type': 'application/json; charset=utf-8'})
+try:
+    with urllib.request.urlopen(req, timeout=15) as r:
+        reply = json.loads(r.read() or b'{}')
+except Exception as e:  # network or HTTP error: report, never retry blindly
+    print('bark: ' + str(e), file=sys.stderr); sys.exit(1)
+if reply.get('code') != 200:
+    print('bark: ' + json.dumps(reply, ensure_ascii=False), file=sys.stderr); sys.exit(1)

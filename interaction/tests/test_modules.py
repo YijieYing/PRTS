@@ -38,7 +38,8 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         for name in ('codex', 'osascript'):
             f = self.stub / name; f.write_text(script); f.chmod(0o755)
         # Never enter the real CodexBridge checkout or invoke WeChat.
-        f = self.root / 'reporter/lib/channels/wechat'; f.write_text(script); f.chmod(0o755)
+        for ch in ('wechat', 'bark'):  # never reach WeChat or the real phone
+            f = self.root / 'reporter/lib/channels' / ch; f.write_text(script); f.chmod(0o755)
         self.repo = self.root / 'repo'; self.repo.mkdir()
         subprocess.run(['git', 'init', '-q', str(self.repo)], check=True)
         self.prompt = self.root / 'prompt'; self.prompt.write_text('你好 "quote" $(touch INJECTED)\n')
@@ -89,7 +90,7 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         self.assertEqual([r['level'] for r in rows], [level for _, level in events])
         self.assertIn('派发任务结束', rows[0]['text'])
         calls = [json.loads(l) for l in self.calls.read_text().splitlines()]
-        self.assertEqual([r['bin'] for r in calls], ['wechat','osascript'])
+        self.assertEqual([r['bin'] for r in calls], ['bark','osascript'])
         self.assertFalse((self.home / 'PRTS/human/inbox.md').exists())
 
     def test_alert_failure_retains_event(self):
@@ -118,6 +119,8 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         self.run_cmd('reporter/bin/notify', '--text', 'legacy')
         self.run_cmd('reporter/bin/notify', 'outbox')
         self.assertEqual(len(self.calls.read_text().splitlines()), 2)
+        self.run_cmd('reporter/bin/notify', 'alert', '--text', 'both')     # bark + macOS banner (both stubbed)
+        self.assertEqual([json.loads(l)['bin'] for l in self.calls.read_text().splitlines()][2:], ['bark', 'osascript'])
 
     def test_dispatch_dry_and_resume(self):
         env = dict(self.env, DISPATCH_DRY='1')

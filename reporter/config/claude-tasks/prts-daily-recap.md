@@ -9,6 +9,6 @@
    - 「最占时间的杂务」：最多 3 条，附上报告里能交给 agent 的建议；
    - 最后一行：完整报告的路径（`~/PRTS/pulse/state/days/<日期>.md`）。
    只能用报告里的内容，不要补充或推测。
-3. 用 ToolSearch 查询 `select:PushNotification` 加载推送工具，再调用 PushNotification，status 设为 proactive，message 为第一行。
-4. 如果命令失败，就回复失败原因，并推送一行「每日回顾失败：<摘要>」。
+3. 把你整理好的这条回复存进一个临时文件，运行 `~/PRTS/reporter/bin/notify alert --title "PRTS 每日回顾" --file <临时文件>`。它会用 Bark 推到 iPhone，并弹出 macOS 通知。
+4. 如果命令失败，就回复失败原因，并运行 `~/PRTS/reporter/bin/notify alert --title "PRTS 每日回顾失败" --text "<摘要>"`。
 5. 用户如果在这个 session 里指出分类错了（比如「11:33 那段是输入」），把纠正原话追加到 `~/PRTS/pulse/state/corrections.md`（加上时间戳），回复「已记下」。不要改其他文件。
