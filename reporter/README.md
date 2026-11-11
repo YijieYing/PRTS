@@ -45,11 +45,11 @@ reporter/bin/ask wait Q12 --poll 30
 - `add` 打印递增的 `Q1` 等编号；同 dedupe 的未关闭问题返回已有编号，不修改原问题。
   必填 question、why、default、urgency、source、dedupe；可选 `--expires ISO`、`--project P`。
 - `list [--open] [--json]` 默认列出全部；JSON 为包含状态、送达历史、答案的数组。
-- `next [--max N]` 按 blocking → soon → whenever、组内创建时间排序，仅预览，不记送达。
+- `next [--max N]` 按 blocking → timely → soon → whenever、组内创建时间排序，仅预览，不记送达。
   最多取配置中的批量上限；`--max` 可进一步缩小。已到期问题不参与 next/due/render。
 - `due --channel claude [--now ISO]` 先调用同仓库 `pulse/bin/pulse now`（关闭 stdin，5 秒超时）。
   quiet 为 true 时只推 blocking；缺失、失败、超时或无有效 quiet 时按非 quiet 处理。
-  blocking 距上次送达至少 30 分钟，soon 到每日汇总时间后每天最多一次，whenever 不推送。
+  blocking 距上次送达至少 30 分钟；timely 在下一次 due 时推送一次，不重复（quiet 时暂缓），pulse 的杂务提醒用它；soon 到每日汇总时间后每天最多一次；whenever 不推送。
   所有渠道合并计数；每批最多 3 条，含 blocking 的批次默认每天最多 6 次。
   上限用尽仍可发送 soon。当天未装入一批的 soon 可在下一次调用时送出。
   配置在 `config/questions.toml`：`max_batch`、`blocking_daily_limit`、
@@ -83,3 +83,10 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 隔离验证：`python3 -m unittest discover -s reporter/tests -v`；现有模块回归：
 `python3 interaction/tests/test_modules.py`。问题队列测试复制 bin/lib/config 到临时目录，
 使用临时 `PRTS_REPORTER_STATE` 和替身 pulse，所有测试子进程关闭 stdin。
+
+## 送达到 Claude 桌面和手机 app（2026-11-12）
+两个 Claude 定时任务，prompt 放在 `config/claude-tasks/`：
+- `prts-reminders.md`：每小时一次（cron `7 9-23,0 * * *`）。先运行 `pulse check`，再运行 `ask due --channel claude`。有待推送的问题就展示出来，并用 PushNotification 推到手机；用户在那个 session 里的回复，交给 `ask reply` 记录。
+- `prts-daily-recap.md`：每晚 23:40 运行 `pulse day`，把回顾推给用户。
+
+定时任务要在 Claude app 里创建：总控通过 scheduled-tasks 工具创建时，被权限检查拦下了，需要用户允许或自己创建。

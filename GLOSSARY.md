@@ -23,7 +23,7 @@
 | `interaction/` | agent interaction | 和 agent 打交道：派发、续跑、定时唤醒、事件队列 | 本模块 |
 | `reporter/` | reporting & notification | 生成内容并送达你：周报、日报、单条通知；以后还负责向你提问 | 本模块 |
 | `AgentConsole/` | monitor | 只观察、产生事件，不做判断（独立仓库） | 本模块 |
-| `pulse/` | user state（设计中，ROADMAP R2） | 用户本人的状态：一天的有效时间花在输入、输出还是杂务上（每日回顾）；此刻是否方便被打扰。reporter 推送前问它 | 本模块 |
+| `pulse/` | user state（v1，2026-11-12；ROADMAP R2） | 用户本人的状态：一天的有效时间花在输入、输出还是杂务上（每日回顾）；此刻是否方便被打扰。reporter 推送前问它 | 本模块 |
 | `maintenance/` | maintenance | 一次性维护脚本和备份，不承诺接口 | — |
 | `ops/` | legacy links | 过渡期：只剩指向新位置的链接，2026-11-21 前后删除 | — |
 | `GLOSSARY.md` | glossary | 本文件 | 总控 |
@@ -74,6 +74,7 @@
 | 名字 | English | 做什么 |
 |---|---|---|
 | `bin/notify <log\|wechat\|alert> [--title T] (--text\|--file)` | notify | 送达一条通知。log 只记录；wechat 发微信；alert 发微信并弹 macOS 通知。旧用法（不带级别）等同 wechat |
+| `bin/ask add\|next\|due\|reply\|answer\|close\|expire\|render\|wait` | ask | 提问队列。紧急度：blocking（每 30 分钟重复提醒）、timely（推送一次）、soon（每日汇总）、whenever（等用户开 session）。见 reporter/README |
 | `bin/report weekly [日期]` | report | 生成并送达周报 |
 | `bin/report daily` | report | 把 aquant 日报校验后放进微信发件箱（launchd 每 10 分钟和文件变化时触发） |
 | `lib/collect.py`、`compose.md`、`render.py`、`deliver.py` | collect / compose / render / deliver | 收集素材、写成文字、排版、投递 |

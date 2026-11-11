@@ -7,8 +7,9 @@
 2. 检查 PRTS 和 research/PRTS 有没有未推送的提交（`git -C <repo> rev-list --count @{u}..HEAD`）；有积压就在回复里提醒用户（用户 2026-10-21 要求：不自动推送，但要适时提醒）。
 3. 读 `prts.md` 的 §〇（约 60 行），不整篇读。
 4. 运行 `git -C ~/PRTS status --short human/ && git -C ~/PRTS diff human/`，查看人类改了什么。读完后用 `git commit -m "human: ..."` 提交，并把从中学到的东西写进对应的记忆文件。
-5. 按需读下面的文件。
-6. 每周一次左右（或用户提到合作者时）：扫各仓库近 30 天的提交者（`git log --since=30.days --format='%an|%ae'`），和 `people.md` 的对照表比较；陌生账号提交数 ≥ 3 时，加进 people.md 的「待问」，在合适时问用户。
+5. 运行 `~/PRTS/reporter/bin/ask list`：看用户回答了哪些问题（answered、delegated 等），把答案落实到记忆或任务里；还没回答的，按 `ask next` 最多问 3 条。
+6. 按需读下面的文件。
+7. 每周一次左右（或用户提到合作者时）：扫各仓库近 30 天的提交者（`git log --since=30.days --format='%an|%ae'`），和 `people.md` 的对照表比较；陌生账号提交数 ≥ 3 时，加进 people.md 的「待问」，在合适时问用户。
 
 | 文件 | 内容 | 什么时候读 |
 |---|---|---|
