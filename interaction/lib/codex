@@ -49,8 +49,9 @@ def run_sync(argv):
     with tempfile.TemporaryDirectory(prefix='interaction-run-') as tmp:
         output = Path(a.output).resolve() if a.output else Path(tmp) / 'last.txt'
         output.unlink(missing_ok=True)
+        # Read-only and self-contained, so it must work from any directory (e.g. a scheduled task in ~).
         cmd = ['codex', 'exec', '--sandbox', 'read-only', '-c', 'approval_policy="never"',
-               '--ephemeral', '-o', str(output)]
+               '--ephemeral', '--skip-git-repo-check', '-o', str(output)]
         if a.output_schema: cmd += ['--output-schema', str(Path(a.output_schema).resolve())]
         cmd += ['--', prompt]
         result = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=sys.stderr, stderr=sys.stderr)
