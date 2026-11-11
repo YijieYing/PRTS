@@ -1,0 +1,6 @@
+# Local calendar days and local wall clock time.
+max_batch = 3
+# Maximum batches containing blocking questions per day (across channels).
+blocking_daily_limit = 6
+blocking_interval_minutes = 30
+soon_time = "18:00"

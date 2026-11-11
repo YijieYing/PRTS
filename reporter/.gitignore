@@ -1,3 +1,5 @@
 __pycache__/
 state/out/
 state/outbox/
+state/questions.jsonl
+state/questions.lock
