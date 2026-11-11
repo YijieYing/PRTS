@@ -1,3 +1,7 @@
 .DS_Store
 AgentConsole/
 maintenance/backups/
+
+# pulse contains private local activity; never commit runtime data.
+/pulse/state/
+/pulse/**/__pycache__/

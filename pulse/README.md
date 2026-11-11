@@ -6,7 +6,7 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
 
 和 Ear 的区别：Ear 从录音里总结线下发生过的事；pulse 看的是用户在电脑上的工作状态。
 
-模块还没有代码。本文是设计稿，接口和数据位置随实现确定。
+设计定义保留如下；v1 已实现，实际命令、估计规则和限制见 §九。
 
 ## 一、核心概念：输入、输出、杂务（用户 2026-11-12 定义）
 
@@ -47,7 +47,7 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
 - 遵守 R1 的规则：每批最多 3 条；`pulse now` 判断用户正在专注输入或输出时，不打断。
 - 阈值先用上面的数，再按用户对提醒的反应（采纳、忽略、嫌烦）调整。
 
-## 四、对外接口（设想）
+## 四、对外接口（设计目标，v1 范围见 §九）
 
 | 命令 | 做什么 |
 |---|---|
@@ -77,3 +77,31 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - 第一版先接入哪些数据来源。
 - 每日回顾在什么时间送达、走什么渠道。
 - 分类出错时怎么纠正：比如直接改回顾文件，由 pulse 学习。
+
+## 九、v1 实现与使用
+
+已实现 `bin/pulse day [YYYY-MM-DD]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry]`、`bin/pulse now`。`next-available`、活动类别的实时识别、定时调度留待后续。
+
+- `day` 默认取当地日历的昨天（凌晨 0–6 点也取前一天），窗口为 Asia/Tokyo 05:00 至次日 05:00。日期显式指定时不受运行时刻影响。
+- `config/pulse.toml` 配置时区、切日、20 分钟分段间隔与估计上限、检测阈值、数据路径和 `[user]` 空闲/休息时段。初始休息时段 05:00–12:00 是可调整的默认值，不代表已确认的用户作息。支持跨午夜时段。
+- Claude 仅保留用户文本块和 assistant 文本；过滤注入块、tool_result、isMeta、压缩摘要；fork 按记录 `(sessionId, uuid)` 去重，不按所在文件名判断。标题取本机 local JSON。
+- 同一来源、同一会话，相邻用户消息/网页访问不超过 20 分钟为一段。Claude 相邻用户消息的间隔取实际值或上限；跨段长间隔的上限归前段。最后一条用户消息不凭空补时长。assistant 仅作为分类上下文，不延长用户时间。窗口边缘裁剪区间；回放不读未来消息。ChatGPT 每段首末访问之差最多 20 分钟，单次访问计 0，全部标低置信度。段的原始估计保留在 `user_seconds`；汇总将重叠区间等分给活动段，`seconds` 为分摊后的时间，避免同时聊天/浏览重复计时。
+- 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；无匹配时用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
+- Chrome History 复制到受限临时目录，以只读 SQLite 查询；SQL 仅查含 chatgpt.com 的记录，另校验精确 hostname，显式 CAST 时间为 INTEGER。不读取其他网站记录，退出时删除副本。项目页归属可参考窗口之前的 ChatGPT 项目页。
+- Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，用户时间恒为 0。git 提交存在不证明由用户手写；agent 自述标为未核实。
+- 一次 `day` / 达到最低时长的 `check` 只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
+- `check` 在合并重叠后的用户时间少于 30 分钟时不调 LLM。杂务占比严格大于 50% 且至少 30 分钟，或同主题无间断观测区间严格超过 30 分钟，才提交建议；每次最多 3 条。日期/项目/主题为去重键，成功入队后 3 小时内不重复；有锁避免并发重复，失败不登记成功。`--dry` 只打印，不提交、不消耗去重。实际通知是否打扰由 reporter 决定。
+- `now` 输出 `{status, idle_seconds, app, quiet, at}`，status 为 active / away / unknown；键鼠空闲严格超过配置值（默认 600 秒）为 away。探测失败为 null / unknown，不假称正在输入或输出。
+
+数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法观察持续阅读、线下活动或用户是否真的关注页面，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
+
+测试/隔离覆盖：`PULSE_CONFIG`、`PULSE_STATE` 指向配置和状态；`PULSE_RUN`、`PULSE_ASK` 分别替换 interaction/run 与 reporter/ask 可执行文件。子进程 stdin 全部关闭。
+
+```sh
+python3 pulse/tests/test_pulse.py
+python3 interaction/tests/test_run.py
+python3 interaction/tests/test_modules.py
+bash interaction/tests/test_wake.sh
+```
+
+代码沿用 `segment`（活动段）、`project`、`category` 和 interaction 的 `run`，没有新增重叠概念层。实现分 `lib/sources.py`（采集）与 `lib/pulse.py`（分段、分类、命令），跨模块只执行 bin 接口；读取项目配置是任务明确允许的例外。

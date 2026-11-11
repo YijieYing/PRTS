@@ -1,0 +1,28 @@
+timezone = "Asia/Tokyo"
+day_start_hour = 5
+gap_minutes = 20
+cap_minutes = 20
+
+[check]
+window_minutes = 90
+minimum_minutes = 30
+chore_ratio = 0.5
+chore_minutes = 30
+continuous_minutes = 30
+cooldown_minutes = 180
+
+[user]
+idle_seconds = 600
+quiet_start = "05:00"
+quiet_end = "12:00"
+
+[sources]
+claude = "~/.claude/projects"
+titles = "~/Library/Application Support/Claude/claude-code-sessions"
+codex = "~/.codex/sessions"
+chrome = "~/Library/Application Support/Google/Chrome/Default/History"
+projects = "~/PRTS/human/projects.toml"
+reporter_config = "~/PRTS/reporter/config/config.toml"
+repos = ["~/PRTS", "~/PRTS/AgentConsole", "~/research/*", "~/Projects/*"]
+
+# Optional [[project]] entries use name, path and exact, as in human/projects.toml.
