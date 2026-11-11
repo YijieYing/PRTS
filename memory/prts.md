@@ -128,6 +128,7 @@
 | 2026-11-09 | AgentConsole 嵌套显示：(1) 由桌面 app 启动的 session 按元数据 `spawnedFrom` 挂到启动者下面（d082c89）；(2) Codex 派发任务挂到派发者下面：Codex 让 dispatch 和 resume 记录 `caller` 与 `thread`，新增 `status links`，AgentConsole 新增配置项 `links`（PRTS 6a65831，AgentConsole c0306b8）；(3) 总控按证据回填了 44 条旧关系：thread 取自 run.log，caller 取自对话记录里的派发命令，按记录自带的 sessionId 计，避免把 fork 的副本算成派发者；13 个有歧义的跳过。查明：NOT HUMAN 的剧本、前后端任务是「代码风格」11-01 派的，只有 v2 和修订一的后端是 NOT HUMAN 自己派的。**修了一个 bug**：`lib/codex` 在整份日志里找 "at capacity"，日志里只要引用了这句话（比如读到 lib/codex 源码），已经完成的任务就会被当成满载重跑。dispatch-links 因此白跑了 3 遍，已停掉；现在只在失败、且最后 20 行里出现这句话时才重试，并加了回归测试（f407d61）。`wait` 首次实际使用：按设计唤醒了总控。 |
 | 2026-11-09 | 用户状态模块定名为 `pulse`（R2）。ROADMAP 和 GLOSSARY 已更新。 |
 | 2026-11-12 | 用户回顾 11-11：想不起学了什么、产出了什么。总控遍历了全部 Claude 和 Codex 对话、git 提交，给出带时间戳的回顾，结论是大部分时间花在工程杂务上。但那次回顾漏掉了用户下午在网页版 GPT 上的学习（有效连接和结构连接）。用户定义了**输入（学习）、输出（创造）、杂务**，要求杂务尽量交给 agent。已写入：`pulse/README.md` 设计稿 v0.1（先做每日回顾）、`AGENTS.md` 第一条规则、prts.md 附录 D 第 11 条、yyj.md §2，以及 ROADMAP R2 和 GLOSSARY。 |
+| 2026-11-12 | pulse 补充：(1) ChatGPT 网页版可以从 Chrome 本地历史读到对话标题和打开时间，只读 chatgpt.com 的记录，几乎不占资源，不用截图。查到 11-11 下午 15:46–17:49 的「概念和定义」，以及 11:33 传热学、13:14 因果辨识和果蝇连接组方法等学习对话。(2) 用户想做实验：EchoAsRecord 实施「杂务交给 agent」，NatureCalls 对照。前提是加强自检（比如 11-10 查重复实现和接口偏差）和保留最小的架构思考（文件结构加 glossary）。设计稿 `pulse/experiment-chore-ab.md`，ROADMAP R7。(3) 杂务过多时，pulse 通过 question queue 提醒用户，pulse 设计稿 §三。 |
 
 ## 计划与待办
 

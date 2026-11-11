@@ -20,6 +20,7 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | R3 | ⏭ | **约 2026-11-21：清理过渡期** | 搜一遍还有没有人用 `~/PRTS/ops/` 的旧路径，没有就删掉 `ops/` 和全局 CLAUDE.md 里的旧路径提示。同时把 `AgentConsole` 改名为 `monitor`，原因见 §三-R3 |
 | R4 | ❓ | **手机推送渠道不只靠微信** | 微信受 24 小时 token 限制。候选：Bark 或 ntfy（需要用户在手机上装 app 并给出 key）；在 session 运行时用 Claude app 推送；macOS 通知（只在用户坐在电脑前时有用）。由 R2 判断此刻该用哪个渠道 |
 | R5 | ❓ | **Codex 派发的沙盒选项** | dispatch 默认用 `workspace-write`，不能联网，也不能建本地 socket。NatureCalls 的 Unity 任务因此受阻。需要一个显式、需要用户批准的放宽方式 |
+| R7 | ❓ | **实验：杂务交给 agent** | EchoAsRecord 实施、NatureCalls 对照，比较用户的体感和 pulse 测出的杂务时间。前提：pulse 每日回顾能按项目统计、EchoAsRecord 的架构底线确认、自检就位。设计见 [pulse/experiment-chore-ab.md](pulse/experiment-chore-ab.md) |
 | R6 | ⏭ | **周报改用 `reporter/bin/notify`** | 不再经过 outbox 和 `/auto` 转发。等用户改掉 CodexBridge 里读 `Reporter/outbox` 的 `/auto` 任务以后，删掉 `reporter/outbox` 链接 |
 
 ## 二、以后再说（候选池）
@@ -60,6 +61,7 @@ PRTS 要做什么、做到哪了，都以这一份为准。
   - `reporter/bin/ask`（给 agent 和脚本用的接口，不是给用户的）；
   - `reporter/lib/questions.py`；
   - `reporter/state/questions.jsonl`（只追加：`created / delivered / opened / answered / closed`）。
+- 11-12 新增一类问题来源：pulse 发现用户在杂务上花的时间太多时，提醒用户把具体事项交给 agent（见 pulse 设计稿 §三）。
 - 用户的入口只有三个：session 里的提问框、编辑 `human/questions.md`、手机上回答（R4 定渠道以后；如果用微信，就是 CodexBridge 的 `/答 Q12 …`）。
 - 提问的 session 可以在后台跑 `ask wait Q12`，用户回答后会被唤醒，用法和 `interaction/bin/wait` 一样。
 - 分三步：
