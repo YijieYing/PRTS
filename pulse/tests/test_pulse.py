@@ -47,7 +47,7 @@ class PulseTests(unittest.TestCase):
 assert '判断标准是**用户的脑子在做什么**' in prompt
 rows=json.loads(prompt.split('活动 JSON：\\n')[1])
 Path(os.environ['PULSE_STATE'],'calls').open('a').write('1\\n')
-print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排查',topic='上传排查',suggestion='自动诊断上传失败并验证修复',learned=[],produced=[]) for r in rows]}))
+print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排查',summary='排查上传失败',topic='上传排查',suggestion='自动诊断上传失败并验证修复',learned=[],produced=[]) for r in rows]}))
 ''')
     def test_dedupe_filter_titles(self):
         directory,rows=self.fixture()
@@ -142,7 +142,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         data=json.loads((self.state/'days/2026-11-11.json').read_text())
         self.assertEqual(data['classification_status'],'complete')
         md=(self.state/'days/2026-11-11.md').read_text()
-        self.assertIn('## 时间线',md); self.assertIn('## 学到的东西',md)
+        self.assertIn('## 时间线',md); self.assertIn('## 可以交给 agent 的杂务',md); self.assertNotIn('| 类别 |',md)
     def test_day_failure_is_visible(self):
         self.fixture()
         stub=self.stub('failure','sys.exit(7)\n')
@@ -243,6 +243,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertEqual(path.read_bytes(),original)
         timing=json.loads((self.state/'days/2026-11-11.timing.json').read_text())
         self.assertEqual(timing['classification_status'],'cached')
+        self.assertEqual(timing['segments'][0]['summary'],'排查上传失败')
         data=copy.deepcopy(timing); data['segments'][0]['id']='999'
         pulse.reuse(data,path); self.assertEqual(data['segments'][0]['category'],'chore')
         for m in data['segments'][0]['messages']:m['uuid']='new'
@@ -263,8 +264,68 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         for s in segs:s.update(category='input',reason='x',learned=[],produced=[],topic='',suggestion='')
         segs[0]['intervals']=[[self.start,self.start+0.5]]
         md=pulse.render(dict(segments=segs,outputs=[],warnings=[]),'2026-11-11',self.c)
-        self.assertIn('<0.1（100.0%）',md)
-        self.assertNotIn('0.0（100.0%）',md)
+        self.assertIn('输入 <0.1 分',md)
+        self.assertNotIn('输入 0.0 分',md)
+
+    def render_fixture(self, rows, outputs=None):
+        segs=[]
+        for i, row in enumerate(rows):
+            start, duration = row.pop('minute'), row.pop('duration')
+            s=dict(start=self.start+start*60, end=self.start+(start+duration)*60,
+                   intervals=[[self.start+start*60,self.start+(start+duration)*60]],
+                   project='Octopus', category='output', reason='回退理由', learned=[], produced=[],
+                   suggestion='', session=str(i), source='computer', messages=[])
+            s.update(row); segs.append(s)
+        return pulse.render(dict(segments=segs,outputs=outputs or [],warnings=[]),'2026-11-11',self.c)
+
+    def test_render_merge_boundaries_and_summary(self):
+        md=self.render_fixture([
+            dict(minute=0,duration=4,summary='短段'),
+            dict(minute=34,duration=6,summary='设计实验'),
+            dict(minute=71,duration=4),
+            dict(minute=76,duration=4,category='input'),
+            dict(minute=81,duration=4,project='Other')])
+        self.assertIn('05:00–05:40',md)
+        self.assertIn('设计实验',md); self.assertNotIn('短段',md)
+        self.assertEqual(md.count('** '),4)
+        self.assertIn('回退理由',md)
+
+    def test_render_fragments_after_merge(self):
+        md=self.render_fixture([
+            dict(minute=0,duration=1,app='微信'),
+            dict(minute=40,duration=1,app='微信'),
+            dict(minute=80,duration=1,learned=['理解一个概念']),
+            dict(minute=120,duration=1,produced=['写出提纲']),
+            dict(minute=160,duration=2),dict(minute=162,duration=2)])
+        self.assertIn('**零碎** 微信 2.0 分',md)
+        self.assertIn('理解一个概念',md); self.assertIn('写出提纲',md)
+        self.assertIn('07:40–07:44',md)
+        self.assertNotIn('05:00–05:01',md)
+
+    def test_render_attaches_latest_final_and_git(self):
+        def output(minute,text,project='Octopus',**kw):
+            return dict(time=self.start+minute*60,text=text,source='codex',session='agent',project=project,**kw)
+        outputs=[output(1,'早期结论',final=True),output(2,'最终结论',final=True),
+                 output(3,'还在运行',final=False),dict(output(90,'无法挂段','Unknown'),session='unrelated')]
+        md=self.render_fixture([dict(minute=0,duration=10)],outputs)
+        self.assertIn('最终结论（agent 自述，未核实）',md)
+        for absent in ('早期结论','还在运行','无法挂段'): self.assertNotIn(absent,md)
+        git=output(20,'提交结果'); git.update(source='git',verified=True)
+        md=self.render_fixture([dict(minute=0,duration=10)],[git,output(5,'跨项目同时发生','Other')])
+        self.assertIn('提交结果（git 提交，已核实存在）',md)
+        self.assertIn('跨项目同时发生',md)
+        long=output(1,'字'*100,final=True)
+        md=self.render_fixture([dict(minute=0,duration=10)],[long])
+        self.assertIn('字'*79+'…',md); self.assertNotIn('字'*80,md)
+
+    def test_render_limits_and_removal_priority(self):
+        rows=[dict(minute=i*40,duration=4,project=str(i),summary='设计'+ '长'*200,
+                   learned=['学'*200]*3,produced=['写'*200]*3) for i in range(30)]
+        outputs=[dict(time=self.start+60,text='结论'*100,source='codex',session='x',project='0')]
+        md=self.render_fixture(rows+[dict(minute=1400,duration=1,app='碎片')],outputs)
+        self.assertLessEqual(len(md),4000)
+        self.assertNotIn('agent 同时在做',md); self.assertNotIn('**零碎**',md)
+        self.assertIn('篇幅受限',md); self.assertIn('## 可以交给 agent 的杂务',md)
 
     def test_replay_excludes_future_tools_and_final(self):
         directory,rows=self.fixture((0,))

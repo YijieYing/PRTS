@@ -232,7 +232,7 @@ def collect(start, end, c):
 
 
 def schema():
-    props = {k: {'type':'string'} for k in ('id', 'reason', 'topic', 'suggestion')}
+    props = {k: {'type':'string'} for k in ('id', 'reason', 'summary', 'topic', 'suggestion')}
     props['category'] = {'type':'string', 'enum':[k for k in CATEGORIES if k != 'unclassified']}
     for key in ('learned', 'produced'):
         props[key] = {'type':'array', 'items':{'type':'string'}, 'maxItems':3}
@@ -248,6 +248,7 @@ def classify(data, state):
               '仅凭标题不能断言学会了具体知识，用“浏览/讨论…”；产出只写有证据的内容。'
               '实验设计、出题审题、录音场景构思属于输出；部署、上传故障排查属于杂务。'
               'topic 是简短稳定的杂务主题（同一问题跨段必须相同），suggestion 是具体可交给 agent 的任务。'
+              'summary 用一句话概括用户做了什么，动词开头，不写分类理由或“混合、主要意图”等措辞。'
               '不属于杂务时 topic/suggestion 可为空。learned 和 produced 各 0–3 条。\n'
               + definitions + '\n判断标准是用户的脑子在做什么\n活动 JSON：\n')
     packed = []
@@ -269,7 +270,7 @@ def classify(data, state):
     for s in data['segments']:
         r = by_id[s['id']]
         if r.get('category') not in CATEGORIES: raise ValueError('无效分类')
-        for key in ('reason','topic','suggestion'):
+        for key in ('reason','summary','topic','suggestion'):
             if not isinstance(r.get(key), str): raise ValueError('无效分类字段 ' + key)
         for key in ('learned','produced'):
             if not isinstance(r.get(key),list) or len(r[key]) > 3 or not all(isinstance(v,str) for v in r[key]): raise ValueError('无效提取字段')
@@ -316,6 +317,7 @@ def reuse(data, path):
         if matches and ids <= covered and len({(m['category'],m.get('topic','')) for m in matches}) == 1:
             old=matches[0]
             s.update({k:old[k] for k in fields})
+            s['summary']=old.get('summary','')
             s['classification_origin']='cached: '+str(path)
         else:
             s.update(category='unclassified',reason='未复用到唯一分类',topic='',suggestion='',learned=[],produced=[])
@@ -331,40 +333,99 @@ def local(ts,c): return datetime.fromtimestamp(ts, ZoneInfo(c['timezone'])).strf
 
 
 def render(data, date, c):
-    segs = data['segments']; total = allocate(segs)
-    lines = [f'# {date} 每日回顾', '', 'active 为实测操作分钟与无覆盖时的估计，held 为杂务占用估计；held 扣除所有 active 重叠后单列，不并入 active 占比。ChatGPT 低置信度。分类状态：'+data.get('classification_status','complete'), '', '| 类别 | active 分钟 | active 占比 | held 分钟 |', '|---|---:|---:|---:|']
-    for cat, label in CATEGORIES.items():
-        seconds = sum(s['seconds'] for s in segs if s['category'] == cat)
-        held = sum(s['held_seconds'] for s in segs if s['category']==cat)
-        lines.append(f'| {label} | {minutes(seconds)} | {seconds/total if total else 0:.1%} | {minutes(held)} |')
-    lines += ['', '| 项目 | 输入分钟（占项目） | 输出分钟（占项目） | 杂务分钟（占项目） | 其他分钟（占项目） | 未分类分钟（占项目） | held 分钟 |', '|---|---:|---:|---:|---:|---:|---:|']
-    for p in sorted({s['project'] for s in segs}):
-        values = [sum(s['seconds'] for s in segs if s['project']==p and s['category']==cat) for cat in CATEGORIES]
-        subtotal = sum(values)
-        lines.append('| '+p+' | '+' | '.join(f'{minutes(v)}（{v/subtotal:.1%}）' if subtotal else '0（0%）' for v in values)+' | '+minutes(sum(s['held_seconds'] for s in segs if s['project']==p))+' |')
-    def origin(s): return f"{local(s['start'],c)}–{local(s['end'],c)} · {s['project']} · {s['source']} {s['title']} ({s['session']}) · {s['confidence']}"
-    for key, title in (('learned','学到的东西'),('produced','产出的东西')):
-        lines += ['', '## '+title, '']
-        rows = [f"- {text} — {origin(s)}" for s in segs for text in s[key]]
-        lines += rows or ['- 没有足够证据。']
-    lines += ['', '### agent / git 产出线索（不等同用户创造）', '']
-    for o in data['outputs']:
-        lines.append(f"- {local(o['time'],c)} · {o['project']} · {o['source']} {o['session']}: {o['text'][:800].replace(chr(10),' ')}" + ('（agent 自述，未核实）' if not o['verified'] else '（已核实提交存在）'))
-    lines += ['', '## 最占时间的杂务', '']
-    for s in sorted((s for s in segs if s['category']=='chore'),key=lambda s:-(s['active_seconds']+s['held_seconds']))[:5]:
-        lines.append(f"- {s['topic']}：active {minutes(s['active_seconds'])} 分钟，held {minutes(s['held_seconds'])} 分钟；{s['suggestion']} — {origin(s)}")
-    lines += ['', '## 时间线', '', '| 时间 | 项目 | session / 对话 | 类别 | 一句话 |', '|---|---|---|---|---|']
+    """Build a bounded reading view; keep full evidence and timing in JSON."""
+    segs = sorted(data['segments'], key=lambda s: s['start'])
+    allocate(segs)
+
+    def brief(value, limit=100):
+        value = ' '.join(str(value).split())
+        # Evidence is prose, not Markdown structure.
+        value = re.sub(r'[*`#<>\[\]]', '', value)
+        return value if len(value) <= limit else value[:limit-1] + '…'
+
+    totals = [f"{label} {minutes(sum(s['active_seconds'] for s in segs if s.get('category')==cat))} 分"
+              for cat, label in CATEGORIES.items()
+              if cat != 'unclassified' or any(s.get('category')==cat for s in segs)]
+    header = [f"# {date[5:]} 回顾", ' · '.join(totals) +
+              f"（held 另计 {minutes(sum(s['held_seconds'] for s in segs))} 分）", '', '## 时间线', '']
+    groups = []
     for s in segs:
-        row = [f"{local(s['start'],c)}–{local(s['end'],c)}", s['project'], s['title'], CATEGORIES[s['category']], s['reason']+'；'+s['confidence']+f"；active {minutes(s['active_seconds'])} / held {minutes(s['held_seconds'])} 分钟"]
-        lines.append('| '+' | '.join(v.replace('|','\\|').replace('\n',' ') for v in row)+' |')
-    held_rows=[s for s in segs if s.get('held_activity')]
-    if held_rows:
-        lines += ['', '## agent 工作期间的前台活动', '']
-        for s in held_rows:
-            details=sorted({local(m['time'],c)+' '+m['app']+' · '+m['title'] for m in s['held_activity']})
-            lines.append('- '+s['title']+'：'+'；'.join(details)+'（前台观察，不等同等待；active 重叠已扣除）')
-    if data['warnings']: lines += ['', '## 数据缺口', ''] + ['- '+w for w in data['warnings']]
-    return '\n'.join(lines)+'\n'
+        if (groups and groups[-1]['project']==s['project'] and
+                groups[-1]['category']==s.get('category','unclassified') and
+                s['start']-groups[-1]['end'] <= 1800):
+            g = groups[-1]
+            g['end'] = max(g['end'], s['end'])
+            g['members'].append(s)
+        else:
+            groups.append(dict(start=s['start'], end=s['end'], project=s['project'],
+                               category=s.get('category','unclassified'), members=[s], outputs=[]))
+    fragments = defaultdict(float)
+    visible = []
+    for g in groups:
+        members = g['members']
+        if (sum(s['active_seconds'] for s in members) < 180 and
+                not any(s.get('learned') or s.get('produced') for s in members)):
+            for s in members:
+                fragments[s.get('app') or s['project']] += s['active_seconds']
+        else:
+            visible.append(g)
+    # Prefer explicit final messages. Older caches lack channel metadata: the
+    # last message per session is the compatibility fallback, not a verified fact.
+    latest = {}
+    outputs = []
+    for o in sorted(data.get('outputs', []), key=lambda o: o['time']):
+        if o['source']=='git':
+            outputs.append(o)
+        elif o.get('final') is not False:
+            latest[(o['source'], o['session'])] = o
+    outputs += latest.values()
+    for o in outputs:
+        candidates = [g for g in visible if g['start'] <= o['time'] <= g['end']]
+        same = [g for g in candidates if g['project']==o['project']]
+        candidates = same or candidates or [g for g in visible if g['project']==o['project']]
+        if candidates:
+            target = min(candidates, key=lambda g: min(abs(o['time']-g['start']), abs(o['time']-g['end'])))
+            target['outputs'].append(o)
+    rows = []
+    for g in visible:
+        if rows: rows.append(('body', ''))
+        s = max(g['members'], key=lambda s: s['active_seconds'])
+        rows.append(('body', f"**{local(g['start'],c)}–{local(g['end'],c)} · {CATEGORIES[g['category']]} · {brief(g['project'],60)}** {brief(s.get('summary') or s.get('reason','未分类'))}"))
+        for key, label in (('learned','学到'), ('produced','产出')):
+            values = list(dict.fromkeys(v for m in g['members'] for v in m.get(key,[]) if v))[:2]
+            rows.extend(('body', f'  - {label}：{brief(v)}') for v in values)
+        for o in sorted(g['outputs'], key=lambda o: o['time'], reverse=True)[:2]:
+            label = 'git 提交，已核实存在' if o['source']=='git' else 'agent 自述，未核实'
+            rows.append(('agent', f"  - agent 同时在做：{brief(o['text'],80)}（{label}）"))
+        if g['category']=='chore':
+            suggestions = list(dict.fromkeys(m.get('suggestion','') for m in g['members'] if m.get('suggestion')))
+            if suggestions: rows.append(('body', '  - 可以交给 agent：'+brief('；'.join(suggestions))))
+    if fragments:
+        rows.append(('fragments', '**零碎** '+ '、'.join(f'{brief(k,40)} {minutes(v)} 分' for k,v in fragments.items() if v)))
+    footer = ['', '## 可以交给 agent 的杂务', '']
+    seen = set()
+    for s in segs:
+        suggestion = s.get('suggestion','')
+        if s.get('category')=='chore' and suggestion and suggestion not in seen:
+            footer.append(f"- {local(s['start'],c)} · {brief(s['project'],60)}：{brief(suggestion)}")
+            seen.add(suggestion)
+            if len(seen)==3: break
+    if not seen: footer.append('暂无。')
+    warnings = list(data.get('warnings', []))
+    if data.get('classification_status') in ('partial','failed'):
+        warnings.append('部分活动未分类；完整证据见同日 JSON。')
+    if warnings:
+        footer += ['', '## 附：数据缺口', ''] + ['- '+brief(w,200) for w in warnings]
+
+    def compose(): return '\n'.join(header+[v for _,v in rows]+footer)+'\n'
+    for kind in ('agent','fragments'):
+        if len(compose()) > 4000: rows = [(k,v) for k,v in rows if k!=kind]
+    # Preserve whole lines, the totals and the data-gap section even on huge days.
+    if len(compose()) > 4000:
+        footer.insert(0, '\n（篇幅受限，部分时间线省略；完整记录见同日 JSON。）')
+        while rows and len(compose()) > 4000: rows.pop()
+        while len(compose()) > 4000 and len(footer)>1: footer.pop()
+    return compose()
 
 
 def atomic(path, value):

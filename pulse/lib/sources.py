@@ -154,7 +154,7 @@ def codex(config, start, end, mapping, warnings):
             times.append(t)
             if r.get('type') == 'response_item' and p.get('role') == 'assistant' and p.get('type') == 'message':
                 text = content(p.get('content'))
-                if text: outputs.append(dict(time=t, source='codex', session=sid, project=project(cwd, mapping), text=text, cwd=cwd, verified=False))
+                if text: outputs.append(dict(time=t, source='codex', session=sid, project=project(cwd, mapping), text=text, cwd=cwd, verified=False, final=p.get('channel')=='final' if p.get('channel') else None))
         if times: activity.append(dict(start=min(times), end=max(times), session=sid, project=project(cwd, mapping), user_seconds=0))
     return outputs, activity
 

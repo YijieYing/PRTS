@@ -83,10 +83,33 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 五、每日回顾的格式
 
-第一版按 11-11 那份回顾的格式，改进三点：
-1. 先给结论：输入、输出、杂务各花了多少时间。
-2. **学到的东西**和**产出的东西**单独成节，每条附时间和出处。这是用户最想记住的部分。
-3. 列出占用用户时间最多的杂务，并给建议：哪些以后可以完全交给 agent，不用用户参与。
+回顾从早到晚按时间线阅读，可直接推到手机；完整证据保存在同日 JSON。
+
+```text
+# 11-12 回顾
+输入 49 分 · 输出 57 分 · 杂务 73 分 · 其他 82 分（held 另计 N 分）
+
+## 时间线
+**12:46–13:06 · 输出 · DigitalFly** 设计线虫参数反推的对照组和评价方式
+  - 学到：…
+  - 产出：…
+  - agent 同时在做：…（agent 自述，未核实）
+**13:22–14:32 · 杂务 · worm_effectome** 下载并检查数据
+  - 可以交给 agent：…
+**零碎** 微信 12 分、浏览 8 分
+
+## 可以交给 agent 的杂务
+- 13:22 · worm_effectome：…
+
+## 附：数据缺口
+- …（有缺口才显示）
+```
+
+- 只有一行 active 总计，held 另计；不展示项目大表或独立的学习、产出、前台窗口记录节。
+- 相邻段项目、类别相同且间隔不超过 30 分钟时合并，概述取 active 最长的原段。合并后 active 不足 3 分钟且无学到/产出的段汇总到末尾「零碎」，按应用（无应用时按项目）合计。
+- 每段学到、产出各最多 2 条，agent/git 共最多 2 条；只在杂务段显示已有 suggestion。末尾杂务建议去重后按时间取前 3 条。
+- agent/git 线索挂到发生时所在段（优先同项目），否则挂到最近同项目段；无可挂段则省略。agent 每会话取最后结论性消息，正文最多 80 字，标「agent 自述，未核实」；git 只核实提交存在，不证明用户手写。
+- 全文最多 4000 字符，超长先移除 agent/git 行，再移除零碎；仍超长则按整行省略时间线尾部并提示查看 JSON。
 
 ## 六、分阶段
 
@@ -114,11 +137,11 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - 显式 `<pasted_content>`、代码围栏，以及至少 400 字的多行文本块按粘贴速度 400 字/分钟计算，其余文字按写作速度计算；去掉空白后数 Unicode 字符。粘贴启发式、各速度及上限均在 `[timing]` 配置，无法识别的粘贴可能高估写作时间。
 - ChatGPT 每次访问 active = min(`visit_duration` 微秒换算、距下一次 chatgpt.com 访问开始的时间、`chatgpt_cap_minutes` 默认 45 分钟)。下一次访问包括项目页；不读取其他站点。相同 URL 的多次访问合成一段，不论间隔；各次区间先合并，避免重复。全部标低置信度，单次访问也有停留时长。
 - held 只给已分类为 chore 的会话：用户消息之后，已有 assistant/tool 工作证据时，计到第一次回复结束或下一条用户消息（较早者），每条最多 `held_cap_minutes`（60 分钟）。在回放截止时尚未结束的 turn，可估到截止时刻，但仍受 60 分钟上限约束；没有任何工作证据则不补 held。最终回复后的无消息等待不自动延长。窗口边缘裁剪，不读取 `--at` 之后的消息/工具记录。JSON 保存候选区间及完整时间戳证据，未分类候选不算 held。
-- `user_seconds` 是段内合并后的原始 active 估计；`active_seconds`（兼容字段 `seconds`）为跨段重叠等分后的 active。held 先扣除所有 active 区间，再在杂务段之间等分，写入 `held_seconds`。总表/项目表单列 held，active 占比的分母只含 active。小于 0.05 分钟的非零值显示 `<0.1`，避免“0.0 分钟却有高占比”；项目括号百分比以该项目的 active 为分母。
+- `user_seconds` 是段内合并后的原始 active 估计；`active_seconds`（兼容字段 `seconds`）为跨段重叠等分后的 active。held 先扣除所有 active 区间，再在杂务段之间等分，写入 `held_seconds`。Markdown 总计行单列 held。小于 0.05 分钟的非零值显示 `<0.1`，避免“0.0 分钟却有高占比”。
 - 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；家目录本身固定为「未归属」，忽略项目登记里的家目录前缀（含 exact 项），只有更具体路径才可匹配；其他无匹配路径仍用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
 - Chrome History 复制到受限临时目录，以只读 SQLite 查询；SQL 仅查含 chatgpt.com 的记录，另校验精确 hostname，显式 CAST 时间为 INTEGER。不读取其他网站记录，退出时删除副本。项目页归属可参考窗口之前的 ChatGPT 项目页。
-- Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，仅凭这些记录用户时间为 0；Computer History 前台 active 分钟能唯一对齐其活动跨度时，才新建对应 Codex 会话段计入实测时间。git 提交存在不证明由用户手写；agent 自述标为未核实。
-- 正常分类模式的一次 `day` / 达到候选时长的 `check` 只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
+- Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，仅凭这些记录用户时间为 0；Computer History 前台 active 分钟能唯一对齐其活动跨度时，才新建对应 Codex 会话段计入实测时间。git 提交存在不证明由用户手写；agent 自述标为未核实。采集保留 Codex final channel 标记；旧缓存缺标记时，以每会话最后一条消息兼容回退，不能保证是结论。
+- 分类新增 `summary`：动词开头的一句话，描述用户做了什么，不写分类理由。渲染旧分类无 `summary` 时回退到 `reason`；缓存复用保留 `summary`。正常分类模式的一次 `day` / 达到候选时长的 `check` 只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
 - `check` 杂务 active + held ≥ 60 分钟且占整个窗口 ≥ 50%，或同项目/同主题连续区间严格超过 30 分钟时提交建议。分类前用 active 与全部 held 候选的并集做上界，不再只因 active 少于 30 分钟就漏掉被占用的时间；不可能达到任一阈值才跳过 LLM。提醒文字分别给出 active 和 held；每次最多 3 条。日期/项目/主题为去重键，成功入队后 3 小时内不重复；有锁避免并发重复，失败不登记成功。`--dry` 不提交、不消耗去重，最终是否通知仍由 reporter 决定。
 - `--no-classify` 不调用 Codex；默认从对应日 `state/days/日期.json` 复用已有分类，也可用 `--classification-file` 指定。Claude 以真实用户 UUID 覆盖匹配、ChatGPT 以精确 URL 匹配，并要求分类与主题唯一；无法匹配则标「未分类」，不猜成杂务。缓存可能来自事后全天分析，因此此模式验证采集/计时/阈值，不验证当时实时分类是否相同。`day` 写独立的 `日期.timing.json/.md`，保留原分类报告。`check --no-classify` 必须同时 `--dry`，输出触发结果与时间证据。每次 check 保存 `state/checks/当地时刻.json`，含 active/held 明细及证据。
 - `now` 输出 `{status, idle_seconds, app, quiet, at, typing, computer_at, window_title, domain}`；最近 2 分钟有事件时 app/title/domain 来自最新前台记录，typing 表示该窗口在这 2 分钟内有打字事件（不是持续正在打字的保证），computer_at 为最新事件时刻；无新事件时新增字段为 null，app 回退到系统探测。原有 status 为 active / away / unknown；键鼠空闲严格超过配置值（默认 600 秒）为 away。探测失败为 null / unknown，不假称正在输入或输出。
@@ -128,16 +151,19 @@ Computer History 接入规则：
 - `[sources].computer_events` / `computer_summaries` 配置原始事件和摘要目录。每分钟按应用、窗口标题、域名保留计数（clicks、typing、submits、shortcuts、selections）；任何输入事件使该窗口分钟 active。window.changed/session.started 本身不算 active，没有事件的分钟不外推。同一分钟多个 active 窗口按现有跨段分摊规则计时，总计最多一分钟；这表示有操作的分钟，不是精确操作秒数。
 - 有观察的分钟先扣掉旧 active 估计，再加入输入事件证明的 active。无观察的分钟保留 v1 估计。Claude、Codex、Chrome chatgpt.com 仅在时间跨度唯一匹配时归入会话；多个候选时再用窗口标题匹配标题/会话 ID，仍不唯一或无时间重叠则保留为 computer 段，不硬归。Codex 的历史活动跨度不自动产生 held。
 - 其他窗口按「应用 + 窗口标题」分组，相邻观察分钟超过 20 分钟切段，来源 `computer`。同时间的 10min 摘要 title、description 提供分类上下文（Recording summary 正文仅存档），不代表摘要所述每件事都在该窗口发生。项目按窗口标题（含文件路径）和域名匹配项目登记的完整名称、路径或目录名，无匹配为「其他」。不读取完整 URL 路径，因而无法用 URL 路径匹配项目。
-- 时间线、项目统计、`check` 阈值包括 computer 段；held 候选期间观察到其他应用时，回顾另列当时的应用/窗口。该观察不证明用户在等 agent，held 仍扣除所有 active 重叠。
+- 时间线、JSON 计时、`check` 阈值包括 computer 段；held 候选期间观察到其他应用的记录仅保存在 JSON，不在 Markdown 展示。该观察不证明用户在等 agent，held 仍扣除所有 active 重叠。
 - `check` 在分类前存档，`--dry` 也存档，但不提交提醒。文件按配置的时区及 05:00 切日，锁内合并并原子替换；重复执行不重复追加。原始分钟优先，缺失分钟和摘要从存档补齐。存档只保留聚合及摘要，不复制原始事件；回放不使用截止时刻之后的事件或尚未结束的摘要。源缺失/为空且无可恢复分钟时保持旧行为，在回顾末尾注明缺口。存档不能恢复首次 check 之前已经滚动删除的数据。
 - `--no-classify` 对 computer / 实测 Codex 段只复用相同来源、session 及起止时间的分类，否则标为未分类；不把摘要直接当作已核实分类。
 
 数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法观察持续阅读、线下活动或用户是否真的关注页面，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
 
+渲染 fixture 覆盖合并边界、零碎归并、agent/git 挂段、长度上限及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
+
 测试/隔离覆盖：`PULSE_CONFIG`、`PULSE_STATE` 指向配置和状态；`PULSE_RUN`、`PULSE_ASK` 分别替换 interaction/run 与 reporter/ask 可执行文件。子进程 stdin 全部关闭。
 
 ```sh
 python3 pulse/tests/test_pulse.py
+python3 -m unittest discover -s reporter/tests
 python3 interaction/tests/test_run.py
 python3 interaction/tests/test_modules.py
 bash interaction/tests/test_wake.sh
