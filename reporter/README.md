@@ -84,10 +84,17 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 `python3 interaction/tests/test_modules.py`。问题队列测试复制 bin/lib/config 到临时目录，
 使用临时 `PRTS_REPORTER_STATE` 和替身 pulse，所有测试子进程关闭 stdin。
 
+## 待办：`bin/todo`（2026-11-13）
+- 用户自己的待办放在 Apple 提醒事项的「PRTS」列表，会同步到 iPhone；带日期的也会出现在日历里。
+- `todo add "<标题>" [--notes N] [--due YYYY-MM-DD[THH:MM]]`、`todo list [--all]`（每行一个 JSON）、`todo done <id>`。只标记完成，从不删除。
+- 只放用户本人要做的事。agent 的工作进 `ROADMAP.md` 或派发任务。
+- 通过 osascript 操作。这台 Mac 已经允许访问提醒事项，不需要再授权。
+
 ## 送达（2026-11-12）
 - **每小时提醒：`bin/remind`，由 launchd 运行**（`config/launchd/com.prts.reporter-remind.plist`，每天 0 点和 9–23 点的第 7 分钟）。
   - 依次运行 `pulse check`、`ask expire`、`ask due --channel bark`。
   - 有待推送的问题，才用 `notify alert` 推到手机（Bark）和电脑（macOS 通知）；没有就什么都不发。
+  - 推送标题直接用第一条问题本身，多条时注明「共 N 条」（11-13 用户反馈：「PRTS 提醒」这种标题让人不想点开）。
   - 日志写在 `state/out/remind.log`。
   - 用户在任意 Claude session 里回复「Q12 …」，通常是 PRTS 总控（手机 Claude app 里也能回），由那个 session 运行 `ask reply` 记录。
   - 为什么不用 Claude 定时任务：每次运行都会开一个 session，即使没东西要问，跑完 app 也会弹「完成」通知（11-12 用户反馈）。原来的 `prts-reminders` 任务已暂停，prompt 留在 `config/claude-tasks/prts-reminders.md` 备查。

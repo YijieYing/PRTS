@@ -63,7 +63,7 @@ class Questions(unittest.TestCase):
         self.assertEqual(self.remind(), '')                  # empty queue: silent
         q = self.add('timely', 'remind-one').strip()
         sent = self.remind()
-        self.assertIn('alert|--title|PRTS 提醒|--text|', sent)
+        self.assertIn('alert|--title|问题 remind-one|--text|', sent)
         self.assertIn(q, sent)
         self.assertEqual(self.remind(), sent)                # timely is not repeated: no second push
 

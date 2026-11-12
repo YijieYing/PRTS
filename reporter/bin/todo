@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""todo — the user's to-do list, kept in Apple Reminders (list "PRTS"), so it syncs to iPhone.
+
+  todo add "<title>" [--notes N] [--due YYYY-MM-DD[THH:MM]] [--list L]
+  todo list [--all] [--list L]          # open items (or all) as JSON lines: id, title, due, done
+  todo done <id>                        # mark completed (never deletes)
+
+Only agents acting for the user call this; items are the user's own tasks, not agent work
+(agent work goes to ROADMAP or a dispatched task). Nothing is ever deleted from Reminders.
+"""
+import argparse, json, subprocess, sys
+
+LIST = 'PRTS'
+
+
+def osa(script, *args):
+    r = subprocess.run(['osascript', '-', *args], input=script, capture_output=True, text=True)
+    if r.returncode:
+        sys.exit('todo: ' + r.stderr.strip())
+    return r.stdout.strip()
+
+
+ENSURE = '''on run argv
+tell application "Reminders"
+  if not (exists list (item 1 of argv)) then make new list with properties {name:(item 1 of argv)}
+end tell
+end run'''
+
+ADD = '''on run argv
+set {L, T, N, dueText} to argv
+tell application "Reminders"
+  set r to make new reminder at end of list L with properties {name:T, body:N}
+  if dueText is not "" then
+    set dd to current date
+    set year of dd to (text 1 thru 4 of dueText) as integer
+    set day of dd to 1
+    set month of dd to (text 6 thru 7 of dueText) as integer
+    set day of dd to (text 9 thru 10 of dueText) as integer
+    if (length of dueText) > 10 then
+      set hours of dd to (text 12 thru 13 of dueText) as integer
+      set minutes of dd to (text 15 thru 16 of dueText) as integer
+      set seconds of dd to 0
+      set due date of r to dd
+    else
+      set time of dd to 0
+      set allday due date of r to dd
+    end if
+  end if
+  return id of r
+end tell
+end run'''
+
+LIST_ITEMS = '''on run argv
+set {L, ALLFLAG} to argv
+set out to ""
+tell application "Reminders"
+  if ALLFLAG is "1" then
+    set rs to reminders of list L
+  else
+    set rs to (reminders of list L whose completed is false)
+  end if
+  repeat with r in rs
+    set d to due date of r
+    if d is missing value then
+      set ds to ""
+    else
+      set ds to (d as «class isot» as string)
+    end if
+    set out to out & (id of r) & tab & (name of r) & tab & ds & tab & (completed of r) & linefeed
+  end repeat
+end tell
+return out
+end run'''
+
+DONE = '''on run argv
+tell application "Reminders" to set completed of (first reminder whose id is (item 1 of argv)) to true
+end run'''
+
+
+def main():
+    p = argparse.ArgumentParser(prog='todo')
+    sub = p.add_subparsers(dest='cmd', required=True)
+    a = sub.add_parser('add'); a.add_argument('title'); a.add_argument('--notes', default='')
+    a.add_argument('--due', default=''); a.add_argument('--list', default=LIST)
+    l = sub.add_parser('list'); l.add_argument('--all', action='store_true'); l.add_argument('--list', default=LIST)
+    d = sub.add_parser('done'); d.add_argument('id')
+    x = p.parse_args()
+    if x.cmd == 'add':
+        if x.due and len(x.due) not in (10, 16):
+            p.error('--due must be YYYY-MM-DD or YYYY-MM-DDTHH:MM')
+        osa(ENSURE, x.list)
+        print(osa(ADD, x.list, x.title, x.notes, x.due))
+    elif x.cmd == 'list':
+        osa(ENSURE, x.list)
+        for line in osa(LIST_ITEMS, x.list, '1' if x.all else '0').splitlines():
+            rid, title, due, done = line.split('\t')
+            print(json.dumps(dict(id=rid, title=title, due=due or None, done=done == 'true'), ensure_ascii=False))
+    else:
+        osa(DONE, x.id)
+
+
+if __name__ == '__main__':
+    main()

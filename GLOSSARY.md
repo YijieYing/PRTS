@@ -75,6 +75,7 @@
 |---|---|---|
 | `bin/notify <log\|wechat\|alert> [--title T] (--text\|--file)` | notify | 送达一条通知。log 只记录；wechat 发微信；alert 发微信并弹 macOS 通知。旧用法（不带级别）等同 wechat |
 | `bin/ask add\|next\|due\|reply\|answer\|close\|expire\|render\|wait` | ask | 提问队列。紧急度：blocking（每 30 分钟重复提醒）、timely（推送一次）、soon（每日汇总）、whenever（等用户开 session）。见 reporter/README |
+| `bin/todo add\|list\|done` | todo | 用户自己的待办，存在 Apple 提醒事项的「PRTS」列表，会同步到 iPhone。见 reporter/README |
 | `bin/remind` | remind | 每小时由 launchd 运行：pulse check → ask due，有问题才推送（Bark + macOS）。见 reporter/README |
 | `bin/report weekly [日期]` | report | 生成并送达周报 |
 | `bin/report daily` | report | 把 aquant 日报校验后放进微信发件箱（launchd 每 10 分钟和文件变化时触发） |

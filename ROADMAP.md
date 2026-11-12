@@ -21,7 +21,11 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | R4 | ✅ | **手机推送渠道不只靠微信** | 11-12 接入 Bark：`notify phone`，`alert` 改为 Bark + macOS。原记录： 微信受 24 小时 token 限制。11-12 实测：Claude 定时任务的 session 不连 Remote Control，也不能为它打开，所以 PushNotification 推不到手机，这条路排除。候选：Bark 或 ntfy（需要用户在手机上装 app 并给出 key）；macOS 通知（只在用户坐在电脑前时有用）。由 R2 判断此刻该用哪个渠道 |
 | R5 | ❓ | **Codex 派发的沙盒选项** | dispatch 默认用 `workspace-write`，不能联网，也不能建本地 socket。NatureCalls 的 Unity 任务因此受阻。需要一个显式、需要用户批准的放宽方式 |
 | R7 | ❓ | **实验：杂务交给 agent** | EchoAsRecord 实施、NatureCalls 对照，比较用户的体感和 pulse 测出的杂务时间。前提：pulse 每日回顾能按项目统计、EchoAsRecord 的架构底线确认、自检就位。设计见 [pulse/experiment-chore-ab.md](pulse/experiment-chore-ab.md) |
-| R8 | 💤 | **pulse 接入 Ear（EchoAsRecord）的录音信息** | 11-12 用户提出，先记下。让每日回顾也能覆盖不在电脑前的时间：线下的课、组会、讨论，以及当时学到、讨论出了什么。待定：Ear 的产出放在哪、是什么格式（转写、摘要还是事件），要和 Ear 的 session 约定一个只读接口；录音里有别人的声音，回顾里只写用户自己的收获和结论，不写原话。和 R7 的实验同在 EchoAsRecord，接入时注意别把 pulse 的规则带进合作仓库 |
+| R8 | 🔨 | **Ear → pulse → 总控：录音里有价值的内容主动处理** | 11-13 用户要求今晚搭完整通路（口述笔记 `research/EchoAsRecord/local-notes/2026-11-13-夜间口述-下一步目标.md` 的第 1 件，用户定为最先做）。<br>设计：<br>1. `pulse ear sync` 每 10 分钟读旧 Ear 的库（只读），给每段录音分诊（用户自己的思考、课、组会算 high；别人闲聊算 low）。<br>2. high 的写进 inbox，并用 Bark 推送，标题就是内容。<br>3. 总控在后台挂着 `pulse ear wait`，一有内容就被唤醒，自己判断：总控直接处理（进 todo、ROADMAP 或记忆），派 Codex 做工程活，还是提议新开一个 Claude session。<br>4. 每日回顾加入「离开电脑的时间」，人和 agent 的时间线分开。<br>实现已派给 Codex（`pulse-ear`）。<br>限制：录音按 20–30 分钟一段上传，所以延迟约 30–50 分钟；要真正实时，得改手机端（流式上传）。 |
+| R9 | 🔨 | **声纹归属修复** | 旧 Ear 从 10-14 起几乎认不出人，连用户本人也认不出（`voiceprints` 表为空）。只读调查已派出（`ear-voiceprint-survey`），参考新仓库 ③ 归属（PR #16）。修好后分诊就能准确区分「用户在说」和「别人在说」 |
+| R10 | ✅ | **用户的待办接 Apple 提醒事项** | 11-13：`reporter/bin/todo add/list/done`，列表「PRTS」，会同步到 iPhone。只放用户自己要做的事；agent 的活进 ROADMAP 或派发任务。日程（Calendar）暂不接，带日期的提醒会自动出现在日历里 |
+| R11 | 💤 | **推送策略像推荐系统一样学习** | 用户 11-13 口述：agent 要积极提问但控制数量，根据用户的回复调整，优先问用户更愿意回答的；利用周期性，比如「下周这个时候你会很累，提醒你去放松」；支付记录（如星巴克）可以作为信息源；各种权限（声音、屏幕、键盘、支付）让用户逐项勾选。11-13 先做了一步：推送标题直接用问题本身 |
+| R12 | 💤 | **Mouth：给口述的语音反馈** | 用户 11-13 口述：边走边想、边口述设计文档时，希望 AI 用语音回应。最终所有推送都要收到 Ear 手机端 |
 | R6 | ⏭ | **周报改用 `reporter/bin/notify`** | 不再经过 outbox 和 `/auto` 转发。等用户改掉 CodexBridge 里读 `Reporter/outbox` 的 `/auto` 任务以后，删掉 `reporter/outbox` 链接 |
 
 ## 二、以后再说（候选池）

@@ -11,5 +11,9 @@ echo "== $(date '+%F %T') remind"
 out=$("$M/bin/ask" due --channel bark) || { echo "ask due failed" >&2; exit 1; }
 [ -z "$out" ] && { echo "nothing due"; exit 0; }
 printf '%s\n' "$out"
-exec "$M/bin/notify" alert --title "PRTS 提醒" --text "$out
+# Title = the first question itself (user 11-13: "PRTS 提醒" gives no reason to open it).
+first=$(printf '%s\n' "$out" | grep -m1 -E '^Q[0-9]+ · ' | sed -E 's/^Q[0-9]+ · //')
+n=$(printf '%s\n' "$out" | grep -cE '^Q[0-9]+ · ')
+title=${first:-PRTS 提醒}; [ "$n" -gt 1 ] && title="$title（共 $n 条）"
+exec "$M/bin/notify" alert --title "$title" --text "$out
 （在 PRTS 总控或任意 Claude session 里回复）"

@@ -7,9 +7,17 @@
 2. 检查 PRTS 和 research/PRTS 有没有未推送的提交（`git -C <repo> rev-list --count @{u}..HEAD`）；有积压就在回复里提醒用户（用户 2026-10-21 要求：不自动推送，但要适时提醒）。
 3. 读 `prts.md` 的 §〇（约 60 行），不整篇读。
 4. 运行 `git -C ~/PRTS status --short human/ && git -C ~/PRTS diff human/`，查看人类改了什么。读完后用 `git commit -m "human: ..."` 提交，并把从中学到的东西写进对应的记忆文件。
-5. 用户消息以「Q数字」开头（回答推送到手机的提醒）时，原话交给 `~/PRTS/reporter/bin/ask reply "<原话>"`，回一行记录结果。运行 `~/PRTS/reporter/bin/ask list`：看用户回答了哪些问题（answered、delegated 等），把答案落实到记忆或任务里；还没回答的，按 `ask next` 最多问 3 条。
-6. 按需读下面的文件。
-7. 每周一次左右（或用户提到合作者时）：扫各仓库近 30 天的提交者（`git log --since=30.days --format='%an|%ae'`），和 `people.md` 的对照表比较；陌生账号提交数 ≥ 3 时，加进 people.md 的「待问」，在合适时问用户。
+5. **Ear 监听**（R8，2026-11-13）：`~/PRTS/pulse/bin/pulse ear wait` 已实现时，用 Bash 的 run_in_background 挂上它；每次被唤醒处理完一条，再重新挂上。处理方法：读它给出的分诊和转写文件，然后自己判断去向。
+   - 用户本人的事：进 `reporter/bin/todo`。
+   - 计划：进 ROADMAP。
+   - 对用户的认识：进 `memory/`。
+   - 工程活：派给 Codex，在对应项目目录。
+   - 需要用户长时间参与的新方向：提议新开一个 Claude session。
+   - 处理完用 `reporter/bin/notify phone` 推一行结论。
+   - 只总结用户自己的想法，不转述别人的原话。
+6. 用户消息以「Q数字」开头（回答推送到手机的提醒）时，原话交给 `~/PRTS/reporter/bin/ask reply "<原话>"`，回一行记录结果。运行 `~/PRTS/reporter/bin/ask list`：看用户回答了哪些问题（answered、delegated 等），把答案落实到记忆或任务里；还没回答的，按 `ask next` 最多问 3 条。
+7. 按需读下面的文件。
+8. 每周一次左右（或用户提到合作者时）：扫各仓库近 30 天的提交者（`git log --since=30.days --format='%an|%ae'`），和 `people.md` 的对照表比较；陌生账号提交数 ≥ 3 时，加进 people.md 的「待问」，在合适时问用户。
 
 | 文件 | 内容 | 什么时候读 |
 |---|---|---|
