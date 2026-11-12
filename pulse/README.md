@@ -134,7 +134,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 九、v1 实现与使用
 
-已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`（详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别留待后续。Ear 的 launchd 配置已提供，未安装。
+已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`、`bin/pulse ear ack --before ISO`（重分诊与参数详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别留待后续。Ear 的 launchd 配置已提供，未安装。
 
 - `day` 默认取当地日历的昨天（凌晨 0–6 点也取前一天），窗口为 Asia/Tokyo 05:00 至次日 05:00。日期显式指定时不受运行时刻影响。
 - `config/pulse.toml` 配置时区、切日、20 分钟分段间隔与估计上限、检测阈值、数据路径和 `[user]` 空闲/休息时段。初始休息时段 05:00–12:00 是可调整的默认值，不代表已确认的用户作息。支持跨午夜时段。
@@ -187,17 +187,21 @@ bash interaction/tests/test_wake.sh
 pulse/bin/pulse ear sync --no-notify   # 本机冒烟，不发手机通知
 pulse/bin/pulse ear sync               # 正常增量同步
 pulse/bin/pulse ear wait --poll 30     # 总控在后台等待；有结果后打印 JSON 并退出
+pulse/bin/pulse ear sync --retriage --since 2026-11-12T12:00:00+09:00
+pulse/bin/pulse ear ack --before 2026-11-13T02:06:00+09:00  # 按起点清掉此时之前的积压，不打印
 ```
 
 - `[ear]` 的 `database`、`start_from`（默认东京 2026-11-12 12:00）、`min_chars`（300）、`continuation_gap_minutes`（30）可配置。只同步起点之后、最新 pipeline run 为 succeeded 的 capture；游标记录完成的 capture ID，迟到成功的旧段仍会被发现。遇到失败退出，下次重试，不把失败写入完成游标。
 - speech_segments 的 `start_offset_ms/end_offset_ms` 相对于 audio_chunks 的 UTC 起点；speaker_resolutions 按 `(diarization_scope_id, local_speaker_id)` 匹配 speaker_identities 的姓名。无归属显示 S01 等标签，标签不跨分离作用域。sensor_observations 取离开始最近的非空 location，注明实际观测时间，不能当作精确开始位置。audio_events 按分钟以覆盖秒数 × 置信度累计，展示最多三个主要标签。
 - 每段转写写入 `state/ear/captures/<东京时间>-<capture_id>.md`；分诊写入 `state/ear/results/<capture_id>.json`。原始转写保留，纠错单独存在 corrections，不覆盖原文。
 - 低于字数阈值直接记 low，不调用模型；kind=noise、user_speaking=0 是跳过分诊的占位值，不是声学判断。其余通过 `interaction/bin/run --output-schema` 每段调用一次并校验结果。提示词包含 §一原文、只读提取的 memory/people.md、memory/yyj.md 人名/项目术语以及 human/projects.toml 项目名；不把整份记忆上传。录音只作为数据，不作为执行指令。模型处理通过现有 Codex 服务，不能理解成离线模型。
-- high 是用户思考、规划、设计、提出想法/决定，或课、组会中以后要用的内容；他人闲聊和背景对话为 low。仅总结用户自己的想法和收获，不转述别人原话。user_speaking 是说话内容中的用户比例估计，不能当作用户占整段录音的时长比例。todos 留给总控决定是否走 reporter/bin/todo；agent_work 也只整理，不自动执行或派发。
+- high 必须同时满足：用户本人是主要说话人，且在产生想法、计划、设计或决定（口述或用户主导的讨论）；归属或主导地位不确定时不判 high。用户在听、在学的对话、会议、课为 normal，仍进入每日回顾，按 §一通常归 input；他人闲聊和背景对话为 low。提示词包含两个反例：听别人介绍职业教育方案、听别人从 Scala 讲到 C++，即使内容有用也不能判 high。仅总结用户自己的想法和收获，不转述别人原话。user_speaking 是说话内容中的用户比例估计，不能当作用户占整段录音的时长比例。todos 留给总控决定是否走 reporter/bin/todo；agent_work 也只整理，不自动执行或派发。
 - 分诊带前一段 title/summary；相邻录音间隔不超过配置上限且模型确认继续同一件事时，continues=true，共用 group。前一段尚无结果则不猜连续关系，也不事后重写已交出的分组。
-- high 追加到 `state/ear/inbox.jsonl`，含 capture、时间、title、summary、文件路径和分诊详情。首次 high 调 `reporter/bin/notify phone` 推送标题和 summary 前两行；同组后续不再推送。`--no-notify` 保留 inbox，标记此组通知为 suppressed，以后也不补发冒烟通知。
+- high 追加到 `state/ear/inbox.jsonl`，含 capture、时间、title、summary、文件路径和分诊详情。首次 high 调 `reporter/bin/notify phone` 推送标题和 summary 前两行；同组后续不再推送。`ear.max_push_per_day` 默认 4，按实际成功发送当天的东京日历日（00:00 切日，不是录音日或日报 05:00 切日）计数；超限只进 inbox，记 limited，以后不补发。0 可禁用推送；通知失败不占次数。旧版通知没有日期，兼容迁移时将旧 sent 记录保守归到通知账本最后修改日。`--no-notify` 保留 inbox，标记此组通知为 suppressed，以后也不补发冒烟通知，且不占当日推送额度。
 - sync 持有独立文件锁；分诊成功先保存结果，再入 inbox、推送、写 cursor.json。通知失败可重试且不重复模型调用或 inbox。手机通知不提供事务性确认：发送成功到本地登记之间若崩溃，重试可能重复通知。inbox 在锁内原子追加保存，避免半行 JSON；所有 state 不进 git。
-- wait 用独立 inbox 锁，不在轮询睡眠期间持锁；一次取最早未交出组，把当前已到达的连续段合成一条 JSON（time、title、summary、files、captures）。stdout flush 成功后将 capture 记录到 handed.json；后续新到达的续段下次交出。交出不代表总控完成任务。输出后到登记前崩溃可能重交，总控可按 capture 去重；中断退出 130。
+- `sync --retriage --since ISO` 必须成对指定，ISO 必须带时区；只重新分诊已同步、最新 run 成功且录音起点 ≥ since 的段，并仍受 start_from 下界约束。成功后原子覆盖 results；模型失败保留该段旧结果。仍遵守字数阈值。重分诊不改游标、不新增或重复写 inbox、不推送，也不消耗推送额度；未同步段留给普通 sync。wait 读取 inbox 对应的最新 result，跳过已降为 normal/low 的条目，避免旧 high 继续唤醒总控。旧 inbox 是入队历史，不被改写；从 normal 升为 high 的重分诊结果也不自动入队。重跑重分诊会再次调用模型，不跳过本轮已成功覆盖的段。
+- wait 用独立 inbox 锁，不在轮询睡眠期间持锁；未交出的 high 按起点排序，从最早一条起，后段起点距前面已合并段的最晚终点 ≤ `ear.wait_gap_minutes`（默认 40）就继续合并，重叠也合并，与 continues/group 无关，遇到更长间隔即停止。一次打印 JSON：time 为整段起止 ISO 时间范围，start/end 为对应带时区 ISO，title 取首段，summary 每段只取前两行（保留逐段顺序），另含 files/captures。仅合并当前已经到达的条目，不额外等 40 分钟。stdout flush 后记入 handed.json；后续新段下一次交出。交出不代表完成，输出到登记之间崩溃可能重交，总控可按 capture 去重；中断退出 130。
+- `ear ack --before ISO` 在 inbox 锁内将录音起点严格早于该时间的所有 inbox capture 记为已交出；等于边界的保留。只改 handed.json，不删除证据、不发通知、不打印，重复执行幂等。不自动执行此命令清理真实数据，由总控选择截止时间。
 - 调试覆盖：`PULSE_CONFIG`、`PULSE_STATE`、`PULSE_EAR_DB`、`PULSE_RUN`、`PULSE_NOTIFY`；测试全部使用合成 SQLite 和替身程序，子进程 stdin 为 DEVNULL。
 
 `config/launchd/com.prts.pulse-ear.plist` 每 600 秒运行 sync，PATH 包含 `~/.local/bin` 和 `/opt/homebrew/bin`，日志为 `state/ear/sync.log`。只提供文件，不安装。用户安装前先 `mkdir -p ~/PRTS/pulse/state/ear`，再复制 plist 到自己的 LaunchAgents 并 bootstrap；模板使用本机绝对路径，搬迁时需同步修改。启动后要单独核实首轮 sync 是否成功。

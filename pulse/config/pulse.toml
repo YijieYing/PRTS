@@ -46,3 +46,5 @@ database = "~/.octopus/local/service/herryying30/octopus-service-ear/db/ear.sqli
 start_from = "2026-11-12T12:00:00+09:00"
 min_chars = 300
 continuation_gap_minutes = 30
+max_push_per_day = 4
+wait_gap_minutes = 40

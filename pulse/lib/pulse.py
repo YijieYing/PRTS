@@ -593,7 +593,9 @@ def main():
     ch=sub.add_parser('check'); ch.add_argument('--window'); ch.add_argument('--at'); ch.add_argument('--dry',action='store_true')
     ch.add_argument('--no-classify',action='store_true'); ch.add_argument('--classification-file',type=Path)
     e=sub.add_parser('ear'); es=e.add_subparsers(dest='ear_command',required=True)
-    es.add_parser('sync').add_argument('--no-notify',action='store_true')
+    sync=es.add_parser('sync'); sync.add_argument('--no-notify',action='store_true')
+    sync.add_argument('--retriage',action='store_true'); sync.add_argument('--since')
+    es.add_parser('ack').add_argument('--before',required=True)
     es.add_parser('wait').add_argument('--poll',type=float,default=30)
     sub.add_parser('now'); a=p.parse_args()
     try:
@@ -601,8 +603,9 @@ def main():
         if a.command=='now': print(json.dumps(now(c),ensure_ascii=False)); return 0
         state=Path(os.environ.get('PULSE_STATE',MODULE/'state')).resolve(); state.mkdir(parents=True,exist_ok=True,mode=0o700)
         if a.command=='ear':
-            if a.ear_command=='sync': ear.sync(c,state,a.no_notify)
-            else: ear.wait(state,a.poll)
+            if a.ear_command=='sync': ear.sync(c,state,a.no_notify,a.retriage,a.since)
+            elif a.ear_command=='ack': ear.ack(state,a.before)
+            else: ear.wait(state,a.poll,c.get('ear',{}).get('wait_gap_minutes',40))
             return 0
         if a.command=='day':
             date=a.date or (datetime.now(ZoneInfo(c['timezone'])).date()-timedelta(days=1)).isoformat()

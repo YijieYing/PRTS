@@ -35,6 +35,10 @@ class EarTests(unittest.TestCase):
         self.run=self.stub('run',"""prompt=Path(sys.argv[1]).read_text()
 assert '判断标准是**用户的脑子在做什么**' in prompt
 assert '只总结用户自己的想法和收获，不转述别人的原话' in prompt
+assert '用户本人是主要说话人' in prompt
+assert '反例一：别人介绍职业教育方案' in prompt
+assert '反例二：从 Scala 课程聊到 C++' in prompt
+assert '用户在听、在学的对话、会议、课为 normal' in prompt
 assert '--output-schema' in sys.argv
 with Path(os.environ['CALLS']).open('a') as f: f.write('run\\n')
 print(Path(os.environ['ANSWER']).read_text())
@@ -160,6 +164,89 @@ print(Path(os.environ['ANSWER']).read_text())
         model.assert_called_once()
         self.assertEqual(data['segments'][0]['source'],'ear')
         self.assertEqual(data['segments'][0]['category'],'output')
+
+    def test_retriage_since_no_side_effects_and_failure(self):
+        self.capture(); self.capture('two',1200); self.sync()
+        state=self.state/'ear'
+        saved={name:(state/name).read_bytes() for name in ('inbox.jsonl','notifications.json','cursor.json')}
+        before=ear.read(state/'results/one.json',{})
+        self.capture('new',2400)  # Retriage does not consume new captures.
+        self.answer.update(value='normal',category='input',title='学习语言区别')
+        self.answer_file.write_text(json.dumps(self.answer))
+        since=ear.local(self.base+1200).isoformat()
+        with redirect_stdout(io.StringIO()): ear.sync(self.c,self.state,retriage=True,since=since)
+        self.assertEqual(ear.read(state/'results/one.json',{}),before)
+        self.assertEqual(ear.read(state/'results/two.json',{})['value'],'normal')
+        self.assertFalse((state/'results/new.json').exists())
+        for name,data in saved.items(): self.assertEqual((state/name).read_bytes(),data)
+        normal=(state/'results/two.json').read_bytes()
+        with patch.dict(os.environ,{'PULSE_RUN':self.stub('fail','sys.exit(1)')}):
+            with self.assertRaises(RuntimeError): ear.sync(self.c,self.state,retriage=True,since=since)
+        self.assertEqual((state/'results/two.json').read_bytes(),normal)
+        self.assertEqual(self.calls().count('notify'),2)
+        out=io.StringIO()
+        with redirect_stdout(out): ear.wait(self.state,.01)
+        self.assertEqual(json.loads(out.getvalue())['captures'],['one'])
+        self.assertEqual(ear.day(self.state,self.base,self.base+3600)[1]['category'],'input')
+        # Remaining high after another retriage also never repeats a notification.
+        self.answer.update(value='high'); self.answer_file.write_text(json.dumps(self.answer))
+        with redirect_stdout(io.StringIO()): ear.sync(self.c,self.state,retriage=True,since=since)
+        self.assertEqual(self.calls().count('notify'),2)
+        for kwargs in ({'retriage':True},{'since':since},{'retriage':True,'since':'2026-11-12'}):
+            with self.assertRaises(ValueError): ear.sync(self.c,self.state,**kwargs)
+
+    def test_push_daily_cap_and_midnight(self):
+        self.c['ear']['max_push_per_day']=4
+        with patch.object(ear.time,'time',return_value=ear.stamp('2026-11-13T23:59:00+09:00')):
+            for i in range(6): self.capture(str(i),i*1200)
+            self.sync(); self.sync()
+        self.assertEqual(self.calls().count('notify'),4)
+        self.assertEqual(len(ear.inbox(self.state/'ear')),6)
+        self.capture('next',7200)
+        with patch.object(ear.time,'time',return_value=ear.stamp('2026-11-14T00:00:00+09:00')): self.sync()
+        self.assertEqual(self.calls().count('notify'),5)
+        self.c['ear']['max_push_per_day']=0
+        self.capture('disabled',8400); self.sync()
+        self.assertEqual(self.calls().count('notify'),5)
+        self.assertEqual(len(ear.inbox(self.state/'ear')),8)
+
+    def test_suppressed_does_not_consume_budget_and_legacy_notices(self):
+        self.c['ear']['max_push_per_day']=1
+        self.capture(); self.sync(True)
+        self.capture('two',1200); self.sync()
+        self.assertEqual(self.calls().count('notify'),1)
+        state=self.state/'ear'
+        ear.save(state/'notifications.json',{'legacy':'sent','one':'suppressed','two':'sent'})
+        self.capture('three',2400); self.sync()
+        self.assertEqual(self.calls().count('notify'),1)
+        self.assertEqual(ear.read(state/'notifications.json',{})['three']['status'],'limited')
+
+    def test_wait_merges_time_gap_and_ack_cli(self):
+        for cid,offset in [('one',0),('two',3600),('three',7201)]: self.capture(cid,offset)
+        self.sync(True)  # All independent groups; exact 40 minute gap merges.
+        out=io.StringIO()
+        with redirect_stdout(out): ear.wait(self.state,.01)
+        value=json.loads(out.getvalue())
+        self.assertEqual(value['captures'],['one','two'])
+        self.assertEqual(value['summary'],self.answer['summary'][:2]*2)
+        self.assertEqual(value['start'],ear.local(self.base).isoformat())
+        self.assertEqual(value['end'],ear.local(self.base+4800).isoformat())
+        command=[sys.executable,str(pulse.MODULE/'bin/pulse'),'ear','ack','--before']
+        boundary=ear.local(self.base+7201).isoformat()
+        result=subprocess.run(command+[boundary],stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=5)
+        self.assertEqual(result.returncode,0,result.stderr); self.assertEqual(result.stdout,'')
+        self.assertNotIn('three',ear.read(self.state/'ear/handed.json',[]))
+        for _ in range(2):
+            result=subprocess.run(command+[ear.local(self.base+7202).isoformat()],stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,0,result.stderr); self.assertEqual(result.stdout,'')
+        self.assertEqual(ear.read(self.state/'ear/handed.json',[]),['one','two','three'])
+        with self.assertRaises(ValueError): ear.ack(self.state,'2026-11-13')
+
+    def test_wait_configurable_gap(self):
+        self.capture(); self.capture('two',1800); self.sync(True)
+        out=io.StringIO()
+        with redirect_stdout(out): ear.wait(self.state,.01,gap_minutes=5)
+        self.assertEqual(json.loads(out.getvalue())['captures'],['one'])
 
     def test_invalid_schema(self):
         for patch_value in ({'continues':'yes'},{'user_speaking':2},{'summary':['one']},{'agent_work':[{}]}):
