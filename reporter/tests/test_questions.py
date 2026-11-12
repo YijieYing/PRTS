@@ -50,6 +50,23 @@ class Questions(unittest.TestCase):
     def due(self, now):
         return self.run_cmd('due', '--channel', 'claude', '--now', now)
 
+    def remind(self):
+        notify = self.module / 'bin/notify'
+        calls = self.root / 'notify-calls'
+        notify.write_text('#!/bin/sh\nprintf "%s|" "$@" >> ' + str(calls) + '\necho >> ' + str(calls) + '\n')
+        r = subprocess.run([str(self.module / 'bin/remind')], env=self.env, stdin=subprocess.DEVNULL,
+                           capture_output=True, text=True, timeout=10)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return calls.read_text() if calls.exists() else ''
+
+    def test_remind_pushes_only_when_something_is_due(self):
+        self.assertEqual(self.remind(), '')                  # empty queue: silent
+        q = self.add('timely', 'remind-one').strip()
+        sent = self.remind()
+        self.assertIn('alert|--title|PRTS 提醒|--text|', sent)
+        self.assertIn(q, sent)
+        self.assertEqual(self.remind(), sent)                # timely is not repeated: no second push
+
     def test_timely_pushes_once_and_respects_quiet(self):
         self.stub('true')
         q = self.add('timely', 'quiet-one').strip()

@@ -134,6 +134,7 @@
 | 2026-11-12 | 第一次真实投递（用户手动 Run now）。session 照原样展示了 Q2，也调用了 PushNotification，但**手机没收到，电脑显示「通知未发送」**。原因：只有用户自己开的 session 才会自动连 Remote Control，定时任务的 session 是 `off`；而且 Remote Control 不能给无人值守的 session 打开。所以「Claude 定时任务 + PushNotification」这条路推不到手机。同时修了 pulse check 在家目录下运行失败的问题：`interaction/bin/run` 加了 `--skip-git-repo-check`（e193f2c）。手机渠道改走 ROADMAP R4，等用户选。另外，定时任务的运行记录显示在侧边栏的 Scheduled 里，不在普通 session 列表里。 |
 | 2026-11-12 | 手机渠道改用 Bark（用户装好了 app，给了 key）。新增 `reporter/lib/channels/bark`，key 存在 `reporter/config/secrets.toml`（600 权限，gitignore）。`notify` 新增 `phone` 级别，`alert` 改为 Bark + macOS 通知，不再发微信；interaction 的 L2 事件也因此改走 Bark。测试里对 Bark 用替身，保证不会真推到手机。实推测试返回 200。两个定时任务的 prompt 改为用 `notify alert` 推送（update_scheduled_task 没被拦）。新加了验收问题 Q3（timely），等用户点 Run now。 |
 | 2026-11-12 | **Bark 验收通过**：手机在 02:26 收到「PRTS 测试」；12:15 收到 Q3（Q3 是 02:29 建的 timely 问题，等休息时段 05:00–12:00 结束后的第一次每小时运行才推）；电脑弹窗也收到了。Q3 在 12:17 被回答（「电脑收到了」），手机也收到了，由用户 22:40 口头确认。22:07 和 22:12 AgentConsole 连发两条 L2「lain 不可达」，22:42 实测 lain 正常（已运行 35 天），说明是短暂断连，这个提醒太灵敏。Computer History：用户决定先用它，读取范围见 pulse/README §二；接入已派给 Codex（`pulse-computer-history`）。 |
+| 2026-11-12 | 用户反馈：每小时的 Claude 定时任务没有问题要问时也弹通知（每次运行都开 session，跑完 app 就提示「完成」）。改为 `reporter/bin/remind`（纯代码，只在有问题时推送），由 launchd 运行；`prts-reminders` 已暂停。安装 launchd 被 auto 模式的权限检查拦下（Unauthorized Persistence），plist 放在 `reporter/config/launchd/`，**等用户自己装**；装上之前，每小时的提醒处于停止状态。总控负责处理「Q数字 …」形式的回复（INDEX 第 5 步）。 |
 
 ## 计划与待办
 

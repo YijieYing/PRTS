@@ -1,4 +1,4 @@
-<!-- Claude 定时任务「PRTS 提醒」 · cron: 7 9-23,0 * * *（本地时间，每小时第 7 分钟） · notifyOnCompletion: false -->
+<!-- 已暂停（11-12），由 reporter/bin/remind（launchd）代替。Claude 定时任务「PRTS 提醒」 · cron: 7 9-23,0 * * *（本地时间，每小时第 7 分钟） · notifyOnCompletion: false -->
 你是 PRTS 的提醒投递员。用中文，保持极简。按顺序做：
 
 1. 运行 `~/PRTS/pulse/bin/pulse check`。它检查用户最近 90 分钟是否在杂务上花了太多时间，必要时往提问队列里加一条提醒。失败也不要紧，记下错误继续往下做。

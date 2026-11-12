@@ -84,10 +84,15 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 `python3 interaction/tests/test_modules.py`。问题队列测试复制 bin/lib/config 到临时目录，
 使用临时 `PRTS_REPORTER_STATE` 和替身 pulse，所有测试子进程关闭 stdin。
 
-## 送达到 Claude 桌面和手机 app（2026-11-12）
-两个 Claude 定时任务，prompt 放在 `config/claude-tasks/`：
-- `prts-reminders.md`：每小时一次（cron `7 9-23,0 * * *`）。先运行 `pulse check`，再运行 `ask due --channel claude`。有待推送的问题就展示出来，并用 `notify alert` 推到手机（Bark）和电脑（macOS 通知）；用户在那个 session 里的回复，交给 `ask reply` 记录。
-- `prts-daily-recap.md`：每晚 23:40 运行 `pulse day`，把回顾推给用户。
+## 送达（2026-11-12）
+- **每小时提醒：`bin/remind`，由 launchd 运行**（`config/launchd/com.prts.reporter-remind.plist`，每天 0 点和 9–23 点的第 7 分钟）。
+  - 依次运行 `pulse check`、`ask expire`、`ask due --channel bark`。
+  - 有待推送的问题，才用 `notify alert` 推到手机（Bark）和电脑（macOS 通知）；没有就什么都不发。
+  - 日志写在 `state/out/remind.log`。
+  - 用户在任意 Claude session 里回复「Q12 …」，通常是 PRTS 总控（手机 Claude app 里也能回），由那个 session 运行 `ask reply` 记录。
+  - 为什么不用 Claude 定时任务：每次运行都会开一个 session，即使没东西要问，跑完 app 也会弹「完成」通知（11-12 用户反馈）。原来的 `prts-reminders` 任务已暂停，prompt 留在 `config/claude-tasks/prts-reminders.md` 备查。
+  - 安装：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind.plist`。plist 要先从 config 复制过去。这一步由用户执行，agent 的权限检查不允许自动装开机常驻任务。
+- **每日回顾**：Claude 定时任务 `prts-daily-recap`（`config/claude-tasks/prts-daily-recap.md`），每晚 23:40 运行 `pulse day`，把回顾推给用户。它每天只跑一次、本来就要推送，并且用户可以在那个 session 里纠正分类，所以保留为 Claude 任务。
 
 2026-11-12 已按用户批准创建，保存为 Auto 模式，可以在 app 侧边栏的 Scheduled 里修改。Claude app 开着时才会运行；app 关着的话，在下次打开时补跑。
 
