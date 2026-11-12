@@ -73,7 +73,7 @@
 ## reporter/（报告与通知 / reporting & notification）
 | 名字 | English | 做什么 |
 |---|---|---|
-| `bin/notify <log\|wechat\|alert> [--title T] (--text\|--file)` | notify | 送达一条通知。log 只记录；wechat 发微信；alert 发微信并弹 macOS 通知。旧用法（不带级别）等同 wechat |
+| `bin/notify <log\|wechat\|phone\|alert> [--title T] (--text\|--file)` | notify | 送达一条通知。log 只记录；wechat 发微信；phone 用 Bark 推到 iPhone；alert = Bark + macOS 通知（11-12 起不再发微信）。旧用法（不带级别）等同 wechat |
 | `bin/ask add\|next\|due\|reply\|answer\|close\|expire\|render\|wait` | ask | 提问队列。紧急度：blocking（每 30 分钟重复提醒）、timely（推送一次）、soon（每日汇总）、whenever（等用户开 session）。见 reporter/README |
 | `bin/todo add\|list\|done` | todo | 用户自己的待办，存在 Apple 提醒事项的「PRTS」列表，会同步到 iPhone。见 reporter/README |
 | `bin/remind` | remind | 每小时由 launchd 运行：pulse check → ask due，有问题才推送（Bark + macOS）。见 reporter/README |

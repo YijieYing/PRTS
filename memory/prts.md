@@ -141,6 +141,7 @@
 | 2026-11-13 | 口述任务分派（用户要求在各工作区开 session）：<br>- 声纹和 GPS→地点：发消息给「Ear 项目架构」；<br>- FlyBrain 两篇文章的数学学习材料：发消息给「线虫网络参数反推验证」；<br>- 新开 4 个 session：harness-reading（`~/research/DsHarness`）、os-study-plan（`~/research/Infra`）、naturecalls-finish、xindong-budget。<br>申请材料等 Harness 导读出来后再做；服务器需要用户自己装；具身计划暂缓。手机端调查结论：app 设置里就能选 5 分钟一段，Ear 同步改为每 3 分钟一次。 |
 | 2026-11-13 | 整理（用户要求）：<br>- 归档 15 个旧的「PRTS 提醒」定时任务 session；<br>- Harness 导读和 OS 计划两个 session 从总控名下移到顶层；OS 计划的文件改放到 `~/school/26秋重要作业/OS`，并告诉它 lain 上有同步仓库；<br>- 用户删了 NatureCalls 和芯动这两个 session，芯动的预算草稿已经写成文件；<br>- 存储：删掉冒烟时复制的旧 Ear 库（1 GB）。现状：PRTS 约 1.2 GB，其中 maintenance/backups 约 1.05 GB，是 AgentConsole 备份的 Claude 和 Codex 对话；Computer History 只有 8 MB，会自己滚动清理；~/.codex 2.4 GB，大头是 Codex 自带的 packages，不归我们管。 |
 | 2026-11-13 | 夜间任务（用户同意 1–4 项，以及旧 Ear 的修复）。派给 Codex：<br>- `night-ac-alerts`：不可达要连续失败才报，空闲进程按天汇总；<br>- `night-weekly-notify`：周报改为双发，R6；<br>- `night-dispatch-sandbox`：显式放宽沙盒，必须带 approved-by，R5；<br>- `night-oldear-version`：在分支上修复版本缺陷，迁移只做 dry-run，不写库、不重启。<br>`human/inbox.md` 的 224 行过期条目已归档到 `maintenance/archive/`。PRTS（20 个提交）和 research/PRTS（12 个）已推到 GitHub（用户同意）。<br>用户说明：GPS 不能靠缩短录音分段来解决，已经交给「Octopus Flutter 音频提取与 EchoAsRecord 集成」session；NatureCalls 用户自己开了 session；codex 基线以后再说。 |
+| 2026-11-13 | 夜间任务验收：4 个都 rc=0。<br>- AgentConsole：45fd56d、6219305，15 项测试通过。总控已用 `launchctl kickstart` 重启 `com.yijieying.agentconsole`，服务正常。<br>- 周报双发：73dd929。<br>- 沙盒选项：bd8119f、fed4278，R5 完成。<br>- 总控重跑了 PRTS 全部测试，全过。<br>- 修正了 GLOSSARY 第 76 行过时的 notify 说明。<br>- 旧 Ear：分支 fix/speaker-model-version，迁移演练里没有一个模板能直接改标签，大部分要用原音重算，等用户决定。 |
 
 ## 计划与待办
 
