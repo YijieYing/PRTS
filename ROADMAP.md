@@ -16,11 +16,12 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | # | 状态 | 事项 | 要点 |
 |---|---|---|---|
 | R1 | 🔨 | **question queue（总控主动提问）** | 第 1 步完成（11-12）：`reporter/bin/ask`，新增 timely 紧急度给杂务提醒用。送达：每小时由 launchd 运行 `reporter/bin/remind`，只在有问题时推送（11-12 从 Claude 定时任务改过来，因为后者每次跑完都会弹通知）；每晚回顾仍是 Claude 定时任务。原记录：送达走 Claude 定时任务（已创建：每小时提醒、每晚回顾），等第一次真实推送来验收。原计划：| 方案见 §三-R1。分三步：`reporter/bin/ask` 和开工时批量问 → 按紧急度推送 → 手机端回答。送达时机依赖 R2 |
-| R2 | 🔨 | **用户状态模块 `pulse`** | v1 已实现（11-12）：`pulse day`、`check`、`now`；ChatGPT 从 Chrome 历史读，时间分 active 和 held。下一步候选（11-12）：接入 Codex Computer History，看到不和 agent 对话的时间，active 改为实测，见 pulse/README §二；接入范围待用户定。设计稿 [pulse/README.md](pulse/README.md)。两件事：每日回顾，即有效时间花在输入、输出还是杂务上，学到和产出了什么（先做）；以及感知用户「现在」是否方便被打扰，比如离开、专注、空闲、休息时段。quiet hours、digest 时间这类用户属性归它，不写在 reporter 的 config 里。和 Ear 的区别：Ear 总结已经发生的事，pulse 只看当下。见 §三-R2 |
+| R2 | 🔨 | **用户状态模块 `pulse`** | v1 已实现（11-12）：`pulse day`、`check`、`now`；ChatGPT 从 Chrome 历史读，时间分 active 和 held。11-12 已接入 Codex Computer History（不和 agent 对话的时间也能看到，active 改为实测）。下一步：日报改成按时间线分段（11-12 用户要求）。设计稿 [pulse/README.md](pulse/README.md)。两件事：每日回顾，即有效时间花在输入、输出还是杂务上，学到和产出了什么（先做）；以及感知用户「现在」是否方便被打扰，比如离开、专注、空闲、休息时段。quiet hours、digest 时间这类用户属性归它，不写在 reporter 的 config 里。和 Ear 的区别：Ear 总结已经发生的事，pulse 只看当下。见 §三-R2 |
 | R3 | ⏭ | **约 2026-11-21：清理过渡期** | 搜一遍还有没有人用 `~/PRTS/ops/` 的旧路径，没有就删掉 `ops/` 和全局 CLAUDE.md 里的旧路径提示。同时把 `AgentConsole` 改名为 `monitor`，原因见 §三-R3 |
 | R4 | ✅ | **手机推送渠道不只靠微信** | 11-12 接入 Bark：`notify phone`，`alert` 改为 Bark + macOS。原记录： 微信受 24 小时 token 限制。11-12 实测：Claude 定时任务的 session 不连 Remote Control，也不能为它打开，所以 PushNotification 推不到手机，这条路排除。候选：Bark 或 ntfy（需要用户在手机上装 app 并给出 key）；macOS 通知（只在用户坐在电脑前时有用）。由 R2 判断此刻该用哪个渠道 |
 | R5 | ❓ | **Codex 派发的沙盒选项** | dispatch 默认用 `workspace-write`，不能联网，也不能建本地 socket。NatureCalls 的 Unity 任务因此受阻。需要一个显式、需要用户批准的放宽方式 |
 | R7 | ❓ | **实验：杂务交给 agent** | EchoAsRecord 实施、NatureCalls 对照，比较用户的体感和 pulse 测出的杂务时间。前提：pulse 每日回顾能按项目统计、EchoAsRecord 的架构底线确认、自检就位。设计见 [pulse/experiment-chore-ab.md](pulse/experiment-chore-ab.md) |
+| R8 | 💤 | **pulse 接入 Ear（EchoAsRecord）的录音信息** | 11-12 用户提出，先记下。让每日回顾也能覆盖不在电脑前的时间：线下的课、组会、讨论，以及当时学到、讨论出了什么。待定：Ear 的产出放在哪、是什么格式（转写、摘要还是事件），要和 Ear 的 session 约定一个只读接口；录音里有别人的声音，回顾里只写用户自己的收获和结论，不写原话。和 R7 的实验同在 EchoAsRecord，接入时注意别把 pulse 的规则带进合作仓库 |
 | R6 | ⏭ | **周报改用 `reporter/bin/notify`** | 不再经过 outbox 和 `/auto` 转发。等用户改掉 CodexBridge 里读 `Reporter/outbox` 的 `/auto` 任务以后，删掉 `reporter/outbox` 链接 |
 
 ## 二、以后再说（候选池）
