@@ -40,15 +40,16 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
 | 键鼠活动（空闲时间，滚动和打字的比例） | 安静阅读还是在写 | 只统计频率，不记录内容 |
 | 日历 | 课、会议 | 需用户同意 |
 | Ear 的录音结果 | 线下的课、讨论 | 以后再接 |
-| Codex 的 Computer History（11-12 17:50 用户开启） | 一个应用就能覆盖上面「前台应用」「键鼠活动」两行，还能看到 WPS、微信、Finder、Chrome 等所有应用里做了什么 | 已查看，还没接入，见下 |
+| Codex 的 Computer History（11-12 17:50 用户开启） | 一个应用就能覆盖上面「前台应用」「键鼠活动」两行，还能看到 WPS、微信、Finder、Chrome 等所有应用里做了什么 | 已接入，见下 |
 
-### Codex Computer History（11-12 查看）
+### Codex Computer History（11-12 已接入）
 - **是什么**：Codex app 的内置插件 `computer-history`（OpenAI 内部名 Skysight）。后台服务 `SkyComputerUseService` 持续记录用户在电脑上的操作。
 - **原始事件流**：`~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Caches/ComputerUse/Skysight/segments/<UTC 时间>/events.jsonl`。
   - 每行一个事件，`kind` 取值：`window.changed`、`mouse.click`、`keyboard.text_input`、`keyboard.shortcut`、`keyboard.submit`、`selection.changed`、`session.started`。
   - 每个事件带时间戳、应用（bundle id、名称）、窗口标题和 URL。部分事件还附带 accessibility 树的文本（`ax`）。
   - 记录的内容包括打出的文字（例如微信消息、Google 搜索词）。
-- **摘要**：Codex 定期生成 10 分钟和 6 小时两种摘要，存在 `~/.codex/memories/extensions/skysight/resources/*.md`（刚开启时还是空的）。
+- **pulse 实际读取字段**：事件的 `id`（去重）、`kind`、UTC `timestamp`、`app.name/bundleIdentifier`、`window.title` 和 URL 的 hostname。只提取这些元数据，不访问或保留 `ax.text`、打字正文、selection 正文、URL 路径或查询参数。摘要读取 title、description 和 Recording summary；10min 摘要按时间附到活动段，6h 摘要仅存档。全部内部格式解析集中在 `lib/computer_history.py`。
+- **摘要**：Codex 定期生成 10 分钟和 6 小时两种摘要，存在 `~/.codex/memories/extensions/skysight/resources/*.md`。
 - **开销**：服务占 CPU 约 1.5%，内存约 60 MB；事件流约 4 MB/小时，主要是 `ax` 文本。数据放在 Caches 目录，是滚动保留，保留多久未知。
 - **对 pulse 的价值**：
   1. **不和 agent 对话的时间也能被看到**。例如在 WPS 里改组会 PPT、读 PDF、查 Google、回微信。这类时间 v1 完全看不到，而它们多半属于输入或输出。
@@ -60,7 +61,7 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
   - **隐私**：它记录打字内容和所有网址，比「只读 chatgpt.com」的约定宽得多。接入时 pulse 默认只读应用、窗口标题、域名、时间戳和事件计数，不读 `keyboard.text_input` 的正文和 `ax` 文本。是否放宽由用户决定。
   - **数据是否离开本机**：生成摘要时，Codex 会把事件内容交给 OpenAI 的模型。这是 Codex 自身的行为，pulse 不额外上传。
   - **格式是内部格式**：版本 1.0.x，没有文档，随时可能变。只在一个 adapter 文件里解析它，做法同 `interaction/lib/codex` 对 `state_5.sqlite` 的处理。
-  - **保留期未知**：pulse 可能需要每小时在 `check` 时把当天的聚合结果（每分钟的前台应用和操作次数）存进 `pulse/state/`，不能只靠第二天去读原始数据。
+  - **保留期未知**：`check`（包括 `--dry`）会把当天 05:00 起已有的分钟聚合及摘要存入 `pulse/state/computer/YYYY-MM-DD.jsonl`，不依赖次日仍有原始数据。
   - **观察范围由用户自己在 Codex 里设**：哪些应用、哪些网站不记录。pulse 不改这些设置。设置只能按应用和网站开关，不能单独关掉「记打字」之类的事件类型。它的 MCP 只接受 Codex 自己调用，从外部调用会返回 `Sender process is not authenticated`（11-12 实测）。
   - **实测开销（11-12 22:40）**：开启 5 小时后，原始数据共 2.3 MB，服务占 CPU 0.1%、内存 45 MB；已生成 16 份 10 分钟摘要和 1 份 6 小时摘要，质量不错，可以直接用作分类的材料。
 
@@ -98,7 +99,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 八、待用户决定
 - 第一版先接入哪些数据来源。
-- ~~Computer History 的接入范围~~：11-12 用户决定先用它，暂时不太在意隐私。读应用、窗口、域名、操作次数和 Codex 的摘要，不读打字正文和 `ax` 文本（用不上，而且体积大）。接入已派给 Codex（任务 `pulse-computer-history`）。
+- ~~Computer History 的接入范围~~：11-12 用户决定先用它，暂时不太在意隐私。读应用、窗口、域名、操作次数和 Codex 的摘要，不读打字正文和 `ax` 文本（用不上，而且体积大）。已接入，规则见 §九。
 - 每日回顾在什么时间送达、走什么渠道。
 - 分类出错时怎么纠正：比如直接改回顾文件，由 pulse 学习。
 
@@ -116,11 +117,20 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - `user_seconds` 是段内合并后的原始 active 估计；`active_seconds`（兼容字段 `seconds`）为跨段重叠等分后的 active。held 先扣除所有 active 区间，再在杂务段之间等分，写入 `held_seconds`。总表/项目表单列 held，active 占比的分母只含 active。小于 0.05 分钟的非零值显示 `<0.1`，避免“0.0 分钟却有高占比”；项目括号百分比以该项目的 active 为分母。
 - 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；家目录本身固定为「未归属」，忽略项目登记里的家目录前缀（含 exact 项），只有更具体路径才可匹配；其他无匹配路径仍用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
 - Chrome History 复制到受限临时目录，以只读 SQLite 查询；SQL 仅查含 chatgpt.com 的记录，另校验精确 hostname，显式 CAST 时间为 INTEGER。不读取其他网站记录，退出时删除副本。项目页归属可参考窗口之前的 ChatGPT 项目页。
-- Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，用户时间恒为 0。git 提交存在不证明由用户手写；agent 自述标为未核实。
+- Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，仅凭这些记录用户时间为 0；Computer History 前台 active 分钟能唯一对齐其活动跨度时，才新建对应 Codex 会话段计入实测时间。git 提交存在不证明由用户手写；agent 自述标为未核实。
 - 正常分类模式的一次 `day` / 达到候选时长的 `check` 只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
 - `check` 杂务 active + held ≥ 60 分钟且占整个窗口 ≥ 50%，或同项目/同主题连续区间严格超过 30 分钟时提交建议。分类前用 active 与全部 held 候选的并集做上界，不再只因 active 少于 30 分钟就漏掉被占用的时间；不可能达到任一阈值才跳过 LLM。提醒文字分别给出 active 和 held；每次最多 3 条。日期/项目/主题为去重键，成功入队后 3 小时内不重复；有锁避免并发重复，失败不登记成功。`--dry` 不提交、不消耗去重，最终是否通知仍由 reporter 决定。
 - `--no-classify` 不调用 Codex；默认从对应日 `state/days/日期.json` 复用已有分类，也可用 `--classification-file` 指定。Claude 以真实用户 UUID 覆盖匹配、ChatGPT 以精确 URL 匹配，并要求分类与主题唯一；无法匹配则标「未分类」，不猜成杂务。缓存可能来自事后全天分析，因此此模式验证采集/计时/阈值，不验证当时实时分类是否相同。`day` 写独立的 `日期.timing.json/.md`，保留原分类报告。`check --no-classify` 必须同时 `--dry`，输出触发结果与时间证据。每次 check 保存 `state/checks/当地时刻.json`，含 active/held 明细及证据。
-- `now` 输出 `{status, idle_seconds, app, quiet, at}`，status 为 active / away / unknown；键鼠空闲严格超过配置值（默认 600 秒）为 away。探测失败为 null / unknown，不假称正在输入或输出。
+- `now` 输出 `{status, idle_seconds, app, quiet, at, typing, computer_at, window_title, domain}`；最近 2 分钟有事件时 app/title/domain 来自最新前台记录，typing 表示该窗口在这 2 分钟内有打字事件（不是持续正在打字的保证），computer_at 为最新事件时刻；无新事件时新增字段为 null，app 回退到系统探测。原有 status 为 active / away / unknown；键鼠空闲严格超过配置值（默认 600 秒）为 away。探测失败为 null / unknown，不假称正在输入或输出。
+
+Computer History 接入规则：
+
+- `[sources].computer_events` / `computer_summaries` 配置原始事件和摘要目录。每分钟按应用、窗口标题、域名保留计数（clicks、typing、submits、shortcuts、selections）；任何输入事件使该窗口分钟 active。window.changed/session.started 本身不算 active，没有事件的分钟不外推。同一分钟多个 active 窗口按现有跨段分摊规则计时，总计最多一分钟；这表示有操作的分钟，不是精确操作秒数。
+- 有观察的分钟先扣掉旧 active 估计，再加入输入事件证明的 active。无观察的分钟保留 v1 估计。Claude、Codex、Chrome chatgpt.com 仅在时间跨度唯一匹配时归入会话；多个候选时再用窗口标题匹配标题/会话 ID，仍不唯一或无时间重叠则保留为 computer 段，不硬归。Codex 的历史活动跨度不自动产生 held。
+- 其他窗口按「应用 + 窗口标题」分组，相邻观察分钟超过 20 分钟切段，来源 `computer`。同时间的 10min 摘要 title、description 提供分类上下文（Recording summary 正文仅存档），不代表摘要所述每件事都在该窗口发生。项目按窗口标题（含文件路径）和域名匹配项目登记的完整名称、路径或目录名，无匹配为「其他」。不读取完整 URL 路径，因而无法用 URL 路径匹配项目。
+- 时间线、项目统计、`check` 阈值包括 computer 段；held 候选期间观察到其他应用时，回顾另列当时的应用/窗口。该观察不证明用户在等 agent，held 仍扣除所有 active 重叠。
+- `check` 在分类前存档，`--dry` 也存档，但不提交提醒。文件按配置的时区及 05:00 切日，锁内合并并原子替换；重复执行不重复追加。原始分钟优先，缺失分钟和摘要从存档补齐。存档只保留聚合及摘要，不复制原始事件；回放不使用截止时刻之后的事件或尚未结束的摘要。源缺失/为空且无可恢复分钟时保持旧行为，在回顾末尾注明缺口。存档不能恢复首次 check 之前已经滚动删除的数据。
+- `--no-classify` 对 computer / 实测 Codex 段只复用相同来源、session 及起止时间的分类，否则标为未分类；不把摘要直接当作已核实分类。
 
 数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法观察持续阅读、线下活动或用户是否真的关注页面，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
 
@@ -133,4 +143,4 @@ python3 interaction/tests/test_modules.py
 bash interaction/tests/test_wake.sh
 ```
 
-代码沿用 `segment`（活动段）、`project`、`category` 和 interaction 的 `run`；计时明确使用 `active` 与 `held`，没有新增重叠概念层。实现分 `lib/sources.py`（采集）与 `lib/pulse.py`（分段、分类、命令），跨模块只执行 bin 接口；读取项目配置是任务明确允许的例外。
+代码沿用 `segment`（活动段）、`project`、`category` 和 interaction 的 `run`；计时明确使用 `active` 与 `held`，没有新增重叠概念层。实现分 `lib/sources.py`（原有来源采集）、`lib/computer_history.py`（内部格式兼容、聚合与存档）与 `lib/pulse.py`（分段、分类、命令），跨模块只执行 bin 接口；读取项目配置是任务明确允许的例外。
