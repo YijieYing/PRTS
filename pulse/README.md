@@ -4,7 +4,7 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
 1. **现在**：用户此刻在做什么、方不方便被打扰。reporter 推送前问它。
 2. **今天**：用户的有效大脑时间花在了哪里，学到了什么，产出了什么。每天给用户一份回顾。
 
-和 Ear 的区别：Ear 从录音里总结线下发生过的事；pulse 看的是用户在电脑上的工作状态。
+Ear 提供录音转写和环境证据；pulse 将它与电脑上的活动合并，判断用户的输入、输出和杂务，并把值得处理的内容交给总控。
 
 设计定义保留如下；v1 已实现，实际命令、估计规则和限制见 §九。
 
@@ -39,7 +39,7 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
 | 前台应用和窗口时长（屏幕使用时间） | 每段时间在用哪个应用、读什么 | 可能需要「完全磁盘访问」权限，用户自己授予 |
 | 键鼠活动（空闲时间，滚动和打字的比例） | 安静阅读还是在写 | 只统计频率，不记录内容 |
 | 日历 | 课、会议 | 需用户同意 |
-| Ear 的录音结果 | 线下的课、讨论 | 以后再接 |
+| Ear 的录音结果 | 线下的课、讨论、口述构思 | 已接入：只读旧 Ear SQLite 的 captures、pipeline_runs、audio_chunks、speech_segments、speaker_resolutions、speaker_identities、audio_events、sensor_observations；见 §十 |
 | Codex 的 Computer History（11-12 17:50 用户开启） | 一个应用就能覆盖上面「前台应用」「键鼠活动」两行，还能看到 WPS、微信、Finder、Chrome 等所有应用里做了什么 | 已接入，见下 |
 
 ### Codex Computer History（11-12 已接入）
@@ -93,10 +93,13 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 **12:46–13:06 · 输出 · DigitalFly** 设计线虫参数反推的对照组和评价方式
   - 学到：…
   - 产出：…
-  - agent 同时在做：…（agent 自述，未核实）
+  - 录音：…（与电脑活动重叠超过录音一半时）
 **13:22–14:32 · 杂务 · worm_effectome** 下载并检查数据
   - 可以交给 agent：…
 **零碎** 微信 12 分、浏览 8 分
+
+## agent 做了什么
+- DigitalFly：…（agent 自述，未核实）
 
 ## 可以交给 agent 的杂务
 - 13:22 · worm_effectome：…
@@ -109,9 +112,10 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - 时间线按开始时间排序。计算机段与 Claude/Codex 对话段重叠时，优先保留对话段，将计算机内容收进一行「同时：…」；多个对话候选取重叠时间最多者，同分优先同项目。不改变对话起止时间，不重复展示被收进来的计算机段，JSON 计时不受展示合并影响。
 - 「其他」类、没有学到/产出的 computer 段，无论时长都先归入零碎；没有 active 且没有学到/产出的窗口观察也不独立展示或挂成「同时」。其余相邻段项目、类别相同且间隔不超过 30 分钟时合并，概述取 active 最长的原段。合并后 active 不足 3 分钟、无学到/产出且无「同时」内容的段也归入零碎。
 - 「零碎」按应用（无应用时按项目）合计，分钟数降序，最多列 6 项；剩余合为「其他 N 分」。系统程序不出现在时间线或零碎中。
-- 每段学到、产出各最多 2 条，agent/git 共最多 2 条；只在杂务段显示已有 suggestion，按 topic 去重后取时间最早的 1 条，不串联多条建议。末尾杂务建议同样按 topic 去重、按时间取前 3 条；旧数据无 topic 时按建议正文去重。
-- agent/git 线索挂到发生时所在段（优先同项目），否则挂到最近同项目段；无可挂段则省略。agent 每会话取最后结论性消息，正文最多 80 字，标「agent 自述，未核实」；git 只核实提交存在，不证明用户手写。
-- 全文最多 4000 Unicode 字符（Python `len(md)`，不是 UTF-8 字节数；中文字符一般占 3 字节），超长先移除 agent/git 行，再移除零碎；仍超长则按整行省略时间线尾部并提示查看 JSON。数据缺口最多显示 6 条，其余提示查看 JSON，避免缺口清单本身耗尽篇幅。
+- 每段学到、产出各最多 2 条；只在杂务段显示已有 suggestion，按 topic 去重后取时间最早的 1 条，不串联多条建议。末尾杂务建议同样按 topic 去重、按时间取前 3 条；旧数据无 topic 时按建议正文去重。
+- 时间线只展示用户活动。agent/git 独立放在「## agent 做了什么」，按项目各一行、最多 8 行，每行最多 2 条最新线索；即使没有同项目用户段也保留。agent 每会话取最后结论性消息，正文最多 80 字，标「agent 自述，未核实」；git 只核实提交存在，不证明用户手写。
+- Ear 已分诊的段直接复用结果，不再调用模型。与电脑段的重叠并集严格超过录音跨度的一半时，在最大重叠的电脑段下显示「录音：标题」；否则独立展示，来源为 `ear`。连续同组录音可合并，low 只归入零碎。录音跨度是活动时长估计，不是实测有效思考时间；跨来源重叠继续等分计时，不重复增加总时长。
+- 全文最多 4000 Unicode 字符（Python `len(md)`，不是 UTF-8 字节数；中文字符一般占 3 字节），超长先将 agent/git 各项目压缩为一条短线索，再移除零碎；仍超长则按整行省略时间线尾部并提示查看 JSON。数据缺口最多显示 6 条，其余提示查看 JSON，避免缺口清单本身耗尽篇幅。
 
 ## 六、分阶段
 
@@ -130,7 +134,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 九、v1 实现与使用
 
-已实现 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别、定时调度留待后续。
+已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`（详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别留待后续。Ear 的 launchd 配置已提供，未安装。
 
 - `day` 默认取当地日历的昨天（凌晨 0–6 点也取前一天），窗口为 Asia/Tokyo 05:00 至次日 05:00。日期显式指定时不受运行时刻影响。
 - `config/pulse.toml` 配置时区、切日、20 分钟分段间隔与估计上限、检测阈值、数据路径和 `[user]` 空闲/休息时段。初始休息时段 05:00–12:00 是可调整的默认值，不代表已确认的用户作息。支持跨午夜时段。
@@ -143,7 +147,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；家目录本身固定为「未归属」，忽略项目登记里的家目录前缀（含 exact 项），只有更具体路径才可匹配；其他无匹配路径仍用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
 - Chrome History 复制到受限临时目录，以只读 SQLite 查询；SQL 仅查含 chatgpt.com 的记录，另校验精确 hostname，显式 CAST 时间为 INTEGER。不读取其他网站记录，退出时删除副本。项目页归属可参考窗口之前的 ChatGPT 项目页。
 - Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，仅凭这些记录用户时间为 0；Computer History 前台 active 分钟能唯一对齐其活动跨度时，才新建对应 Codex 会话段计入实测时间。git 提交存在不证明由用户手写；agent 自述标为未核实。采集保留 Codex final channel 标记；旧缓存缺标记时，以每会话最后一条消息兼容回退，不能保证是结论。
-- 分类新增 `summary`：动词开头的一句话，描述用户做了什么，不写分类理由。渲染旧分类无 `summary` 时回退到 `reason`；缓存复用保留 `summary`。正常分类模式的一次 `day` / 达到候选时长的 `check` 只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
+- 分类新增 `summary`：动词开头的一句话，描述用户做了什么，不写分类理由。渲染旧分类无 `summary` 时回退到 `reason`；缓存复用保留 `summary`。正常分类模式的一次 `day` / 达到候选时长的 `check` 对电脑活动只调用一次 `interaction/bin/run`，按 §一原文分类。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
 - `check` 杂务 active + held ≥ 60 分钟且占整个窗口 ≥ 50%，或同项目/同主题连续区间严格超过 30 分钟时提交建议。分类前用 active 与全部 held 候选的并集做上界，不再只因 active 少于 30 分钟就漏掉被占用的时间；不可能达到任一阈值才跳过 LLM。提醒文字分别给出 active 和 held；每次最多 3 条。日期/项目/主题为去重键，成功入队后 3 小时内不重复；有锁避免并发重复，失败不登记成功。`--dry` 不提交、不消耗去重，最终是否通知仍由 reporter 决定。
 - `--no-classify` 不调用 Codex；默认从对应日 `state/days/日期.json` 复用已有分类，也可用 `--classification-file` 指定。Claude 以真实用户 UUID 覆盖匹配、ChatGPT 以精确 URL 匹配，并要求分类与主题唯一；无法匹配则标「未分类」，不猜成杂务。缓存可能来自事后全天分析，因此此模式验证采集/计时/阈值，不验证当时实时分类是否相同。`day` 写独立的 `日期.timing.json/.md`，保留原分类报告。`check --no-classify` 必须同时 `--dry`，输出触发结果与时间证据。每次 check 保存 `state/checks/当地时刻.json`，含 active/held 明细及证据。
 - `now` 输出 `{status, idle_seconds, app, quiet, at, typing, computer_at, window_title, domain}`；最近 2 分钟有事件时 app/title/domain 来自最新前台记录，typing 表示该窗口在这 2 分钟内有打字事件（不是持续正在打字的保证），computer_at 为最新事件时刻；无新事件时新增字段为 null，app 回退到系统探测。原有 status 为 active / away / unknown；键鼠空闲严格超过配置值（默认 600 秒）为 away。探测失败为 null / unknown，不假称正在输入或输出。
@@ -158,9 +162,9 @@ Computer History 接入规则：
 - `check` 在分类前存档，`--dry` 也存档，但不提交提醒。文件按配置的时区及 05:00 切日，锁内合并并原子替换；重复执行不重复追加。原始分钟优先，缺失分钟和摘要从存档补齐。存档只保留聚合及摘要，不复制原始事件；回放不使用截止时刻之后的事件或尚未结束的摘要。源缺失/为空且无可恢复分钟时保持旧行为，在回顾末尾注明缺口。存档不能恢复首次 check 之前已经滚动删除的数据。
 - `--no-classify` 对 computer / 实测 Codex 段只复用相同来源、session 及起止时间的分类，否则标为未分类；不把摘要直接当作已核实分类。
 
-数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法观察持续阅读、线下活动或用户是否真的关注页面，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
+数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法确认持续阅读或用户是否真的关注页面；线下活动仅覆盖已同步的 Ear 录音，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
 
-渲染 fixture 覆盖合并边界、零碎排序与 6 项上限、系统程序过滤及事件归属、对话与计算机段重叠展示、单条 topic 建议、agent/git 挂段、45/60 段规模下的裁剪顺序和字符上限及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
+渲染 fixture 覆盖合并边界、零碎排序与 6 项上限、系统程序过滤及事件归属、对话与计算机段重叠展示、单条 topic 建议、agent/git 独立分节、45/60 段规模下的裁剪顺序和字符上限及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
 
 测试/隔离覆盖：`PULSE_CONFIG`、`PULSE_STATE` 指向配置和状态；`PULSE_RUN`、`PULSE_ASK` 分别替换 interaction/run 与 reporter/ask 可执行文件。子进程 stdin 全部关闭。
 
@@ -173,3 +177,29 @@ bash interaction/tests/test_wake.sh
 ```
 
 代码沿用 `segment`（活动段）、`project`、`category` 和 interaction 的 `run`；计时明确使用 `active` 与 `held`，没有新增重叠概念层。实现分 `lib/sources.py`（原有来源采集）、`lib/computer_history.py`（内部格式兼容、聚合与存档）与 `lib/pulse.py`（分段、分类、命令），跨模块只执行 bin 接口；读取项目配置是任务明确允许的例外。
+
+
+## 十、Ear 分诊与总控收件箱
+
+旧 Ear 内部格式的兼容依赖全部集中在 `lib/ear.py`（schema 0.1），不修改旧项目或数据库。使用 Python `sqlite3.connect(file_uri + '?mode=ro', uri=True)`、`query_only` 和只读事务，保留 WAL 可见性，不用 `immutable`。缺库或不可读时 `ear sync` 非零退出；day/check/now 不依赖打开该库，day 仍可使用已保存的分诊结果。
+
+```sh
+pulse/bin/pulse ear sync --no-notify   # 本机冒烟，不发手机通知
+pulse/bin/pulse ear sync               # 正常增量同步
+pulse/bin/pulse ear wait --poll 30     # 总控在后台等待；有结果后打印 JSON 并退出
+```
+
+- `[ear]` 的 `database`、`start_from`（默认东京 2026-11-12 12:00）、`min_chars`（300）、`continuation_gap_minutes`（30）可配置。只同步起点之后、最新 pipeline run 为 succeeded 的 capture；游标记录完成的 capture ID，迟到成功的旧段仍会被发现。遇到失败退出，下次重试，不把失败写入完成游标。
+- speech_segments 的 `start_offset_ms/end_offset_ms` 相对于 audio_chunks 的 UTC 起点；speaker_resolutions 按 `(diarization_scope_id, local_speaker_id)` 匹配 speaker_identities 的姓名。无归属显示 S01 等标签，标签不跨分离作用域。sensor_observations 取离开始最近的非空 location，注明实际观测时间，不能当作精确开始位置。audio_events 按分钟以覆盖秒数 × 置信度累计，展示最多三个主要标签。
+- 每段转写写入 `state/ear/captures/<东京时间>-<capture_id>.md`；分诊写入 `state/ear/results/<capture_id>.json`。原始转写保留，纠错单独存在 corrections，不覆盖原文。
+- 低于字数阈值直接记 low，不调用模型；kind=noise、user_speaking=0 是跳过分诊的占位值，不是声学判断。其余通过 `interaction/bin/run --output-schema` 每段调用一次并校验结果。提示词包含 §一原文、只读提取的 memory/people.md、memory/yyj.md 人名/项目术语以及 human/projects.toml 项目名；不把整份记忆上传。录音只作为数据，不作为执行指令。模型处理通过现有 Codex 服务，不能理解成离线模型。
+- high 是用户思考、规划、设计、提出想法/决定，或课、组会中以后要用的内容；他人闲聊和背景对话为 low。仅总结用户自己的想法和收获，不转述别人原话。user_speaking 是说话内容中的用户比例估计，不能当作用户占整段录音的时长比例。todos 留给总控决定是否走 reporter/bin/todo；agent_work 也只整理，不自动执行或派发。
+- 分诊带前一段 title/summary；相邻录音间隔不超过配置上限且模型确认继续同一件事时，continues=true，共用 group。前一段尚无结果则不猜连续关系，也不事后重写已交出的分组。
+- high 追加到 `state/ear/inbox.jsonl`，含 capture、时间、title、summary、文件路径和分诊详情。首次 high 调 `reporter/bin/notify phone` 推送标题和 summary 前两行；同组后续不再推送。`--no-notify` 保留 inbox，标记此组通知为 suppressed，以后也不补发冒烟通知。
+- sync 持有独立文件锁；分诊成功先保存结果，再入 inbox、推送、写 cursor.json。通知失败可重试且不重复模型调用或 inbox。手机通知不提供事务性确认：发送成功到本地登记之间若崩溃，重试可能重复通知。inbox 在锁内原子追加保存，避免半行 JSON；所有 state 不进 git。
+- wait 用独立 inbox 锁，不在轮询睡眠期间持锁；一次取最早未交出组，把当前已到达的连续段合成一条 JSON（time、title、summary、files、captures）。stdout flush 成功后将 capture 记录到 handed.json；后续新到达的续段下次交出。交出不代表总控完成任务。输出后到登记前崩溃可能重交，总控可按 capture 去重；中断退出 130。
+- 调试覆盖：`PULSE_CONFIG`、`PULSE_STATE`、`PULSE_EAR_DB`、`PULSE_RUN`、`PULSE_NOTIFY`；测试全部使用合成 SQLite 和替身程序，子进程 stdin 为 DEVNULL。
+
+`config/launchd/com.prts.pulse-ear.plist` 每 600 秒运行 sync，PATH 包含 `~/.local/bin` 和 `/opt/homebrew/bin`，日志为 `state/ear/sync.log`。只提供文件，不安装。用户安装前先 `mkdir -p ~/PRTS/pulse/state/ear`，再复制 plist 到自己的 LaunchAgents 并 bootstrap；模板使用本机绝对路径，搬迁时需同步修改。启动后要单独核实首轮 sync 是否成功。
+
+验证：`python3 pulse/tests/test_pulse.py`（含 Ear 合成 fixture）；模块回归见 interaction 与 reporter README。

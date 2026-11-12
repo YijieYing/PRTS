@@ -17,6 +17,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'lib'))
 import pulse
 import sources
 import computer_history as history
+from test_ear import EarTests
 
 class PulseTests(unittest.TestCase):
     def setUp(self):
@@ -309,7 +310,9 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
                  output(3,'还在运行',final=False),dict(output(90,'无法挂段','Unknown'),session='unrelated')]
         md=self.render_fixture([dict(minute=0,duration=10)],outputs)
         self.assertIn('最终结论（agent 自述，未核实）',md)
-        for absent in ('早期结论','还在运行','无法挂段'): self.assertNotIn(absent,md)
+        self.assertIn('无法挂段',md)  # Agent work no longer needs a user segment.
+        self.assertNotIn('agent 同时在做',md)
+        for absent in ('早期结论','还在运行'): self.assertNotIn(absent,md)
         git=output(20,'提交结果'); git.update(source='git',verified=True)
         md=self.render_fixture([dict(minute=0,duration=10)],[git,output(5,'跨项目同时发生','Other')])
         self.assertIn('提交结果（git 提交，已核实存在）',md)

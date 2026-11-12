@@ -40,3 +40,9 @@ reporter_config = "~/PRTS/reporter/config/config.toml"
 repos = ["~/PRTS", "~/PRTS/AgentConsole", "~/research/*", "~/Projects/*"]
 
 # Optional [[project]] entries use name, path and exact, as in human/projects.toml.
+
+[ear]
+database = "~/.octopus/local/service/herryying30/octopus-service-ear/db/ear.sqlite3"
+start_from = "2026-11-12T12:00:00+09:00"
+min_chars = 300
+continuation_gap_minutes = 30

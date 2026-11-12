@@ -14,6 +14,7 @@ import tomllib
 from zoneinfo import ZoneInfo
 import sources
 import computer_history
+import ear
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / 'pulse'
@@ -350,9 +351,22 @@ def render(data, date, c):
     header = [f"# {date[5:]} 回顾", ' · '.join(totals) +
               f"（held 另计 {minutes(sum(s['held_seconds'] for s in segs))} 分）", '', '## 时间线', '']
     fragments = defaultdict(float)
+    # Decide Ear overlap before presentation filtering/merging; even an otherwise
+    # fragmentary desktop activity can host a valuable recording.
+    ear_hosts = {}
+    desktop = [s for s in segs if s['source']!='ear' and s['active_seconds']>0]
+    for s in segs:
+        if s['source']!='ear' or s.get('value')=='low': continue
+        overlaps = [(max(s['start'],d['start']),min(s['end'],d['end']),d) for d in desktop]
+        if sum(b-a for a,b in merge((a,b) for a,b,d in overlaps)) > (s['end']-s['start'])/2:
+            ear_hosts[id(s)] = max(overlaps,key=lambda x:x[1]-x[0])[2]
+    host_ids = {id(d) for d in ear_hosts.values()}
     concrete = []
     for s in segs:
-        if (s['source']=='computer' and (s.get('category')=='other' or not s['active_seconds']) and
+        if s['source']=='ear' and s.get('value')=='low':
+            fragments['录音（低价值）'] += s['active_seconds']
+            continue
+        if (s['source']=='computer' and id(s) not in host_ids and (s.get('category')=='other' or not s['active_seconds']) and
                 not s.get('learned') and not s.get('produced')):
             fragments[s.get('app') or s['project']] += s['active_seconds']
         else:
@@ -361,6 +375,7 @@ def render(data, date, c):
     conversations = [s for s in concrete if s['source'] in ('claude','codex')]
     simultaneous = defaultdict(list)
     primary = []
+    owners = {}
     for s in concrete:
         overlaps = [(max(0,min(s['end'],d['end'])-max(s['start'],d['start'])),d)
                     for d in conversations] if s['source']=='computer' else []
@@ -368,12 +383,24 @@ def render(data, date, c):
         if overlaps:
             _, target = max(overlaps, key=lambda pair:(pair[0],pair[1]['project']==s['project'], -pair[1]['start']))
             simultaneous[id(target)].append(s)
+            owners[id(s)] = target
         else:
             primary.append(s)
-    groups = []
+    ear_titles = defaultdict(list)
+    kept = []
     for s in primary:
+        if id(s) in ear_hosts:
+            target = ear_hosts[id(s)]
+            target = owners.get(id(target),target)
+            ear_titles[id(target)].append(s['title'])
+        else:
+            kept.append(s)
+    groups = []
+    for s in kept:
         if (groups and groups[-1]['project']==s['project'] and
                 groups[-1]['category']==s.get('category','unclassified') and
+                (s['source']!='ear' and groups[-1]['members'][-1]['source']!='ear' or
+                 s.get('group') and s.get('group')==groups[-1]['members'][-1].get('group')) and
                 s['start']-groups[-1]['end'] <= 1800):
             g = groups[-1]
             g['end'] = max(g['end'], s['end'])
@@ -381,12 +408,13 @@ def render(data, date, c):
             g['simultaneous'].extend(simultaneous[id(s)])
         else:
             groups.append(dict(start=s['start'], end=s['end'], project=s['project'],
-                               category=s.get('category','unclassified'), members=[s], outputs=[],
+                               category=s.get('category','unclassified'), members=[s],
                                simultaneous=list(simultaneous[id(s)])))
     visible = []
     for g in groups:
         members = g['members']
         if (sum(s['active_seconds'] for s in members) < 180 and not g['simultaneous'] and
+                not any(ear_titles[id(s)] for s in members) and
                 not any(s.get('learned') or s.get('produced') for s in members)):
             for s in members:
                 fragments[s.get('app') or s['project']] += s['active_seconds']
@@ -412,13 +440,6 @@ def render(data, date, c):
         elif o.get('final') is not False:
             latest[(o['source'], o['session'])] = o
     outputs += latest.values()
-    for o in outputs:
-        candidates = [g for g in visible if g['start'] <= o['time'] <= g['end']]
-        same = [g for g in candidates if g['project']==o['project']]
-        candidates = same or candidates or [g for g in visible if g['project']==o['project']]
-        if candidates:
-            target = min(candidates, key=lambda g: min(abs(o['time']-g['start']), abs(o['time']-g['end'])))
-            target['outputs'].append(o)
     rows = []
     for g in visible:
         if rows: rows.append(('body', ''))
@@ -431,9 +452,8 @@ def render(data, date, c):
             details = [brief(m.get('summary') or m.get('reason','未分类'))
                        for m in sorted(g['simultaneous'],key=lambda m:m['start'])]
             rows.append(('body', '  - 同时：'+brief('；'.join(dict.fromkeys(details)))))
-        for o in sorted(g['outputs'], key=lambda o: o['time'], reverse=True)[:2]:
-            label = 'git 提交，已核实存在' if o['source']=='git' else 'agent 自述，未核实'
-            rows.append(('agent', f"  - agent 同时在做：{brief(o['text'],80)}（{label}）"))
+        titles = list(dict.fromkeys(t for m in g['members'] for t in ear_titles[id(m)]))
+        if titles: rows.append(('body', '  - 录音：'+'；'.join(brief(t) for t in titles)))
         if g['category']=='chore':
             first = next(suggestions(g['members']), None)
             if first: rows.append(('body', '  - 可以交给 agent：'+brief(first['suggestion'])))
@@ -444,6 +464,16 @@ def render(data, date, c):
         if remainder: items.append(('其他',remainder))
         if items:
             rows.append(('fragments', '**零碎** '+ '、'.join(f'{brief(k,40)} {minutes(v)} 分' for k,v in items)))
+    rows.append(('agent', '\n## agent 做了什么\n'))
+    projects = defaultdict(list)
+    compact_projects = {}
+    for o in sorted(outputs,key=lambda o:o['time'],reverse=True):
+        label = 'git 提交，已核实存在' if o['source']=='git' else 'agent 自述，未核实'
+        projects[o['project']].append(brief(o['text'],80)+'（'+label+'）')
+        compact_projects.setdefault(o['project'],brief(o['text'],30)+'（'+label+'）')
+    for project, items in list(projects.items())[:8]:
+        rows.append(('agent', '- '+brief(project,60)+'：'+'；'.join(items[:2])))
+    if not projects: rows.append(('agent', '暂无记录。'))
     footer = ['', '## 可以交给 agent 的杂务', '']
     chores = list(suggestions(segs))[:3]
     for s in chores:
@@ -457,12 +487,21 @@ def render(data, date, c):
         if len(warnings)>6: footer.append('- 其余数据缺口见同日 JSON。')
 
     def compose(): return '\n'.join(header+[v for _,v in rows]+footer)+'\n'
-    for kind in ('agent','fragments'):
-        if len(compose()) > 4000: rows = [(k,v) for k,v in rows if k!=kind]
+    if len(compose()) > 4000:
+        rows = [(k,v) for k,v in rows if k!='agent']
+        rows.append(('agent', '\n## agent 做了什么\n'))
+        for project, items in list(projects.items())[:8]:
+            rows.append(('agent', '- '+brief(project,30)+'：'+compact_projects[project]))
+        if not projects: rows.append(('agent', '暂无记录。'))
+    if len(compose()) > 4000:
+        rows = [(k,v) for k,v in rows if k!='fragments']
     # Preserve whole lines, the totals and the data-gap section even on huge days.
     if len(compose()) > 4000:
         footer.insert(0, '\n（篇幅受限，部分时间线省略；完整记录见同日 JSON。）')
-        while rows and len(compose()) > 4000: rows.pop()
+        while len(compose()) > 4000:
+            index = next((i for i in range(len(rows)-1,-1,-1) if rows[i][0]!='agent'), None)
+            if index is None: break
+            rows.pop(index)
         # Header and bounded footer fit independently; never cut a data-gap line.
     return compose()
 
@@ -553,11 +592,18 @@ def main():
     d.add_argument('--no-classify',action='store_true'); d.add_argument('--classification-file',type=Path)
     ch=sub.add_parser('check'); ch.add_argument('--window'); ch.add_argument('--at'); ch.add_argument('--dry',action='store_true')
     ch.add_argument('--no-classify',action='store_true'); ch.add_argument('--classification-file',type=Path)
+    e=sub.add_parser('ear'); es=e.add_subparsers(dest='ear_command',required=True)
+    es.add_parser('sync').add_argument('--no-notify',action='store_true')
+    es.add_parser('wait').add_argument('--poll',type=float,default=30)
     sub.add_parser('now'); a=p.parse_args()
     try:
         c=config()
         if a.command=='now': print(json.dumps(now(c),ensure_ascii=False)); return 0
         state=Path(os.environ.get('PULSE_STATE',MODULE/'state')).resolve(); state.mkdir(parents=True,exist_ok=True,mode=0o700)
+        if a.command=='ear':
+            if a.ear_command=='sync': ear.sync(c,state,a.no_notify)
+            else: ear.wait(state,a.poll)
+            return 0
         if a.command=='day':
             date=a.date or (datetime.now(ZoneInfo(c['timezone'])).date()-timedelta(days=1)).isoformat()
             start,end=day_window(date,c); data=collect(start,end,c)
@@ -575,6 +621,7 @@ def main():
                 atomic(days/(date+suffix+'.md'),f'# {date} 每日回顾（未完成）\n\n分类未核实：{error}\n\n已保存 {len(data["segments"])} 个原始段；不提供未经分类的时间占比。\n')
                 raise
             if not a.no_classify: data['classification_status']='complete'
+            data['segments'].extend(ear.day(state,start,end))
             md=render(data,date,c)
             atomic(days/(date+suffix+'.json'),json.dumps(data,ensure_ascii=False,indent=2)); atomic(days/(date+suffix+'.md'),md); print(md,end='')
         else:
@@ -605,5 +652,7 @@ def main():
                     print(f"{g['project']} / {g['topic']}: active {minutes(g['active_seconds'])}，held {minutes(g['held_seconds'])}，连续 {minutes(g['continuous_seconds'])} 分钟")
             for warning in data['warnings']: print('数据缺口: '+warning,file=sys.stderr)
         return 0
-    except (OSError, ValueError, KeyError, RuntimeError) as e:
+    except KeyboardInterrupt:
+        return 130
+    except (OSError, ValueError, KeyError, RuntimeError, ear.sqlite3.Error, subprocess.TimeoutExpired) as e:
         print('pulse: '+str(e),file=sys.stderr); return 1
