@@ -139,6 +139,7 @@
 | 2026-11-13 | 用户在 Ear 的 local-notes 放了 11-12 夜间口述的整理（七件事加两件补充），要求今晚搭完整的 Ear+pulse 通路，并实现有价值的内容主动处理。做了这些：<br>- 新增 `reporter/bin/todo`（Apple 提醒事项「PRTS」列表），把口述里用户自己的 10 件事写进去；<br>- ROADMAP 新增 R8 设计、R9 声纹、R10 待办、R11 推送策略、R12 Mouth；<br>- 推送标题改用问题本身；<br>- 派出 `pulse-ear`（sync 分诊、inbox、`ear wait`、回顾加入录音和 agent 分节）和 `ear-voiceprint-survey`（只读）；<br>- INDEX 加上总控挂 `ear wait` 的规则。<br>发现：旧 Ear 有完整的声纹链路，登记了 12 人，但 10-14 以后 resolution 几乎全为空，`voiceprints` 表为 0 行。 |
 | 2026-11-13 | Ear 通路验收。pulse ear 由 Codex 实现（9fee7c8、232b270）。总控在沙盒外用真实数据跑：第一轮 11 段判为 high，太多；收紧到「用户本人主导、在产出想法或计划」以后，只剩夜间口述 5 段，判对了。冒烟时积压的 inbox 已用 `ear ack` 清掉，总控在后台挂上 `ear wait`。声纹调查结论写进 R9：模型版本号冻结在加载前，是代码缺陷；匿名音色抢先匹配；09-29 后没人确认过。修复等用户同意。用户给了手机端仓库 NextHCI/octopus-flutter，已克隆到 `~/research/octopus-flutter`，登记进 projects.toml；只读调查已派出（`flutter-survey`）。 |
 | 2026-11-13 | 口述任务分派（用户要求在各工作区开 session）：<br>- 声纹和 GPS→地点：发消息给「Ear 项目架构」；<br>- FlyBrain 两篇文章的数学学习材料：发消息给「线虫网络参数反推验证」；<br>- 新开 4 个 session：harness-reading（`~/research/DsHarness`）、os-study-plan（`~/research/Infra`）、naturecalls-finish、xindong-budget。<br>申请材料等 Harness 导读出来后再做；服务器需要用户自己装；具身计划暂缓。手机端调查结论：app 设置里就能选 5 分钟一段，Ear 同步改为每 3 分钟一次。 |
+| 2026-11-13 | 整理（用户要求）：<br>- 归档 15 个旧的「PRTS 提醒」定时任务 session；<br>- Harness 导读和 OS 计划两个 session 从总控名下移到顶层；OS 计划的文件改放到 `~/school/26秋重要作业/OS`，并告诉它 lain 上有同步仓库；<br>- 用户删了 NatureCalls 和芯动这两个 session，芯动的预算草稿已经写成文件；<br>- 存储：删掉冒烟时复制的旧 Ear 库（1 GB）。现状：PRTS 约 1.2 GB，其中 maintenance/backups 约 1.05 GB，是 AgentConsole 备份的 Claude 和 Codex 对话；Computer History 只有 8 MB，会自己滚动清理；~/.codex 2.4 GB，大头是 Codex 自带的 packages，不归我们管。 |
 
 ## 计划与待办
 
