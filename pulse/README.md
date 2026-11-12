@@ -204,6 +204,6 @@ pulse/bin/pulse ear ack --before 2026-11-13T02:06:00+09:00  # 按起点清掉此
 - `ear ack --before ISO` 在 inbox 锁内将录音起点严格早于该时间的所有 inbox capture 记为已交出；等于边界的保留。只改 handed.json，不删除证据、不发通知、不打印，重复执行幂等。不自动执行此命令清理真实数据，由总控选择截止时间。
 - 调试覆盖：`PULSE_CONFIG`、`PULSE_STATE`、`PULSE_EAR_DB`、`PULSE_RUN`、`PULSE_NOTIFY`；测试全部使用合成 SQLite 和替身程序，子进程 stdin 为 DEVNULL。
 
-`config/launchd/com.prts.pulse-ear.plist` 每 600 秒运行 sync，PATH 包含 `~/.local/bin` 和 `/opt/homebrew/bin`，日志为 `state/ear/sync.log`。只提供文件，不安装。用户安装前先 `mkdir -p ~/PRTS/pulse/state/ear`，再复制 plist 到自己的 LaunchAgents 并 bootstrap；模板使用本机绝对路径，搬迁时需同步修改。启动后要单独核实首轮 sync 是否成功。
+`config/launchd/com.prts.pulse-ear.plist` 每 180 秒运行 sync（11-13 由 600 改为 180：手机端可以改成 5 分钟一段，见 ROADMAP R8），PATH 包含 `~/.local/bin` 和 `/opt/homebrew/bin`，日志为 `state/ear/sync.log`。只提供文件，不安装。用户安装前先 `mkdir -p ~/PRTS/pulse/state/ear`，再复制 plist 到自己的 LaunchAgents 并 bootstrap；模板使用本机绝对路径，搬迁时需同步修改。启动后要单独核实首轮 sync 是否成功。
 
 验证：`python3 pulse/tests/test_pulse.py`（含 Ear 合成 fixture）；模块回归见 interaction 与 reporter README。

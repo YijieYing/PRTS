@@ -20,7 +20,7 @@
 	<key>StandardOutPath</key>
 	<string>/Users/prts/PRTS/pulse/state/ear/sync.log</string>
 	<key>StartInterval</key>
-	<integer>600</integer>
+	<integer>180</integer>
 	<key>WorkingDirectory</key>
 	<string>/Users/prts/PRTS</string>
 </dict>
