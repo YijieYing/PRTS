@@ -106,10 +106,12 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 ```
 
 - 只有一行 active 总计，held 另计；不展示项目大表或独立的学习、产出、前台窗口记录节。
-- 相邻段项目、类别相同且间隔不超过 30 分钟时合并，概述取 active 最长的原段。合并后 active 不足 3 分钟且无学到/产出的段汇总到末尾「零碎」，按应用（无应用时按项目）合计。
-- 每段学到、产出各最多 2 条，agent/git 共最多 2 条；只在杂务段显示已有 suggestion。末尾杂务建议去重后按时间取前 3 条。
+- 时间线按开始时间排序。计算机段与 Claude/Codex 对话段重叠时，优先保留对话段，将计算机内容收进一行「同时：…」；多个对话候选取重叠时间最多者，同分优先同项目。不改变对话起止时间，不重复展示被收进来的计算机段，JSON 计时不受展示合并影响。
+- 「其他」类、没有学到/产出的 computer 段，无论时长都先归入零碎；没有 active 且没有学到/产出的窗口观察也不独立展示或挂成「同时」。其余相邻段项目、类别相同且间隔不超过 30 分钟时合并，概述取 active 最长的原段。合并后 active 不足 3 分钟、无学到/产出且无「同时」内容的段也归入零碎。
+- 「零碎」按应用（无应用时按项目）合计，分钟数降序，最多列 6 项；剩余合为「其他 N 分」。系统程序不出现在时间线或零碎中。
+- 每段学到、产出各最多 2 条，agent/git 共最多 2 条；只在杂务段显示已有 suggestion，按 topic 去重后取时间最早的 1 条，不串联多条建议。末尾杂务建议同样按 topic 去重、按时间取前 3 条；旧数据无 topic 时按建议正文去重。
 - agent/git 线索挂到发生时所在段（优先同项目），否则挂到最近同项目段；无可挂段则省略。agent 每会话取最后结论性消息，正文最多 80 字，标「agent 自述，未核实」；git 只核实提交存在，不证明用户手写。
-- 全文最多 4000 字符，超长先移除 agent/git 行，再移除零碎；仍超长则按整行省略时间线尾部并提示查看 JSON。
+- 全文最多 4000 Unicode 字符（Python `len(md)`，不是 UTF-8 字节数；中文字符一般占 3 字节），超长先移除 agent/git 行，再移除零碎；仍超长则按整行省略时间线尾部并提示查看 JSON。数据缺口最多显示 6 条，其余提示查看 JSON，避免缺口清单本身耗尽篇幅。
 
 ## 六、分阶段
 
@@ -148,6 +150,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 Computer History 接入规则：
 
+- `[sources].system_apps` 配置系统程序名单：Simplified Chinese Input Method、TextInputSwitcher、Dock、DockHelper、Control Center、Notification Center、UserNotificationCenter、Spotlight。按名称或 bundle id 不区分大小写匹配。原始事件在分钟聚合前，归给最近观察到的真实应用及其窗口、域名；前台证据最多保留 `system_context_seconds`（默认 120 秒），系统程序自身事件不延长该期限，session.started 清空此前上下文。没有近期前台证据的系统事件丢弃。旧分钟存档缺乏事件顺序，系统程序分钟直接丢弃，不猜归属。系统事件单独出现的原始分钟也会替换旧存档，避免噪声恢复。
 - `[sources].computer_events` / `computer_summaries` 配置原始事件和摘要目录。每分钟按应用、窗口标题、域名保留计数（clicks、typing、submits、shortcuts、selections）；任何输入事件使该窗口分钟 active。window.changed/session.started 本身不算 active，没有事件的分钟不外推。同一分钟多个 active 窗口按现有跨段分摊规则计时，总计最多一分钟；这表示有操作的分钟，不是精确操作秒数。
 - 有观察的分钟先扣掉旧 active 估计，再加入输入事件证明的 active。无观察的分钟保留 v1 估计。Claude、Codex、Chrome chatgpt.com 仅在时间跨度唯一匹配时归入会话；多个候选时再用窗口标题匹配标题/会话 ID，仍不唯一或无时间重叠则保留为 computer 段，不硬归。Codex 的历史活动跨度不自动产生 held。
 - 其他窗口按「应用 + 窗口标题」分组，相邻观察分钟超过 20 分钟切段，来源 `computer`。同时间的 10min 摘要 title、description 提供分类上下文（Recording summary 正文仅存档），不代表摘要所述每件事都在该窗口发生。项目按窗口标题（含文件路径）和域名匹配项目登记的完整名称、路径或目录名，无匹配为「其他」。不读取完整 URL 路径，因而无法用 URL 路径匹配项目。
@@ -157,7 +160,7 @@ Computer History 接入规则：
 
 数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法观察持续阅读、线下活动或用户是否真的关注页面，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
 
-渲染 fixture 覆盖合并边界、零碎归并、agent/git 挂段、长度上限及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
+渲染 fixture 覆盖合并边界、零碎排序与 6 项上限、系统程序过滤及事件归属、对话与计算机段重叠展示、单条 topic 建议、agent/git 挂段、45/60 段规模下的裁剪顺序和字符上限及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
 
 测试/隔离覆盖：`PULSE_CONFIG`、`PULSE_STATE` 指向配置和状态；`PULSE_RUN`、`PULSE_ASK` 分别替换 interaction/run 与 reporter/ask 可执行文件。子进程 stdin 全部关闭。
 

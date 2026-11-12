@@ -26,6 +26,9 @@ quiet_start = "05:00"
 quiet_end = "12:00"
 
 [sources]
+# Transient system surfaces belong to the last observed real foreground app.
+system_apps = ["Simplified Chinese Input Method", "TextInputSwitcher", "Dock", "DockHelper", "Control Center", "Notification Center", "UserNotificationCenter", "Spotlight"]
+system_context_seconds = 120
 computer_events = "~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Caches/ComputerUse/Skysight/segments"
 computer_summaries = "~/.codex/memories/extensions/skysight/resources"
 claude = "~/.claude/projects"

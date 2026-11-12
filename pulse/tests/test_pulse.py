@@ -267,7 +267,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertIn('输入 <0.1 分',md)
         self.assertNotIn('输入 0.0 分',md)
 
-    def render_fixture(self, rows, outputs=None):
+    def render_fixture(self, rows, outputs=None, warnings=None):
         segs=[]
         for i, row in enumerate(rows):
             start, duration = row.pop('minute'), row.pop('duration')
@@ -276,7 +276,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
                    project='Octopus', category='output', reason='回退理由', learned=[], produced=[],
                    suggestion='', session=str(i), source='computer', messages=[])
             s.update(row); segs.append(s)
-        return pulse.render(dict(segments=segs,outputs=outputs or [],warnings=[]),'2026-11-11',self.c)
+        return pulse.render(dict(segments=segs,outputs=outputs or [],warnings=warnings or []),'2026-11-11',self.c)
 
     def test_render_merge_boundaries_and_summary(self):
         md=self.render_fixture([
@@ -326,6 +326,92 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertLessEqual(len(md),4000)
         self.assertNotIn('agent 同时在做',md); self.assertNotIn('**零碎**',md)
         self.assertIn('篇幅受限',md); self.assertIn('## 可以交给 agent 的杂务',md)
+
+    def test_render_real_scale_limit_and_priority(self):
+        # 45 independent concrete segments: removing agent lines must be enough,
+        # so the lower-priority fragments still survive.
+        rows=[dict(minute=i*6,duration=4,project=f'项目{i}',summary='检查实验结果并整理观察记录') for i in range(45)]
+        outputs=[dict(time=self.start+(i*6+1)*60,text='结论'*40,source='codex',session=str(i),project=f'项目{i}') for i in range(45)]
+        md=self.render_fixture(rows+[dict(minute=400,duration=1,app='碎片')],outputs)
+        self.assertLessEqual(len(md),4000)
+        self.assertGreater(len(md.encode('utf-8')),len(md))
+        self.assertNotIn('agent 同时在做',md)
+        self.assertIn('**零碎** 碎片',md)
+        self.assertEqual(md.count('** '),46)  # All 45 headings plus fragments.
+        # 60 rich segments overflow even after agent and fragments removal.
+        rows=[dict(minute=i*6,duration=4,project=str(i),summary='写'*100,
+                   learned=['学'*100,'读'*100],produced=['造'*100,'改'*100]) for i in range(60)]
+        md=self.render_fixture(rows+[dict(minute=400,duration=1,app='碎片')],outputs,
+                               warnings=['缺口'+str(i)+'说明'*200 for i in range(50)])
+        self.assertLessEqual(len(md),4000)
+        self.assertIn('## 附：数据缺口',md); self.assertIn('其余数据缺口见同日 JSON',md)
+        self.assertNotIn('agent 同时在做',md); self.assertNotIn('**零碎**',md)
+        self.assertIn('篇幅受限',md)
+
+    def test_render_system_noise_and_ranked_fragments(self):
+        rows=[dict(minute=i*40,duration=10,app=name,summary='系统噪声')
+              for i,name in enumerate(self.c['sources']['system_apps'])]
+        # Other computer activities have no concrete learning/output: even a
+        # 20-minute segment belongs in fragments. Non-computer Other stays.
+        rows += [dict(minute=400+i*40,duration=i+1,app=f'应用{i}',category='other',summary='窗口切换')
+                 for i in range(8)]
+        rows += [dict(minute=800,duration=20,app='浏览器',category='other',summary='长跨度切换'),
+                 dict(minute=900,duration=4,category='other',source='claude',summary='对话记录')]
+        md=self.render_fixture(rows)
+        self.assertNotIn('系统噪声',md); self.assertNotIn('窗口切换',md); self.assertNotIn('长跨度切换',md)
+        for name in self.c['sources']['system_apps']: self.assertNotIn(name,md)
+        self.assertIn('对话记录',md)
+        fragment=next(line for line in md.splitlines() if line.startswith('**零碎**'))
+        self.assertEqual(fragment,'**零碎** 浏览器 20.0 分、应用7 8.0 分、应用6 7.0 分、应用5 6.0 分、应用4 5.0 分、应用3 4.0 分、其他 6.0 分')
+
+    def test_render_conversation_primary_and_one_suggestion(self):
+        md=self.render_fixture([
+            dict(minute=40,duration=10,source='codex',category='chore',summary='检查运行',topic='诊断',suggestion='第一条'),
+            dict(minute=41,duration=4,summary='阅读论文'),
+            dict(minute=42,duration=4,summary='整理笔记'),
+            dict(minute=43,duration=1,intervals=[],summary='无操作窗口',category='unclassified'),
+            dict(minute=51,duration=5,source='codex',category='chore',summary='追查运行',topic='诊断',suggestion='重复主题'),
+            dict(minute=57,duration=5,source='codex',category='chore',summary='修复服务',topic='修复',suggestion='第二主题'),
+            dict(minute=0,duration=10,source='claude',summary='设计实验'),
+            dict(minute=1,duration=4,summary='查看图表')])
+        self.assertLess(md.index('05:00–05:10'),md.index('05:40–06:02'))
+        self.assertEqual(md.count('  - 同时：'),2)
+        self.assertIn('同时：阅读论文；整理笔记',md)
+        self.assertNotIn('05:41–05:45',md); self.assertNotIn('05:42–05:46',md)
+        self.assertEqual(md.count('  - 可以交给 agent：'),1)
+        self.assertIn('  - 可以交给 agent：第一条',md)
+        self.assertNotIn('重复主题',md); self.assertNotIn('无操作窗口',md)
+        self.assertIn('06:02',md)
+
+    def test_system_events_follow_observed_foreground(self):
+        self.history_fixture([
+            (0,'mouse.click','Dock','unowned'),
+            (5,'window.changed','WPS','Octopus slides'),
+            (10,'keyboard.text_input','Simplified Chinese Input Method','候选'),
+            (20,'window.changed','Terminal','Octopus shell'),
+            (25,'keyboard.submit','TextInputSwitcher','候选'),
+            (145,'keyboard.text_input','Simplified Chinese Input Method','stale'),
+            (200,'mouse.click','Dock','stale')])
+        rows,_=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        self.assertEqual({r['app'] for r in rows},{'WPS','Terminal'})
+        wps=next(r for r in rows if r['app']=='WPS')
+        terminal=next(r for r in rows if r['app']=='Terminal')
+        self.assertEqual(wps['title'],'Octopus slides'); self.assertEqual(wps['counts']['typing'],1)
+        self.assertEqual(terminal['counts']['submits'],1); self.assertEqual(terminal['counts']['typing'],0)
+        data=pulse.collect(self.start,self.end,self.c)
+        self.assertEqual(pulse.allocate(data['segments']),60)
+        self.assertFalse(any(history.system_app(s,self.c['sources']) for s in data['segments']))
+
+    def test_system_archive_without_order_is_dropped(self):
+        directory,_=self.history_fixture([(5,'mouse.click','Dock','system')])
+        raw=[history.event(json.loads(line)) for line in (directory/'events.jsonl').read_text().splitlines()]
+        archive=self.state/'computer'; archive.mkdir()
+        (archive/'old.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in history.aggregate(raw)))
+        # Neither current raw system-only events nor old unordered system
+        # minutes may reappear as an activity after filtering.
+        self.assertEqual(history.load(self.c['sources'],self.start,self.end,self.state,set())[0],[])
+        (directory/'events.jsonl').unlink()
+        self.assertEqual(history.load(self.c['sources'],self.start,self.end,self.state,set())[0],[])
 
     def test_replay_excludes_future_tools_and_final(self):
         directory,rows=self.fixture((0,))

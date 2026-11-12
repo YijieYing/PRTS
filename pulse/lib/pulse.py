@@ -334,7 +334,8 @@ def local(ts,c): return datetime.fromtimestamp(ts, ZoneInfo(c['timezone'])).strf
 
 def render(data, date, c):
     """Build a bounded reading view; keep full evidence and timing in JSON."""
-    segs = sorted(data['segments'], key=lambda s: s['start'])
+    segs = sorted((s for s in data['segments'] if not computer_history.system_app(s,c['sources'])),
+                  key=lambda s: s['start'])
     allocate(segs)
 
     def brief(value, limit=100):
@@ -348,27 +349,59 @@ def render(data, date, c):
               if cat != 'unclassified' or any(s.get('category')==cat for s in segs)]
     header = [f"# {date[5:]} 回顾", ' · '.join(totals) +
               f"（held 另计 {minutes(sum(s['held_seconds'] for s in segs))} 分）", '', '## 时间线', '']
-    groups = []
+    fragments = defaultdict(float)
+    concrete = []
     for s in segs:
+        if (s['source']=='computer' and (s.get('category')=='other' or not s['active_seconds']) and
+                not s.get('learned') and not s.get('produced')):
+            fragments[s.get('app') or s['project']] += s['active_seconds']
+        else:
+            concrete.append(s)
+    # Presentation only: allocated time and raw evidence remain unchanged.
+    conversations = [s for s in concrete if s['source'] in ('claude','codex')]
+    simultaneous = defaultdict(list)
+    primary = []
+    for s in concrete:
+        overlaps = [(max(0,min(s['end'],d['end'])-max(s['start'],d['start'])),d)
+                    for d in conversations] if s['source']=='computer' else []
+        overlaps = [(duration,d) for duration,d in overlaps if duration>0]
+        if overlaps:
+            _, target = max(overlaps, key=lambda pair:(pair[0],pair[1]['project']==s['project'], -pair[1]['start']))
+            simultaneous[id(target)].append(s)
+        else:
+            primary.append(s)
+    groups = []
+    for s in primary:
         if (groups and groups[-1]['project']==s['project'] and
                 groups[-1]['category']==s.get('category','unclassified') and
                 s['start']-groups[-1]['end'] <= 1800):
             g = groups[-1]
             g['end'] = max(g['end'], s['end'])
             g['members'].append(s)
+            g['simultaneous'].extend(simultaneous[id(s)])
         else:
             groups.append(dict(start=s['start'], end=s['end'], project=s['project'],
-                               category=s.get('category','unclassified'), members=[s], outputs=[]))
-    fragments = defaultdict(float)
+                               category=s.get('category','unclassified'), members=[s], outputs=[],
+                               simultaneous=list(simultaneous[id(s)])))
     visible = []
     for g in groups:
         members = g['members']
-        if (sum(s['active_seconds'] for s in members) < 180 and
+        if (sum(s['active_seconds'] for s in members) < 180 and not g['simultaneous'] and
                 not any(s.get('learned') or s.get('produced') for s in members)):
             for s in members:
                 fragments[s.get('app') or s['project']] += s['active_seconds']
         else:
             visible.append(g)
+
+    def suggestions(members):
+        seen = set()
+        for m in sorted(members, key=lambda m:m['start']):
+            text = m.get('suggestion','')
+            topic = m.get('topic') or text
+            if m.get('category')=='chore' and text and topic not in seen:
+                seen.add(topic)
+                yield m
+
     # Prefer explicit final messages. Older caches lack channel metadata: the
     # last message per session is the compatibility fallback, not a verified fact.
     latest = {}
@@ -394,28 +427,34 @@ def render(data, date, c):
         for key, label in (('learned','学到'), ('produced','产出')):
             values = list(dict.fromkeys(v for m in g['members'] for v in m.get(key,[]) if v))[:2]
             rows.extend(('body', f'  - {label}：{brief(v)}') for v in values)
+        if g['simultaneous']:
+            details = [brief(m.get('summary') or m.get('reason','未分类'))
+                       for m in sorted(g['simultaneous'],key=lambda m:m['start'])]
+            rows.append(('body', '  - 同时：'+brief('；'.join(dict.fromkeys(details)))))
         for o in sorted(g['outputs'], key=lambda o: o['time'], reverse=True)[:2]:
             label = 'git 提交，已核实存在' if o['source']=='git' else 'agent 自述，未核实'
             rows.append(('agent', f"  - agent 同时在做：{brief(o['text'],80)}（{label}）"))
         if g['category']=='chore':
-            suggestions = list(dict.fromkeys(m.get('suggestion','') for m in g['members'] if m.get('suggestion')))
-            if suggestions: rows.append(('body', '  - 可以交给 agent：'+brief('；'.join(suggestions))))
+            first = next(suggestions(g['members']), None)
+            if first: rows.append(('body', '  - 可以交给 agent：'+brief(first['suggestion'])))
     if fragments:
-        rows.append(('fragments', '**零碎** '+ '、'.join(f'{brief(k,40)} {minutes(v)} 分' for k,v in fragments.items() if v)))
+        ranked = sorted(((k,v) for k,v in fragments.items() if v>0),key=lambda item:(-item[1],item[0]))
+        items = ranked[:6]
+        remainder = sum(v for _,v in ranked[6:])
+        if remainder: items.append(('其他',remainder))
+        if items:
+            rows.append(('fragments', '**零碎** '+ '、'.join(f'{brief(k,40)} {minutes(v)} 分' for k,v in items)))
     footer = ['', '## 可以交给 agent 的杂务', '']
-    seen = set()
-    for s in segs:
-        suggestion = s.get('suggestion','')
-        if s.get('category')=='chore' and suggestion and suggestion not in seen:
-            footer.append(f"- {local(s['start'],c)} · {brief(s['project'],60)}：{brief(suggestion)}")
-            seen.add(suggestion)
-            if len(seen)==3: break
-    if not seen: footer.append('暂无。')
+    chores = list(suggestions(segs))[:3]
+    for s in chores:
+        footer.append(f"- {local(s['start'],c)} · {brief(s['project'],60)}：{brief(s['suggestion'])}")
+    if not chores: footer.append('暂无。')
     warnings = list(data.get('warnings', []))
     if data.get('classification_status') in ('partial','failed'):
         warnings.append('部分活动未分类；完整证据见同日 JSON。')
     if warnings:
-        footer += ['', '## 附：数据缺口', ''] + ['- '+brief(w,200) for w in warnings]
+        footer += ['', '## 附：数据缺口', ''] + ['- '+brief(w,200) for w in warnings[:6]]
+        if len(warnings)>6: footer.append('- 其余数据缺口见同日 JSON。')
 
     def compose(): return '\n'.join(header+[v for _,v in rows]+footer)+'\n'
     for kind in ('agent','fragments'):
@@ -424,7 +463,7 @@ def render(data, date, c):
     if len(compose()) > 4000:
         footer.insert(0, '\n（篇幅受限，部分时间线省略；完整记录见同日 JSON。）')
         while rows and len(compose()) > 4000: rows.pop()
-        while len(compose()) > 4000 and len(footer)>1: footer.pop()
+        # Header and bounded footer fit independently; never cut a data-gap line.
     return compose()
 
 

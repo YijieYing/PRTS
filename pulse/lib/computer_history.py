@@ -31,6 +31,27 @@ def event(row):
                 domain=urlparse(window.get('url') or '').hostname or '')
 
 
+def system_app(row, config):
+    names = {name.casefold() for name in config.get('system_apps', [])}
+    return row.get('app','').casefold() in names or row.get('bundle','').casefold() in names
+
+
+def foreground(events, config):
+    """Attribute transient UI only to a recently observed real app, never forward.
+
+    System events do not refresh the context deadline. Archives without event
+    ordering cannot prove foreground ownership and are filtered in load().
+    """
+    previous = None
+    for e in sorted(events, key=lambda e: e['time']):
+        if e['kind']=='session.started': previous = None
+        if not system_app(e, config):
+            if e['app']: previous = e
+            yield e
+        elif previous and 0 <= e['time']-previous['time'] <= config.get('system_context_seconds',120):
+            yield e | {k:previous[k] for k in ('app','bundle','title','domain')}
+
+
 def aggregate(events):
     buckets = {}
     for e in sorted(events, key=lambda e:e['time']):
@@ -90,7 +111,7 @@ def load(config, start, end, state, warnings):
         try:
             for line in path.read_text().splitlines():
                 row=json.loads(line)
-                if row['type']=='minute' and start <= row['last'] < end: saved[key(row)]=row
+                if row['type']=='minute' and not system_app(row,config) and start <= row['last'] < end: saved[key(row)]=row
                 elif row['type']=='summary' and row['end']<=end and row['end']>start: saved[key(row)]=row
         except (OSError,ValueError,KeyError,TypeError): warnings.add('Computer History 部分存档无法读取')
     events, seen = [], set()
@@ -108,8 +129,9 @@ def load(config, start, end, state, warnings):
                     except (ValueError,KeyError,TypeError,AttributeError): warnings.add('Computer History 部分事件无法解析')
         except OSError: warnings.add('Computer History 事件无法读取')
     # A raw minute replaces its entire archived minute, including removed contexts.
-    minutes=aggregate(events)
-    present={r['time'] for r in minutes}
+    minutes=aggregate(foreground(events,config))
+    # Even a dropped system-only raw minute invalidates its archived version.
+    present={int(e['time']//60)*60 for e in events}
     saved={k:r for k,r in saved.items() if r['type']!='minute' or r['time'] not in present}
     for r in minutes: raw[key(r)]=r
     root=config.get('computer_summaries')
