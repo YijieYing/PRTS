@@ -137,6 +137,7 @@
 | 2026-11-12 | 用户反馈：每小时的 Claude 定时任务没有问题要问时也弹通知（每次运行都开 session，跑完 app 就提示「完成」）。改为 `reporter/bin/remind`（纯代码，只在有问题时推送），由 launchd 运行；`prts-reminders` 已暂停。安装 launchd 被 auto 模式的权限检查拦下（Unauthorized Persistence），plist 放在 `reporter/config/launchd/`，**等用户自己装**；装上之前，每小时的提醒处于停止状态。总控负责处理「Q数字 …」形式的回复（INDEX 第 5 步）。 |
 | 2026-11-13 | 日报改为按时间线分段（用户 11-12 要求）：Codex 做了 de41cc5 和 728d799。总控用 11-12 的真实分类验收：2911 字；系统程序和「来回切换」的段已并进零碎；计算机段和对话段重叠时，以「同时：」挂在对话段下。每日回顾任务改为原样推送这份 md（19ba935）。遗留：浏览行情、搜索 invoice 这类活动被算作「输入·学到」，分类标准偏宽，待用户定。ROADMAP 新增 R8：接入 Ear 的录音。 |
 | 2026-11-13 | 用户在 Ear 的 local-notes 放了 11-12 夜间口述的整理（七件事加两件补充），要求今晚搭完整的 Ear+pulse 通路，并实现有价值的内容主动处理。做了这些：<br>- 新增 `reporter/bin/todo`（Apple 提醒事项「PRTS」列表），把口述里用户自己的 10 件事写进去；<br>- ROADMAP 新增 R8 设计、R9 声纹、R10 待办、R11 推送策略、R12 Mouth；<br>- 推送标题改用问题本身；<br>- 派出 `pulse-ear`（sync 分诊、inbox、`ear wait`、回顾加入录音和 agent 分节）和 `ear-voiceprint-survey`（只读）；<br>- INDEX 加上总控挂 `ear wait` 的规则。<br>发现：旧 Ear 有完整的声纹链路，登记了 12 人，但 10-14 以后 resolution 几乎全为空，`voiceprints` 表为 0 行。 |
+| 2026-11-13 | Ear 通路验收。pulse ear 由 Codex 实现（9fee7c8、232b270）。总控在沙盒外用真实数据跑：第一轮 11 段判为 high，太多；收紧到「用户本人主导、在产出想法或计划」以后，只剩夜间口述 5 段，判对了。冒烟时积压的 inbox 已用 `ear ack` 清掉，总控在后台挂上 `ear wait`。声纹调查结论写进 R9：模型版本号冻结在加载前，是代码缺陷；匿名音色抢先匹配；09-29 后没人确认过。修复等用户同意。用户给了手机端仓库 NextHCI/octopus-flutter，已克隆到 `~/research/octopus-flutter`，登记进 projects.toml；只读调查已派出（`flutter-survey`）。 |
 
 ## 计划与待办
 

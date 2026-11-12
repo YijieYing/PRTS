@@ -77,3 +77,8 @@ category = "课程"
 name = "lain 上的项目"
 path = "lain:/home/yijieying/projects"
 category = "工程"
+
+[[project]]
+name = "Ear 手机端（octopus-flutter）"
+path = "~/research/octopus-flutter"
+category = "工程"

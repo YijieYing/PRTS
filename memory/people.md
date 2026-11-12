@@ -18,7 +18,7 @@
 | Weinan Shi、swnhieian、石伟男 | swnhieian@126.com | 石伟男 | 推断：octopus 提交署名、私有 git 服务器域名 brain.shiweinan.com |
 | yuchun、yuchun2pcg | yc2pcg@gmail.com | 喻纯 | 用户说（11-02） |
 | euxcet、Chengchi Zhou | zcc.qwer@gmail.com | 未知（octopus 提交最多的人，同一个邮箱） | 待问 |
-| shenxing | 81379162@qq.com | 未知（octopus） | 待问 |
+| shenxing | 81379162@qq.com | 未知（octopus；也是 Ear 手机端 NextHCI/octopus-flutter 的主要提交者，11-13 发现） | 待问 |
 | chengsx21 | chengsx_thu@163.com | 未知（octopus） | 待问 |
 | HPZ07-end、TMM | hdy24@(m)ails.tsinghua.edu.cn | 未知（NatureCalls 队友，两个署名同一人） | 待问 |
 | Songyf24 | songyf24@mails.tsinghua.edu.cn | 未知（NatureCalls 队友） | 待问 |
