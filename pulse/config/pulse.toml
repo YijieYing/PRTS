@@ -26,6 +26,8 @@ quiet_start = "05:00"
 quiet_end = "12:00"
 
 [sources]
+computer_events = "~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Caches/ComputerUse/Skysight/segments"
+computer_summaries = "~/.codex/memories/extensions/skysight/resources"
 claude = "~/.claude/projects"
 titles = "~/Library/Application Support/Claude/claude-code-sessions"
 codex = "~/.codex/sessions"

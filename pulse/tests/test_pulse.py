@@ -16,13 +16,14 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'lib'))
 import pulse
 import sources
+import computer_history as history
 
 class PulseTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
         self.c=pulse.config(); self.start,self.end=pulse.day_window('2026-11-11',self.c)
         self.c['mapping']=[{'name':'Octopus','path':'/work/Octopus'}]
-        for key in ('claude','titles','codex'):
+        for key in ('claude','titles','codex','computer_events','computer_summaries'):
             path=self.root/key; path.mkdir(); self.c['sources'][key]=str(path)
         self.c['sources']['chrome']=str(self.root/'History')
         self.c['sources']['repos']=[]
@@ -100,6 +101,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         def execute(extra):
             r=subprocess.run(command+extra,stdin=subprocess.DEVNULL,capture_output=True,text=True,env=env); self.assertEqual(r.returncode,0,r.stderr); return r
         self.assertIn('Octopus',execute(['--dry']).stdout); self.assertFalse((self.state/'ask').exists())
+        self.assertTrue((self.state/'computer/2026-11-11.jsonl').exists())
         self.assertIn('Octopus',execute([]).stdout); self.assertEqual(execute([]).stdout,'')
         self.assertEqual(len((self.state/'ask').read_text().splitlines()),1)
         self.assertEqual(execute(['--window','10m']).stdout,'')
@@ -275,6 +277,124 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertEqual(data['segments'][0]['held_candidates'],[[self.start,self.start+30*60]])
         self.assertNotIn('SECRET',json.dumps(data))
         self.assertTrue(all(e['time']<self.start+30*60 for h in data['segments'][0]['held_evidence'] for e in h['events']))
+
+
+    def history_fixture(self, entries=None):
+        entries=entries or [(0,'window.changed','WPS','Octopus slides'),(5,'keyboard.text_input','WPS','Octopus slides'),
+                            (10,'keyboard.submit','WPS','Octopus slides'),(15,'keyboard.shortcut','WPS','Octopus slides'),
+                            (20,'mouse.click','WPS','Octopus slides'),(65,'window.changed','Finder','files')]
+        directory=Path(self.c['sources']['computer_events'])/'2026-11-10T20-00-00Z'; directory.mkdir(exist_ok=True)
+        rows=[]
+        for i,(offset,kind,app,title) in enumerate(entries):
+            rows.append(dict(id=i,timestamp=datetime.fromtimestamp(self.start+offset,pulse.ZoneInfo('UTC')).isoformat().replace('+00:00','Z'),
+                             kind=kind,app=dict(name=app,bundleIdentifier=app),window=dict(title=title,url='https://example.test/SECRET?q=SECRET'),
+                             ax=dict(text='SECRET'),keyboard=dict(text='SECRET'),selection=dict(text='SECRET')))
+        (directory/'events.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
+        path=Path(self.c['sources']['computer_summaries'])/'2026-11-10T20-00-00-test-10min-memory-summary.md'
+        path.write_text('---\ntitle: Slides\ndescription: >\n  Editing slides\n  for meeting\napplications: [WPS]\n---\n## Memory summary\nIgnored\n## Recording summary\n### Work\nUpdated slides.\n## Other\nIgnored too\n')
+        return directory,path
+
+    def test_computer_parse_minutes_and_summary(self):
+        self.history_fixture()
+        warnings=set(); rows,summaries=history.load(self.c['sources'],self.start,self.end,self.state,warnings)
+        self.assertEqual(len(rows),2); self.assertEqual([r['active'] for r in rows],[True,False])
+        self.assertEqual(rows[0]['counts'],dict(clicks=1,typing=1,submits=1,shortcuts=1,selections=0))
+        self.assertEqual(rows[0]['domain'],'example.test'); self.assertEqual(rows[0]['time'],self.start)
+        self.assertNotIn('SECRET',json.dumps(rows)); self.assertNotIn('Ignored',json.dumps(summaries))
+        self.assertEqual(summaries[0]['description'],'Editing slides for meeting')
+        self.assertEqual(summaries[0]['recording'],'### Work\nUpdated slides.')
+        self.assertEqual(datetime.fromtimestamp(rows[0]['time'],pulse.ZoneInfo('Asia/Tokyo')).hour,5)
+        self.assertEqual(history.aggregate([history.event(dict(timestamp='2026-11-10T19:59:59Z',kind='selection.changed'))])[0]['time'],self.start-60)
+        previous,_=history.load(self.c['sources'],self.start-86400,self.start,self.state,set()); self.assertEqual(previous,[])
+
+    def test_computer_summary_period_and_replay(self):
+        directory,path=self.history_fixture()
+        six=path.with_name(path.name.replace('-10min-','-6h-')); six.write_text(path.read_text())
+        rows,summaries=history.load(self.c['sources'],self.start,self.start+300,self.state,set())
+        self.assertEqual(summaries,[])
+        rows,summaries=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        self.assertEqual({s['period'] for s in summaries},{'6h','10min'})
+        self.assertEqual(next(s for s in summaries if s['period']=='6h')['end'],self.start+21600)
+        history.archive(self.c['sources'],self.start,self.end,self.state,'2026-11-11',set())
+        (directory/'events.jsonl').unlink(); path.unlink(); six.unlink()
+        rows,summaries=history.load(self.c['sources'],self.start,self.start+30,self.state,set())
+        self.assertEqual(len(rows),1); self.assertEqual(summaries,[])
+
+    def test_computer_alignment_gaps_and_held(self):
+        self.history_fixture([(5,'mouse.click','Claude','Upload'),(65,'keyboard.text_input','WPS','Octopus slides'),
+                              (1265,'mouse.click','WPS','Octopus slides'),(2525,'mouse.click','WPS','Octopus slides')])
+        rows,summaries=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        segs=pulse.segments([self.event(0),self.event(10,'tool','')],self.start,self.start+3600,self.c)
+        pulse.computer(segs,[],rows,summaries,self.start,self.end,self.c)
+        claude=next(s for s in segs if s['source']=='claude')
+        self.assertEqual(claude['computer_minutes'][0]['app'],'Claude')
+        self.assertEqual(len(claude['held_activity']),3)
+        new=[s for s in segs if s['source']=='computer']; self.assertEqual(len(new),2)
+        self.assertEqual(new[0]['project'],'Octopus'); self.assertEqual(new[0]['computer_summaries'][0]['title'],'Slides')
+        self.assertEqual(new[0]['user_seconds'],120)
+        self.assertFalse(any(a<=self.start+65<b for a,b in claude['intervals']))
+
+    def test_computer_ambiguous_and_unaligned(self):
+        self.history_fixture([(5,'mouse.click','Claude','Claude'),(65,'mouse.click','Codex','Codex')])
+        rows,summaries=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        segs=pulse.segments([self.event(0),self.event(10)],self.start,self.end,self.c)
+        duplicate=copy.deepcopy(segs[0]); duplicate['session']='second'; segs.append(duplicate)
+        pulse.computer(segs,[],rows,summaries,self.start,self.end,self.c)
+        self.assertEqual(len([s for s in segs if s['source']=='computer']),2)
+        self.assertFalse(any(s.get('computer_minutes') for s in segs if s['source']=='claude'))
+
+    def test_computer_codex_and_chatgpt(self):
+        rows=history.aggregate([dict(time=self.start+5,kind='mouse.click',app='Codex',bundle='codex',title='Task',domain=''),
+                                dict(time=self.start+65,kind='keyboard.submit',app='Google Chrome',bundle='chrome',title='Concept',domain='chatgpt.com')])
+        chat=dict(source='chatgpt',session='chat',title='Concept',project='Other',start=self.start+60,end=self.start+120,
+                  intervals=[[self.start+60,self.start+120]],held_candidates=[],messages=[],confidence='低')
+        segs=[chat]; activity=[dict(session='cx',project='Octopus',start=self.start,end=self.start+30)]
+        pulse.computer(segs,activity,rows,[],self.start,self.end,self.c)
+        self.assertEqual([s['source'] for s in segs],['codex','chatgpt']); self.assertEqual(pulse.allocate(segs),120)
+
+    def test_computer_archive_restore_and_raw_priority(self):
+        directory,path=self.history_fixture()
+        archive=history.archive(self.c['sources'],self.start,self.end,self.state,'2026-11-11',set())
+        original=archive.read_text(); self.assertNotIn('SECRET',original)
+        raw,summary=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        (directory/'events.jsonl').unlink(); path.unlink()
+        restored,restored_summary=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        self.assertEqual(restored,raw); self.assertEqual(restored_summary,summary)
+        self.history_fixture([(5,'mouse.click','Terminal','Octopus')])
+        fresh,_=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        self.assertEqual(fresh[0]['app'],'Terminal'); self.assertEqual(fresh[1]['app'],'Finder')
+        history.archive(self.c['sources'],self.start,self.end,self.state,'2026-11-11',set())
+        once=archive.read_text(); history.archive(self.c['sources'],self.start,self.end,self.state,'2026-11-11',set())
+        self.assertEqual(archive.read_text(),once)
+
+    def test_computer_missing_and_now(self):
+        warnings=set(); self.assertEqual(history.load({},self.start,self.end,self.state,warnings),([],[]))
+        self.assertTrue(any('Computer History' in w for w in warnings))
+        current=datetime.now().timestamp()
+        self.history_fixture([(current-self.start-10,'keyboard.text_input','Unity','Octopus')])
+        with patch.object(pulse,'run',side_effect=OSError): value=pulse.now(self.c)
+        self.assertEqual(value['app'],'Unity'); self.assertTrue(value['typing']); self.assertEqual(value['window_title'],'Octopus')
+        self.assertEqual(value['domain'],'example.test'); self.assertIsNotNone(value['computer_at'])
+
+    def test_computer_manual_chore_check(self):
+        self.history_fixture([(i*60+5,'keyboard.shortcut','Terminal','Octopus build failure') for i in range(61)])
+        data=pulse.collect(self.start,self.start+5400,self.c)
+        with patch.dict(os.environ,PULSE_RUN=self.llm()):
+            notices=pulse.check(data,self.start+5400,self.c,self.state,True)
+        self.assertTrue(notices); self.assertEqual(data['check']['chore_active_seconds'],3660)
+
+    def test_computer_mixed_estimate_and_measured(self):
+        self.history_fixture([(605,'mouse.click','Claude','Upload')])
+        rows,summaries=history.load(self.c['sources'],self.start,self.end,self.state,set())
+        segs=pulse.segments([self.event(0),self.event(20)],self.start,self.end,self.c)
+        pulse.computer(segs,[],rows,summaries,self.start,self.end,self.c)
+        self.assertEqual(len(segs),1)
+        self.assertEqual(pulse.allocate(segs),1200)
+
+    def test_computer_same_minute_no_double_count(self):
+        self.history_fixture([(5,'mouse.click','WPS','slides'),(20,'mouse.click','Terminal','shell')])
+        data=pulse.collect(self.start,self.end,self.c)
+        self.assertEqual(pulse.allocate(data['segments']),60)
 
     def test_now(self):
         idle=subprocess.CompletedProcess([],0,'"HIDIdleTime" = 601000000000','')

@@ -13,6 +13,7 @@ import tempfile
 import tomllib
 from zoneinfo import ZoneInfo
 import sources
+import computer_history
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / 'pulse'
@@ -145,6 +146,67 @@ def segments(events, start, end, c):
     return result
 
 
+def subtract(intervals, masks):
+    result = merge(intervals)
+    for x,y in merge(masks):
+        result = [list(part) for a,b in result for part in ((a,min(b,x)),(max(a,y),b)) if part[1]>part[0]]
+    return result
+
+
+def computer(segs, activity, minutes, summaries, start, end, c):
+    """Replace estimates only in observed minutes; align uniquely in time."""
+    coverage=clip([[m['time'],m['time']+60] for m in minutes],start,end)
+    candidates=list(segs)
+    for a in activity:
+        candidates.append(dict(source='codex',session=a['session'],title=a.get('title',a['session']),
+                               project=a['project'],start=a['start'],end=a['end'],intervals=[],
+                               held_candidates=[],messages=[],confidence='实测',user_seconds=0))
+    bounds={id(s):(s['start'],s['end']) for s in candidates}
+    for s in candidates:
+        if s['source']=='chatgpt': s['visit_intervals']=list(s['intervals'])
+    for s in segs:
+        before=s['intervals']
+        s['intervals']=subtract(before,coverage)
+        if s['intervals']!=before: s['confidence']='估计 + 实测校正'
+    groups={}
+    for m in minutes:
+        a,b=max(start,m['time']),min(end,m['time']+60)
+        if b<=a: continue
+        kind=computer_history.source(m)
+        matches=[s for s in candidates if kind and s['source']==kind
+                 and bounds[id(s)][0]<b and bounds[id(s)][1]>=a
+                 and (kind!='chatgpt' or any(x<b and y>a for x,y in s.get('visit_intervals',[]))
+                      or any(a<=msg['time']<b for msg in s['messages']))]
+        if len(matches)>1:
+            title=m['title'].casefold()
+            matches=[s for s in matches if s['title'].casefold() in title or s['session'] in title]
+        if len(matches)==1:
+            target=matches[0]
+            if target not in segs: segs.append(target)
+        else:
+            key=(m['app'],m['title'])
+            target=groups.get(key)
+            if target is None or a-target['computer_minutes'][-1]['time']>c['gap_minutes']*60:
+                target=dict(source='computer',session=f"{m['app']}:{int(a)}:{m['title']}",
+                            app=m['app'],title=m['title'] or m['app'],project=computer_history.project(m,c['mapping']),
+                            start=a,end=b,intervals=[],held_candidates=[],messages=[],confidence='实测',user_seconds=0)
+                groups[key]=target; segs.append(target)
+        target['start']=min(target['start'],a); target['end']=max(target['end'],b)
+        target.setdefault('computer_minutes',[]).append(m)
+        if m['active']: target['intervals'].append([a,b])
+        attached=target.setdefault('computer_summaries',[])
+        for summary in summaries:
+            if summary['period']=='10min' and summary['time']<b and summary['end']>a and not any(x['id']==summary['id'] for x in attached):
+                attached.append({k:v for k,v in summary.items() if k!='recording'})
+    for s in segs:
+        s['intervals']=merge(s['intervals'])
+        s['user_seconds']=sum(b-a for a,b in s['intervals'])
+        s['held_activity']=[m for m in minutes if computer_history.source(m)!=s['source']
+                            and any(a<m['time']+60 and b>m['time'] for a,b in s.get('held_candidates',[]))]
+    segs.sort(key=lambda s:(s['start'],s['source'],s['session']))
+    for i,s in enumerate(segs): s['id']=str(i)
+
+
 def collect(start, end, c):
     warnings = set()
     # Boundary context makes check replay and day clipping independent of message placement.
@@ -154,6 +216,9 @@ def collect(start, end, c):
     segs = segments(events, start, end, c)
     outputs, activity = sources.codex(c['sources'], start, end, c['mapping'], warnings)
     outputs += sources.commits(c['sources'], start, end, c['mapping'], warnings)
+    state=Path(os.environ.get('PULSE_STATE',MODULE/'state'))
+    computer_minutes, summaries=computer_history.load(c['sources'],start,end,state,warnings)
+    computer(segs,activity,computer_minutes,summaries,start,end,c)
     evidence = []
     for sid in sorted({e['session'] for e in events if e['source']=='claude'}):
         rows=[e for e in events if e['source']=='claude' and e['session']==sid]
@@ -163,7 +228,7 @@ def collect(start, end, c):
             evidence.append(dict(session=sid,project=rows[0]['project'],title=rows[0]['title'],
                                  latest_user=max(users),latest_final=max(finals) if finals else None,
                                  window_events=sum(start<=e['time']<end for e in rows)))
-    return dict(start=start, end=end, segments=segs, outputs=outputs, agent_activity=activity, evidence=evidence, warnings=sorted(warnings))
+    return dict(start=start, end=end, segments=segs, outputs=outputs, agent_activity=activity, computer_minutes=computer_minutes, evidence=evidence, warnings=sorted(warnings))
 
 
 def schema():
@@ -233,7 +298,7 @@ def allocate(segs):
 
 
 def reuse(data, path):
-    """Reuse labels only via user UUIDs / exact URL, never renumbered segment IDs."""
+    """Reuse labels via stable evidence, never renumbered segment IDs."""
     cached = json.loads(path.read_text()) if path and path.exists() else {'segments':[]}
     fields = ('category','reason','topic','suggestion','learned','produced')
     for s in data['segments']:
@@ -243,7 +308,9 @@ def reuse(data, path):
         for old in cached.get('segments',[]):
             if old.get('category') not in CATEGORIES or old['source'] != s['source'] or old['session'] != s['session']: continue
             old_ids = {m.get('uuid') for m in old['messages'] if m['role']=='user' and m.get('uuid')}
-            if (ids and ids & old_ids) or (s['source']=='chatgpt' and s.get('url') in {old.get('url'), *(m.get('url') for m in old['messages'])}):
+            observed = s['source'] in ('computer','codex') and s['start']==old['start'] and s['end']==old['end']
+            conversation = s['source']=='chatgpt' and s.get('url') in {old.get('url'), *(m.get('url') for m in old['messages'])}
+            if (ids and ids & old_ids) or observed or conversation:
                 matches.append(old)
                 covered.update(old_ids)
         if matches and ids <= covered and len({(m['category'],m.get('topic','')) for m in matches}) == 1:
@@ -265,7 +332,7 @@ def local(ts,c): return datetime.fromtimestamp(ts, ZoneInfo(c['timezone'])).strf
 
 def render(data, date, c):
     segs = data['segments']; total = allocate(segs)
-    lines = [f'# {date} 每日回顾', '', 'active 为亲自操作估计，held 为杂务占用估计；held 扣除所有 active 重叠后单列，不并入 active 占比。ChatGPT 低置信度。分类状态：'+data.get('classification_status','complete'), '', '| 类别 | active 分钟 | active 占比 | held 分钟 |', '|---|---:|---:|---:|']
+    lines = [f'# {date} 每日回顾', '', 'active 为实测操作分钟与无覆盖时的估计，held 为杂务占用估计；held 扣除所有 active 重叠后单列，不并入 active 占比。ChatGPT 低置信度。分类状态：'+data.get('classification_status','complete'), '', '| 类别 | active 分钟 | active 占比 | held 分钟 |', '|---|---:|---:|---:|']
     for cat, label in CATEGORIES.items():
         seconds = sum(s['seconds'] for s in segs if s['category'] == cat)
         held = sum(s['held_seconds'] for s in segs if s['category']==cat)
@@ -290,6 +357,12 @@ def render(data, date, c):
     for s in segs:
         row = [f"{local(s['start'],c)}–{local(s['end'],c)}", s['project'], s['title'], CATEGORIES[s['category']], s['reason']+'；'+s['confidence']+f"；active {minutes(s['active_seconds'])} / held {minutes(s['held_seconds'])} 分钟"]
         lines.append('| '+' | '.join(v.replace('|','\\|').replace('\n',' ') for v in row)+' |')
+    held_rows=[s for s in segs if s.get('held_activity')]
+    if held_rows:
+        lines += ['', '## agent 工作期间的前台活动', '']
+        for s in held_rows:
+            details=sorted({local(m['time'],c)+' '+m['app']+' · '+m['title'] for m in s['held_activity']})
+            lines.append('- '+s['title']+'：'+'；'.join(details)+'（前台观察，不等同等待；active 重叠已扣除）')
     if data['warnings']: lines += ['', '## 数据缺口', ''] + ['- '+w for w in data['warnings']]
     return '\n'.join(lines)+'\n'
 
@@ -359,7 +432,19 @@ def now(c):
     current = datetime.now(ZoneInfo(c['timezone']))
     start,end = c['user']['quiet_start'],c['user']['quiet_end']; clock=current.strftime('%H:%M')
     quiet = start <= clock < end if start <= end else clock >= start or clock < end
-    return dict(status='unknown' if idle is None else 'away' if idle>c['user']['idle_seconds'] else 'active',idle_seconds=idle,app=app,quiet=quiet,at=current.isoformat())
+    recent,_=computer_history.load(c['sources'],current.timestamp()-120,current.timestamp(),Path(os.environ.get('PULSE_STATE',MODULE/'state')),set())
+    latest=max(recent,key=lambda m:m['last']) if recent else None
+    if latest: app=latest['app']
+    typing = None
+    if latest:
+        typing=any(m['app']==latest['app'] and m['title']==latest['title']
+                   and m['last_typing'] is not None and m['last_typing']>=current.timestamp()-120 for m in recent)
+    return dict(typing=typing,
+                computer_at=datetime.fromtimestamp(latest['last'],ZoneInfo(c['timezone'])).isoformat() if latest else None,
+                window_title=latest['title'] if latest else None, domain=latest['domain'] if latest else None,
+                status='unknown' if idle is None else 'away' if idle>c['user']['idle_seconds'] else 'active',
+                idle_seconds=idle,app=app,quiet=quiet,at=current.isoformat())
+
 
 
 def main():
@@ -403,6 +488,10 @@ def main():
             data=collect(at-window*60,at,c)
             if a.no_classify and not a.dry: raise ValueError('--no-classify check 必须同时指定 --dry，缓存分类只供验算')
             date=(datetime.fromtimestamp(at,ZoneInfo(c['timezone']))-timedelta(hours=c['day_start_hour'])).date().isoformat()
+            archive_start,_=day_window(date,c)
+            archive_warnings=set(data['warnings'])
+            computer_history.archive(c['sources'],archive_start,at,state,date,archive_warnings)
+            data['warnings']=sorted(archive_warnings)
             notices=check(data,at,c,state,a.dry,a.no_classify,a.classification_file or state/'days'/(date+'.json'))
             checks=state/'checks'; checks.mkdir(exist_ok=True)
             atomic(checks/(datetime.fromtimestamp(at,ZoneInfo(c['timezone'])).strftime('%Y-%m-%dT%H%M%S')+'.json'),json.dumps(data,ensure_ascii=False,indent=2))
