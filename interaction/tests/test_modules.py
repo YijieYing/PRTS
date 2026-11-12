@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -153,6 +154,91 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         rows = self.rows('interaction/bin/status', 'short')
         self.assertEqual([r['event'] for r in rows], ['start','exit'])
         self.assertEqual(rows[-1]['rc'], 0)
+
+    def test_sandbox_dry(self):
+        for mode in ('dispatch', 'resume'):
+            args = (self.repo, self.prompt) if mode == 'dispatch' else ('uuid', self.repo, self.prompt)
+            for sandbox in (None, 'network', 'full'):
+                with self.subTest(mode=mode, sandbox=sandbox):
+                    name = mode + '-' + str(sandbox)
+                    options = ['--sandbox', sandbox, '--approved-by', '用户说：允许 "联网"\n出处 #42'] if sandbox else []
+                    self.run_cmd('interaction/bin/' + mode, name, *args, *options, '--dry')
+                    logname = 'run.log' if mode == 'dispatch' else 'run-resume-1.log'
+                    log = (self.state / 'tasks' / name / logname).read_text()
+                    command = shlex.split(log.split(' command=', 1)[1].removesuffix(' < /dev/null\n'))
+                    configs = [command[i+1] for i, arg in enumerate(command) if arg == '-c']
+                    expected = 'danger-full-access' if sandbox == 'full' else 'workspace-write'
+                    self.assertIn('sandbox_mode=' + json.dumps(expected), configs)
+                    self.assertIn('sandbox_workspace_write.network_access=' + ('true' if sandbox == 'network' else 'false'), configs)
+                    self.assertIn('approval_policy="never"', configs)
+                    self.assertEqual(command[-1], self.prompt.read_text())
+                    self.assertNotIn('--approved-by', command)
+                    self.assertEqual('resume' in command, mode == 'resume')
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.state / 'registry.jsonl').exists())
+        # Optional prompt still works when flags immediately follow the workdir.
+        self.run_cmd('interaction/bin/dispatch', 'dispatch-network', self.repo,
+                     '--sandbox=network', '--approved-by=fixture', '--dry')
+
+    def test_sandbox_requires_approval(self):
+        for mode in ('dispatch', 'resume'):
+            args = (self.repo, self.prompt) if mode == 'dispatch' else ('uuid', self.repo, self.prompt)
+            for options in (['--sandbox', 'network'], ['--sandbox', 'full'],
+                            ['--sandbox', 'full', '--approved-by', ''],
+                            ['--sandbox', 'network', '--approved-by', ' \n\t'],
+                            ['--sandbox', 'unknown', '--approved-by', 'fixture'],
+                            ['--approved-by', 'fixture'], ['--sandbox'], ['--approved-by']):
+                with self.subTest(mode=mode, options=options):
+                    self.run_cmd('interaction/bin/' + mode, 'reject', *args, '--dry', *options, rc=2)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.state / 'registry.jsonl').exists())
+
+    def test_sandbox_rejection_preserves_old_log(self):
+        task = self.state / 'tasks/reject'
+        task.mkdir(parents=True)
+        old_log = 'session id: 12345678-1234-1234-1234-123456789abc\n'
+        (task / 'run.log').write_text(old_log)
+        for mode in ('dispatch', 'resume'):
+            args = (self.repo, self.prompt) if mode == 'dispatch' else ('uuid', self.repo, self.prompt)
+            self.run_cmd('interaction/bin/' + mode, 'reject', *args, '--sandbox', 'full', rc=2)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.state / 'registry.jsonl').exists())
+        self.assertEqual((task / 'run.log').read_text(), old_log)
+
+    def test_sandbox_registry_stub(self):
+        approval = '测试替身批准原话："允许"\n出处 #42 $(touch INJECTED)'
+        for mode in ('dispatch', 'resume'):
+            args = (self.repo, self.prompt) if mode == 'dispatch' else ('uuid', self.repo, self.prompt, '1', '0')
+            for sandbox in (None, 'network', 'full'):
+                name = mode + '-' + str(sandbox)
+                options = ['--sandbox', sandbox, '--approved-by', approval] if sandbox else []
+                self.run_cmd('interaction/bin/' + mode, name, *args, *options)
+                rows = self.rows('interaction/bin/status', name)
+                self.assertEqual(rows[0]['event'], 'start')
+                self.assertEqual(rows[0]['sandbox'], sandbox or 'workspace-write')
+                self.assertEqual(rows[0]['approved_by'], approval if sandbox else None)
+                self.assertEqual(rows[-1]['event'], 'exit')
+        self.assertEqual(len(self.calls.read_text().splitlines()), 6)
+        self.assertFalse((self.root / 'INJECTED').exists())
+        # Resume never inherits the previous run's relaxed permissions or approval.
+        self.run_cmd('interaction/bin/resume', 'resume-full', 'uuid', self.repo, self.prompt)
+        start = [r for r in self.rows('interaction/bin/status', 'resume-full') if r['event'] == 'start'][-1]
+        self.assertEqual((start['sandbox'], start['approved_by']), ('workspace-write', None))
+
+    def test_sandbox_override_rejection(self):
+        for extra in (['--', '--sandbox', 'danger-full-access'], ['-s', 'danger-full-access'],
+                      ['--yolo'], ['--dangerously-bypass-approvals-and-sandbox'],
+                      ['-c', 'sandbox_workspace_write.network_access=true'],
+                      ['--config="sandbox_mode"="danger-full-access"'],
+                      ['-csandbox_mode="danger-full-access"'], ['--profile', 'unsafe']):
+            self.run_cmd('interaction/bin/dispatch', 'reject', self.repo, self.prompt, '--dry', *extra, rc=2)
+        self.run_cmd('interaction/bin/dispatch', 'reject', self.repo, self.prompt, '--dry', rc=2,
+                     env=dict(self.env, CODEX_TOP='--yolo'))
+        # Model/config forwarding remains supported.
+        self.run_cmd('interaction/bin/dispatch', 'safe', self.repo, self.prompt, '--dry',
+                     '--model', 'test', '-c', 'model_reasoning_effort="high"')
+        self.assertFalse(self.calls.exists())
+        self.assertFalse((self.state / 'registry.jsonl').exists())
 
     def test_caller_and_thread(self):
         thread = '12345678-1234-1234-1234-123456789abc'

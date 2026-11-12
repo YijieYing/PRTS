@@ -1,9 +1,23 @@
 #!/bin/bash
-# usage: resume <name> <thread> <cwd> <msg-file> [tries] [gap_s]
+# usage: resume <name> <thread> <cwd> <msg-file> [tries] [gap_s] [--sandbox network|full --approved-by TEXT] [--dry]
 set -eu
 I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 name=${1:?name required}; tid=${2:?thread required}; cwd=${3:?cwd required}; msg=${4:?msg-file required}
 [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo 'invalid task name' >&2; exit 2; }
+shift 4
+tries=6; gap=600
+if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then tries=$1; shift; fi
+if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then gap=$1; shift; fi
+options=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --sandbox|--approved-by)
+      [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
+      options+=("$1" "$2"); shift 2 ;;
+    --sandbox=*|--approved-by=*|--dry) options+=("$1"); shift ;;
+    *) echo "unknown resume option: $1" >&2; exit 2 ;;
+  esac
+done
 L=${PRTS_INTERACTION_STATE:-$I/state}/tasks/$name
 mkdir -p "$L"
-exec "$I/lib/codex" --cwd "$cwd" --target "$tid" --thread "$tid" --prompt "$msg" --name "$name" --start --output "$L/last.md" --log "$L/run-resume-{i}.log" --tries "${5:-6}" --gap "${6:-600}" resume
+exec "$I/lib/codex" --cwd "$cwd" --target "$tid" --thread "$tid" --prompt "$msg" --name "$name" --start --output "$L/last.md" --log "$L/run-resume-{i}.log" --tries "$tries" --gap "$gap" ${options[@]+"${options[@]}"} resume

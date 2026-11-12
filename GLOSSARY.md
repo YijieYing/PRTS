@@ -44,8 +44,8 @@
 ### 命令 / `bin/`
 | 命令 | English | 做什么 |
 |---|---|---|
-| `dispatch <task> <workdir> <prompt文件>` | dispatch | 新开一次运行：把 prompt 存进任务目录，用 `codex exec` 启动，并确认真的启动了。`DISPATCH_DRY=1` 只记录不执行 |
-| `resume <task> <session> <cwd> <消息文件>` | resume | 在已有会话上再跑一轮；模型满载时隔一段时间重试 |
+| `dispatch <task> <workdir> <prompt文件>` | dispatch | 新开一次运行：把 prompt 存进任务目录，用 `codex exec` 启动，并确认真的启动了。`--sandbox network或full` 放宽时必须附 `--approved-by "用户原话或出处"`；默认 workspace-write、禁联网。`--dry`（兼容 `DISPATCH_DRY=1`）只记录命令、不执行或写 registry |
+| `resume <task> <session> <cwd> <消息文件>` | resume | 在已有会话上再跑一轮；模型满载时隔一段时间重试。支持同 dispatch 的 `--sandbox` / `--approved-by` / `--dry`，不继承上轮放宽 |
 | `wake add\|list\|cancel` | wake | 预约、列出、取消定时唤醒 |
 | `event add <L0\|L1\|L2> <来源> <内容>` | event | 往事件队列加一条；L2 同时通过 reporter 弹通知 |
 | `event from-agentconsole` | event | AgentConsole 的事件处理入口（stdin 一条 JSON），按策略分级后入队 |

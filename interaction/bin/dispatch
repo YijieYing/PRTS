@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: dispatch <task> <workdir> [prompt-file] [extra codex exec args...]
+# usage: dispatch <task> <workdir> [prompt-file] [--sandbox network|full --approved-by TEXT] [--dry] [extra codex exec args...]
 set -eu
 I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 S=${PRTS_INTERACTION_STATE:-$I/state}
@@ -7,14 +7,31 @@ name=${1:?task required}; wd=${2:?workdir required}; shift 2
 [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]] || { echo 'invalid task name' >&2; exit 2; }
 wd=$(cd "$wd" && pwd)
 LOG=$S/tasks/$name
-prompt=${1:-$LOG/prompt.md}; [ "$#" -eq 0 ] || shift
+prompt=$LOG/prompt.md
+if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then prompt=$1; shift; fi
+options=(); extra=(); dry=${DISPATCH_DRY:-0}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --sandbox|--approved-by)
+      [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
+      options+=("$1" "$2"); shift 2 ;;
+    --dry) dry=1; shift ;;
+    --sandbox=*|--approved-by=*) options+=("$1"); shift ;;
+    --) shift; extra+=("$@"); break ;;
+    *) extra+=("$1"); shift ;;
+  esac
+done
 mkdir -p "$LOG"
 [ "$(cd "$(dirname "$prompt")" && pwd)/$(basename "$prompt")" = "$(cd "$LOG" && pwd)/prompt.md" ] || cp "$prompt" "$LOG/prompt.md"
 args=(--cwd "$wd" --prompt "$LOG/prompt.md" --name "$name" --log "$LOG/run.log" --output "$LOG/last.md")
-if [ "${DISPATCH_DRY:-0}" = 1 ]; then
-  exec "$I/lib/codex" "${args[@]}" --dry exec -- "$@"
+# Bash 3.2 with nounset needs the + expansion for empty arrays.
+args+=(${options[@]+"${options[@]}"})
+if [ "$dry" = 1 ]; then
+  exec "$I/lib/codex" "${args[@]}" --dry exec -- ${extra[@]+"${extra[@]}"}
 fi
-"$I/lib/codex" "${args[@]}" --start exec -- "$@" &
+# Reject invalid permissions before backgrounding or examining an older run.log.
+"$I/lib/codex" "${args[@]}" --check exec -- ${extra[@]+"${extra[@]}"}
+"$I/lib/codex" "${args[@]}" --start exec -- ${extra[@]+"${extra[@]}"} &
 pid=$!
 for ((i=0; i<30; i++)); do
   sleep 2

@@ -13,8 +13,34 @@ import sys
 import time
 import tempfile
 import uuid
+import tomllib
 
 registry = runpy.run_path(str(Path(__file__).with_name('registry')))
+
+def check_overrides(args, parser):
+    """Sandbox selection belongs to the adapter, never raw CLI overrides."""
+    tokens = iter(args)
+    for token in tokens:
+        flag = token.split('=', 1)[0]
+        if (flag in ('--sandbox', '--yolo', '--full-auto', '--approve-for-me',
+                     '--dangerously-bypass-approvals-and-sandbox', '--ask-for-approval',
+                     '--profile', '--permissions-profile', '--add-dir')
+                or token.startswith(('-s', '-p', '-a')) and not token.startswith('--')):
+            parser.error('permission overrides require --sandbox network|full --approved-by TEXT')
+        config = None
+        if token in ('-c', '--config'):
+            config = next(tokens, '')
+        elif token.startswith('--config='):
+            config = token.split('=', 1)[1]
+        elif token.startswith('-c') and not token.startswith('--'):
+            config = token[2:]
+        if config is not None:
+            # Parse the key as TOML too, so quoted keys cannot bypass the check.
+            try: keys = tomllib.loads(config.split('=', 1)[0] + '=true')
+            except tomllib.TOMLDecodeError: parser.error('invalid Codex config override')
+            if any(k.startswith(('sandbox', 'permissions', 'approval', 'default_permissions'))
+                   or k in ('profile', 'profiles', 'experimental_network') for k in keys):
+                parser.error('permission config overrides require --sandbox network|full --approved-by TEXT')
 
 def canonical(target):
     try: return str(uuid.UUID(target))
@@ -68,24 +94,39 @@ def main():
     p.add_argument('--start', action='store_true')
     p.add_argument('--thread'); p.add_argument('--target'); p.add_argument('--output'); p.add_argument('--wake-id')
     p.add_argument('--binary', default='codex'); p.add_argument('--dry', action='store_true')
+    p.add_argument('--check', action='store_true', help=argparse.SUPPRESS)
+    p.add_argument('--sandbox', choices=['network', 'full'])
+    p.add_argument('--approved-by')
     p.add_argument('--tries', type=int, default=int(os.environ.get('CODEX_TRIES', '6')))
     p.add_argument('--gap', type=float, default=float(os.environ.get('CODEX_GAP', '600')))
     p.add_argument('extra', nargs=argparse.REMAINDER)
     a = p.parse_args()
     if a.tries < 1 or a.gap < 0: p.error('tries must be positive and gap nonnegative')
+    if a.sandbox and not (a.approved_by and a.approved_by.strip()):
+        p.error('--sandbox requires nonblank --approved-by (user quote or source)')
+    if a.approved_by is not None and not a.sandbox:
+        p.error('--approved-by requires --sandbox network|full')
+    if a.mode == 'queue' and a.sandbox:
+        p.error('queue cannot change sandbox permissions')
+    extra = a.extra[1:] if a.extra[:1] == ['--'] else a.extra
+    top = shlex.split(os.environ.get('CODEX_TOP', ''))
+    check_overrides(extra, p)
+    check_overrides(top, p)
+    if a.check: return 0
     prompt = Path(a.prompt).read_text()
     git = subprocess.run(['git', '-C', a.cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], capture_output=True, text=True)
     roots = [str(Path(a.cwd).resolve())]
     if git.returncode == 0: roots.append(git.stdout.strip())
-    cmd = [a.binary] + shlex.split(os.environ.get('CODEX_TOP', ''))
+    cmd = [a.binary] + top
     if a.mode == 'queue':
         cmd += ['queue', '--thread', a.target, '--message', prompt]
     else:
         cmd += ['exec', '-C', a.cwd]
         if a.mode == 'resume': cmd += ['resume']
-        cmd += ['-c', 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"',
+        sandbox_mode = 'danger-full-access' if a.sandbox == 'full' else 'workspace-write'
+        cmd += ['-c', 'sandbox_mode=' + json.dumps(sandbox_mode), '-c', 'approval_policy="never"',
+                '-c', 'sandbox_workspace_write.network_access=' + ('true' if a.sandbox == 'network' else 'false'),
                 '-c', 'sandbox_workspace_write.writable_roots=' + json.dumps(roots, ensure_ascii=False)]
-        extra = a.extra[1:] if a.extra[:1] == ['--'] else a.extra
         cmd += extra
         if a.output: cmd += ['-o', a.output]
         cmd += ['--'] + ([a.target] if a.mode == 'resume' else []) + [prompt]
@@ -93,7 +134,8 @@ def main():
         Path(a.log.format(i=1)).write_text('DRY cwd=' + shlex.quote(a.cwd) + ' command=' + shlex.join(cmd) + ' < /dev/null\n')
         return 0
     if a.start:
-        start = dict(name=a.name, event='start', pid=os.getpid(), cwd=a.cwd, prompt=a.prompt)
+        start = dict(name=a.name, event='start', pid=os.getpid(), cwd=a.cwd, prompt=a.prompt,
+                     sandbox=a.sandbox or 'workspace-write', approved_by=a.approved_by)
         for env, kind in (('CLAUDE_CODE_SESSION_ID', 'claude'), ('CODEX_THREAD_ID', 'codex')):
             if os.environ.get(env):
                 start['caller'] = {'kind': kind, 'id': os.environ[env]}
