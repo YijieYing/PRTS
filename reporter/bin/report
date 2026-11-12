@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generate and deliver a report to the user.
-# usage: report weekly [YYYY-MM-DD]   weekly report (collect -> one Codex compose -> email + WeChat)
+# usage: report weekly [YYYY-MM-DD]   weekly report (collect -> one Codex compose -> phone + email + optional WeChat outbox)
 #        report daily                 forward the aquant daily report (validated) to the WeChat outbox
 L=$(cd "$(dirname "$(readlink -f "$0")")/../lib" && pwd)
 case "${1:-}" in

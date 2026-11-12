@@ -4,21 +4,23 @@
 
 | 命令 | 用法 |
 |---|---|
-| `bin/notify` | `<log或wechat或alert> [--title T] (--text TEXT 或 --file PATH)` |
+| `bin/notify` | `<log或wechat或phone或alert> [--title T] (--text TEXT 或 --file PATH)` |
 | `bin/notify outbox` | 查询 CodexBridge 微信发件箱 |
-| `bin/report weekly [YYYY-MM-DD]` | 采集最近七天内容，通过 interaction dispatch 生成周报，再邮件投递、暂存微信短版 |
+| `bin/report weekly [YYYY-MM-DD]` | 采集最近七天内容，通过 interaction dispatch 生成周报，再推送手机摘要、邮件投递，并默认暂存微信短版 |
 | `bin/report daily` | 校验 aquant 日报后暂存到微信发件箱；重复内容不再投递 |
 
-notify 的 log 只追加 `state/out/notifications.jsonl`；wechat 调用 CodexBridge `weixin notify`；alert 同时尝试微信与 macOS 弹窗，任一失败返回非零。以 `--` 开头的旧调用等同 wechat，`outbox` 旧调用也保留。微信上下文过期时由 CodexBridge 暂存，等用户下一条消息后补发。
+notify 的 log 只追加 `state/out/notifications.jsonl`；wechat 调用 CodexBridge `weixin notify`；phone 调用 Bark；alert 同时尝试 Bark 与 macOS 弹窗，任一失败返回非零。以 `--` 开头的旧调用等同 wechat，`outbox` 旧调用也保留。微信上下文过期时由 CodexBridge 暂存，等用户下一条消息后补发。
 
 默认数据根为本模块 `state/`，可用绝对路径 `PRTS_REPORTER_STATE` 覆盖：
 
 - `out/`：采集和写作中间文件、渲染 HTML、deliveries.jsonl、notifications.jsonl。
 - `outbox/`：latest-wechat.txt、aquant-daily.txt 等，供用户的 CodexBridge `/auto` 任务读取。
 
-`config/config.toml` 配置邮件收件人、微信暂存路径和 aquant 来源；设置 state 覆盖时，微信暂存也使用该根下的 outbox。周报全文仍按既有约定输出到 human/reports；不是本次迁移的数据格式变更。
+`config/config.toml` 配置邮件收件人、微信暂存路径和 aquant 来源；设置 state 覆盖时，微信暂存也使用该根下的 outbox。周报全文仍按既有约定输出到 human/reports。
 
-日报来源约定：latest-wechat.txt 首行为 `aquant 日报 YYYY-MM-DD`、不超过 900 字，不含疑似 key；失败时调用 `interaction/bin/event add L1 aquant_daily ...`，不写 human inbox。邮件默认关闭。周报用 `interaction/bin/status` 查询执行结果，不读取对方 state。
+周报生成后调用 `bin/notify phone`：短版首行是本周最重要的一件事，作为标题；正文最多 4 行摘要，另加一行全文绝对路径（总共不超过 5 行）。写作草稿放在 `state/out/wechat-日期.txt`。`weekly_outbox = true` 默认继续复制短版到 `wechat_outbox`，供现有 CodexBridge `/auto` 读取；关闭 `/auto` 后可设为 `false`，周报不再写 outbox，但保留已有文件和 `reporter/outbox` 兼容链接，也不影响日报。手机推送失败会记录到 deliveries.jsonl 并返回非零；已生成的全文和已暂存的 outbox 保留。内部 `deliver.py --email-only` 仍只处理邮件，供日报使用。
+
+日报来源约定：latest-wechat.txt 首行为 `aquant 日报 YYYY-MM-DD`、不超过 900 字，不含疑似 key；失败时调用 `interaction/bin/event add L1 aquant_daily ...`，不写 human inbox。日报邮件默认关闭，周报仍投递邮件。周报用 `interaction/bin/status` 查询执行结果，不读取对方 state。
 
 隔离测试：`python3 interaction/tests/test_modules.py` 覆盖 log、旧通知接口、alert 路由和日报拒绝；外发渠道使用替身，不发送真实通知。
 
@@ -83,6 +85,7 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 隔离验证：`python3 -m unittest discover -s reporter/tests -v`；现有模块回归：
 `python3 interaction/tests/test_modules.py`。问题队列测试复制 bin/lib/config 到临时目录，
 使用临时 `PRTS_REPORTER_STATE` 和替身 pulse，所有测试子进程关闭 stdin。
+`test_weekly.py` 覆盖默认双发、关闭 outbox、摘要行数、推送失败保留报告和 outbox、email-only 以及 weekly 完整命令链；Bark、WeChat、邮件和派发均使用替身，不真推送。
 
 ## 待办：`bin/todo`（2026-11-13）
 - 用户自己的待办放在 Apple 提醒事项的「PRTS」列表，会同步到 iPhone；带日期的也会出现在日历里。

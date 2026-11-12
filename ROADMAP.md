@@ -30,7 +30,7 @@ GPS 地点名在等用户决定两件事：①先合并 #16，走手动命名的
 | R10 | ✅ | **用户的待办接 Apple 提醒事项** | 11-13：`reporter/bin/todo add/list/done`，列表「PRTS」，会同步到 iPhone。只放用户自己要做的事；agent 的活进 ROADMAP 或派发任务。日程（Calendar）暂不接，带日期的提醒会自动出现在日历里 |
 | R11 | 💤 | **推送策略像推荐系统一样学习** | 用户 11-13 口述：agent 要积极提问但控制数量，根据用户的回复调整，优先问用户更愿意回答的；利用周期性，比如「下周这个时候你会很累，提醒你去放松」；支付记录（如星巴克）可以作为信息源；各种权限（声音、屏幕、键盘、支付）让用户逐项勾选。11-13 先做了一步：推送标题直接用问题本身 |
 | R12 | 💤 | **Mouth：给口述的语音反馈** | 用户 11-13 口述：边走边想、边口述设计文档时，希望 AI 用语音回应。最终所有推送都要收到 Ear 手机端 |
-| R6 | ⏭ | **周报改用 `reporter/bin/notify`** | 不再经过 outbox 和 `/auto` 转发。等用户改掉 CodexBridge 里读 `Reporter/outbox` 的 `/auto` 任务以后，删掉 `reporter/outbox` 链接 |
+| R6 | 🔨 | **周报改用 `reporter/bin/notify`** | 双发已实现，等用户改 CodexBridge 后关 outbox。周报摘要走 `notify phone`，`weekly_outbox = true` 默认保留 outbox；用户改掉读 `Reporter/outbox` 的 `/auto` 任务后设为 false，兼容链接暂时保留 |
 
 ## 二、以后再说（候选池）
 

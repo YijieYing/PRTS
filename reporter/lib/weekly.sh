@@ -1,13 +1,13 @@
 #!/bin/bash
-# Reporter weekly pipeline: collect (deterministic) -> compose (one Codex run) -> deliver (email + WeChat outbox).
+# Reporter weekly pipeline: collect (deterministic) -> compose (one Codex run) -> deliver (phone + email + optional WeChat outbox).
 set -euo pipefail
 R=$(cd "$(dirname "$0")/.." && pwd); L=$R/lib; S=${PRTS_REPORTER_STATE:-$R/state}
 I=$(dirname "$R")/interaction/bin
-mkdir -p "$S/out" "$S/outbox"
+mkdir -p "$S/out"
 until=${1:-$(date +%F)}; since=$(date -j -v-6d -f %F "$until" +%F)
 C=$S/out/collect-${since}_$until.json
 W=$HOME/PRTS/human/reports/weekly-${since}_$until.md
-X=$S/outbox/wechat-$until.txt
+X=$S/out/wechat-$until.txt
 python3 "$L/collect.py" --since "$since" --until "$until" --out "$C"
 sed -e "s#{COLLECT}#$C#" -e "s#{WEEKLY}#$W#" -e "s#{WECHAT}#$X#" \
     -e "s#{WEEKLY_TILDE}#~/PRTS/human/reports/weekly-${since}_$until.md#" "$L/compose.md" > "$S/out/compose-$until.md"
