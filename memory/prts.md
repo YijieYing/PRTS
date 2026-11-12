@@ -133,6 +133,7 @@
 | 2026-11-12 | 用户批准后，总控创建了两个 Claude 定时任务（Auto 模式）：「PRTS 提醒」`prts-reminders`，每小时第 7 分钟，9:00 到次日 0:00；「PRTS 每日回顾」`prts-daily-recap`，每晚 23:40。立即试跑（run_scheduled_task）被权限检查拦下了，等用户在侧边栏点 Run now，或等 7:07 的第一次自动运行。验收待做：Q2 推到手机、用户回复、`ask reply` 记录。 |
 | 2026-11-12 | 第一次真实投递（用户手动 Run now）。session 照原样展示了 Q2，也调用了 PushNotification，但**手机没收到，电脑显示「通知未发送」**。原因：只有用户自己开的 session 才会自动连 Remote Control，定时任务的 session 是 `off`；而且 Remote Control 不能给无人值守的 session 打开。所以「Claude 定时任务 + PushNotification」这条路推不到手机。同时修了 pulse check 在家目录下运行失败的问题：`interaction/bin/run` 加了 `--skip-git-repo-check`（e193f2c）。手机渠道改走 ROADMAP R4，等用户选。另外，定时任务的运行记录显示在侧边栏的 Scheduled 里，不在普通 session 列表里。 |
 | 2026-11-12 | 手机渠道改用 Bark（用户装好了 app，给了 key）。新增 `reporter/lib/channels/bark`，key 存在 `reporter/config/secrets.toml`（600 权限，gitignore）。`notify` 新增 `phone` 级别，`alert` 改为 Bark + macOS 通知，不再发微信；interaction 的 L2 事件也因此改走 Bark。测试里对 Bark 用替身，保证不会真推到手机。实推测试返回 200。两个定时任务的 prompt 改为用 `notify alert` 推送（update_scheduled_task 没被拦）。新加了验收问题 Q3（timely），等用户点 Run now。 |
+| 2026-11-12 | **Bark 验收通过**：手机在 02:26 收到「PRTS 测试」；12:15 收到 Q3（Q3 是 02:29 建的 timely 问题，等休息时段 05:00–12:00 结束后的第一次每小时运行才推）；电脑弹窗也收到了。Q3 在 12:17 被回答（「电脑收到了」），手机也收到了，由用户 22:40 口头确认。22:07 和 22:12 AgentConsole 连发两条 L2「lain 不可达」，22:42 实测 lain 正常（已运行 35 天），说明是短暂断连，这个提醒太灵敏。Computer History：用户决定先用它，读取范围见 pulse/README §二；接入已派给 Codex（`pulse-computer-history`）。 |
 
 ## 计划与待办
 
