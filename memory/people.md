@@ -92,6 +92,8 @@
 - **NatureCalls**（软件工程课的合作游戏，HPZ07-end/NatureCalls）：队友 HPZ07-end（=TMM）、Songyf24，中文名未知。
 - **deepseek_face**（BIGfeiyu-friend/dsapi-pet-ascii）：仓库主人 BIGfeiyu-friend，身份未知。
 
+- 芯动计划（`~/Projects/XinDong`，TC377 智能车冬令营，2027-01-18～24，12-20 冻结版本）：甘特表里点名的是吴宗桓、廖宇翚、赵丹琪。用户口述的「三个人分五万」里的另外两人是谁，还不确定（11-13 芯动 session 盘点）。
+
 ## 五、已排除（不是真人，或者和用户无关）
 
 - 王老师、杨老师、晴晴、一鸣、老赵等：Ear 合成数据里的角色。
@@ -99,6 +101,7 @@
 - Diyi Yang：UGVR 申请的目标教授，不是身边的人（见 yyj.md 和 outreach）。
 
 ## 待问（下次合适时问用户，问完删掉对应行）
+- 芯动计划：「三人分五万」是哪三人，五万是劳务报酬还是采购经费。
 
 用户 11-02：没有严格意义上的导师。下面几条「暂时不重要」，不要主动问，除非这些人开始频繁出现：
 - euxcet / Chengchi Zhou、shenxing、chengsx21（octopus）是谁。
