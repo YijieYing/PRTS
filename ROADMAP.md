@@ -16,7 +16,7 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | # | 状态 | 事项 | 要点 |
 |---|---|---|---|
 | R1 | 🔨 | **question queue（总控主动提问）** | 第 1 步完成（11-12）：`reporter/bin/ask`，新增 timely 紧急度给杂务提醒用。送达走 Claude 定时任务（已创建：每小时提醒、每晚回顾），等第一次真实推送来验收。原计划：| 方案见 §三-R1。分三步：`reporter/bin/ask` 和开工时批量问 → 按紧急度推送 → 手机端回答。送达时机依赖 R2 |
-| R2 | 🔨 | **用户状态模块 `pulse`** | v1 已实现（11-12）：`pulse day`、`check`、`now`；ChatGPT 从 Chrome 历史读，时间分 active 和 held。设计稿 [pulse/README.md](pulse/README.md)。两件事：每日回顾，即有效时间花在输入、输出还是杂务上，学到和产出了什么（先做）；以及感知用户「现在」是否方便被打扰，比如离开、专注、空闲、休息时段。quiet hours、digest 时间这类用户属性归它，不写在 reporter 的 config 里。和 Ear 的区别：Ear 总结已经发生的事，pulse 只看当下。见 §三-R2 |
+| R2 | 🔨 | **用户状态模块 `pulse`** | v1 已实现（11-12）：`pulse day`、`check`、`now`；ChatGPT 从 Chrome 历史读，时间分 active 和 held。下一步候选（11-12）：接入 Codex Computer History，看到不和 agent 对话的时间，active 改为实测，见 pulse/README §二；接入范围待用户定。设计稿 [pulse/README.md](pulse/README.md)。两件事：每日回顾，即有效时间花在输入、输出还是杂务上，学到和产出了什么（先做）；以及感知用户「现在」是否方便被打扰，比如离开、专注、空闲、休息时段。quiet hours、digest 时间这类用户属性归它，不写在 reporter 的 config 里。和 Ear 的区别：Ear 总结已经发生的事，pulse 只看当下。见 §三-R2 |
 | R3 | ⏭ | **约 2026-11-21：清理过渡期** | 搜一遍还有没有人用 `~/PRTS/ops/` 的旧路径，没有就删掉 `ops/` 和全局 CLAUDE.md 里的旧路径提示。同时把 `AgentConsole` 改名为 `monitor`，原因见 §三-R3 |
 | R4 | ✅ | **手机推送渠道不只靠微信** | 11-12 接入 Bark：`notify phone`，`alert` 改为 Bark + macOS。原记录： 微信受 24 小时 token 限制。11-12 实测：Claude 定时任务的 session 不连 Remote Control，也不能为它打开，所以 PushNotification 推不到手机，这条路排除。候选：Bark 或 ntfy（需要用户在手机上装 app 并给出 key）；macOS 通知（只在用户坐在电脑前时有用）。由 R2 判断此刻该用哪个渠道 |
 | R5 | ❓ | **Codex 派发的沙盒选项** | dispatch 默认用 `workspace-write`，不能联网，也不能建本地 socket。NatureCalls 的 Unity 任务因此受阻。需要一个显式、需要用户批准的放宽方式 |

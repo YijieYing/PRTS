@@ -40,6 +40,28 @@ pulse 只关心用户本人，不关心 agent。它回答两个问题：
 | 键鼠活动（空闲时间，滚动和打字的比例） | 安静阅读还是在写 | 只统计频率，不记录内容 |
 | 日历 | 课、会议 | 需用户同意 |
 | Ear 的录音结果 | 线下的课、讨论 | 以后再接 |
+| Codex 的 Computer History（11-12 17:50 用户开启） | 一个应用就能覆盖上面「前台应用」「键鼠活动」两行，还能看到 WPS、微信、Finder、Chrome 等所有应用里做了什么 | 已查看，还没接入，见下 |
+
+### Codex Computer History（11-12 查看）
+- **是什么**：Codex app 的内置插件 `computer-history`（OpenAI 内部名 Skysight）。后台服务 `SkyComputerUseService` 持续记录用户在电脑上的操作。
+- **原始事件流**：`~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Caches/ComputerUse/Skysight/segments/<UTC 时间>/events.jsonl`。
+  - 每行一个事件，`kind` 取值：`window.changed`、`mouse.click`、`keyboard.text_input`、`keyboard.shortcut`、`keyboard.submit`、`selection.changed`、`session.started`。
+  - 每个事件带时间戳、应用（bundle id、名称）、窗口标题和 URL。部分事件还附带 accessibility 树的文本（`ax`）。
+  - 记录的内容包括打出的文字（例如微信消息、Google 搜索词）。
+- **摘要**：Codex 定期生成 10 分钟和 6 小时两种摘要，存在 `~/.codex/memories/extensions/skysight/resources/*.md`（刚开启时还是空的）。
+- **开销**：服务占 CPU 约 1.5%，内存约 60 MB；事件流约 4 MB/小时，主要是 `ax` 文本。数据放在 Caches 目录，是滚动保留，保留多久未知。
+- **对 pulse 的价值**：
+  1. **不和 agent 对话的时间也能被看到**。例如在 WPS 里改组会 PPT、读 PDF、查 Google、回微信。这类时间 v1 完全看不到，而它们多半属于输入或输出。
+  2. **active 时间用实测代替估算**。v1 用「两条消息之间的间隔」来猜用户在读和写；有了键鼠事件，可以直接数出每个窗口实际操作了几分钟。ChatGPT 的时间也能实测，不用再靠 Chrome 的 `visit_duration` 加 45 分钟上限。
+  3. **held 时间能分清用户在干什么**。agent 干活期间，用户是在等、在回微信，还是在读论文。
+  4. **`pulse now` 更准**：知道前台应用，再加上最近是在打字还是在点击。
+  5. **杂务提醒能覆盖手动排障**。例如在终端、Xcode、Unity 里自己调，或者在浏览器里翻文档。
+- **风险和约束**：
+  - **隐私**：它记录打字内容和所有网址，比「只读 chatgpt.com」的约定宽得多。接入时 pulse 默认只读应用、窗口标题、域名、时间戳和事件计数，不读 `keyboard.text_input` 的正文和 `ax` 文本。是否放宽由用户决定。
+  - **数据是否离开本机**：生成摘要时，Codex 会把事件内容交给 OpenAI 的模型。这是 Codex 自身的行为，pulse 不额外上传。
+  - **格式是内部格式**：版本 1.0.x，没有文档，随时可能变。只在一个 adapter 文件里解析它，做法同 `interaction/lib/codex` 对 `state_5.sqlite` 的处理。
+  - **保留期未知**：pulse 可能需要每小时在 `check` 时把当天的聚合结果（每分钟的前台应用和操作次数）存进 `pulse/state/`，不能只靠第二天去读原始数据。
+  - **观察范围由用户自己在 Codex 里设**：哪些应用、哪些网站不记录。pulse 不改这些设置。
 
 ## 三、杂务过多时提醒用户（11-12 用户提出）
 - pulse 持续统计用户最近一段时间的杂务占比。v1 按 active（亲自操作）与 held（被占用）分开估计：过去 90 分钟里杂务 active + held 至少 60 分钟且占窗口至少一半，或者同一件杂务连续超过 30 分钟，就通过 question queue（ROADMAP R1）提醒用户。
@@ -75,6 +97,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 八、待用户决定
 - 第一版先接入哪些数据来源。
+- Computer History 的接入范围：只读应用、窗口和时间，还是也读打字内容和 Codex 的摘要（见 §二）。
 - 每日回顾在什么时间送达、走什么渠道。
 - 分类出错时怎么纠正：比如直接改回顾文件，由 pulse 学习。
 
