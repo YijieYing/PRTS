@@ -367,6 +367,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
     def render_fixture(self, rows, outputs=None, warnings=None):
         segs=[]
         for i, row in enumerate(rows):
+            row = dict(row)
             start, duration = row.pop('minute'), row.pop('duration')
             s=dict(start=self.start+start*60, end=self.start+(start+duration)*60,
                    intervals=[[self.start+start*60,self.start+(start+duration)*60]],
@@ -374,6 +375,82 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
                    suggestion='', session=str(i), source='computer', messages=[])
             s.update(row); segs.append(s)
         return pulse.render(dict(segments=segs,outputs=outputs or [],warnings=warnings or []),'2026-11-11',self.c)
+
+    def human_section(self, md):
+        return md.split('## 人做了什么\n',1)[1].split('## 时间线',1)[0].strip()
+
+    def test_human_projects_rank_limit_and_remainder(self):
+        md=self.render_fixture([dict(minute=i*40,duration=i+3,project=f'P{i}',summary=f'活动{i}')
+                                for i in range(10)])
+        section=self.human_section(md)
+        projects=[line.split('**')[1] for line in section.splitlines() if line.startswith('- **')]
+        self.assertEqual(projects,[f'P{i}' for i in range(9,1,-1)])
+        self.assertIn('- 其他：7.0 分',section)
+        self.assertLess(md.index('## 人做了什么'),md.index('## 时间线'))
+        self.assertTrue(md.splitlines()[1].startswith('输入 '))
+        head=[line for line in md.splitlines()[2:] if line.strip() and not line.startswith('## ')][:8]
+        self.assertTrue(head[0].startswith('- **P9**'))
+
+    def test_human_categories_summaries_and_children(self):
+        md=self.render_fixture([
+            dict(minute=0,duration=4,category='input',summary='阅读论文',learned=['甲','甲','乙','丙']),
+            dict(minute=40,duration=5,summary='设计实验',produced=['一','一','二','三']),
+            dict(minute=80,duration=6,category='chore',summary='阅读论文'),
+            dict(minute=120,duration=7,category='unclassified',summary='不能选这句'),
+            dict(minute=160,duration=9,category='other',source='claude',summary='不计其他'),
+            dict(minute=200,duration=1,summary='不计零碎'),
+            dict(minute=240,duration=0,intervals=[],learned=['不计无活动'])])
+        section=self.human_section(md)
+        self.assertIn('22.0 分（输入 4.0 · 输出 5.0 · 杂务 6.0 · 未分类 7.0）',section)
+        self.assertIn('：阅读论文；设计实验',section)
+        for text in ('不能选这句','不计其他','不计零碎','不计无活动','丙','三'):
+            self.assertNotIn(text,section)
+        for label in ('学到','产出'):
+            self.assertEqual(section.count('  - '+label+'：'),2)
+        self.assertEqual(section.count('学到：甲'),1)
+
+    def test_human_ear_and_attached_projects(self):
+        md=self.render_fixture([
+            dict(minute=0,duration=10,source='claude',project='电脑',summary='电脑活动'),
+            dict(minute=1,duration=4,source='ear',project=None,value='high',title='录音',summary='线下讨论'),
+            dict(minute=2,duration=4,project='图表',summary='读图'),
+            dict(minute=40,duration=1,source='ear',project='',value='medium',title='短录音',summary='短讨论'),
+            dict(minute=80,duration=5,source='ear',project='低值',value='low',title='背景',summary='低值录音')])
+        section=self.human_section(md)
+        self.assertIn('**线下**',section)
+        self.assertIn('**图表**',section)
+        self.assertIn('短讨论',section)
+        self.assertNotIn('低值',section)
+
+    def test_human_empty_and_unclassified(self):
+        for rows in ([], [dict(minute=0,duration=1)],
+                     [dict(minute=0,duration=10,category='other')],
+                     [dict(minute=0,duration=0,intervals=[],produced=['无活动'])]):
+            self.assertNotIn('## 人做了什么',self.render_fixture(rows))
+        section=self.human_section(self.render_fixture([
+            dict(minute=0,duration=5,category='unclassified',summary='未知活动')]))
+        self.assertIn('5.0 分',section)
+        self.assertNotIn('未知活动',section)
+        self.assertNotIn('回退理由',section)
+
+    def test_human_budget_preserves_totals_and_summaries(self):
+        rows=[dict(minute=i*40,duration=4,project=f'P{i}',summary='甲'*100,
+                   learned=['学'*80,'读'*80],produced=['写'*80,'画'*80]) for i in range(8)]
+        rows += [dict(minute=400+i*40,duration=5,project=f'P{i}',summary='乙'*100) for i in range(8)]
+        md=self.render_fixture(rows)
+        section=self.human_section(md)
+        self.assertLessEqual(len(section),1200)
+        self.assertEqual(section.count('- **'),8)
+        self.assertEqual(section.count('9.0 分'),8)
+        self.assertNotIn('  - 学到',section)
+        self.assertNotIn('  - 产出',section)
+        self.assertIn('乙',section)
+        self.assertLessEqual(len(md),4000)
+        self.assertIn('篇幅受限',md)
+        # Whole-report pressure must not shrink the already bounded overview.
+        longer=self.render_fixture(rows,warnings=['缺口'+str(i)+'长'*200 for i in range(6)])
+        self.assertLessEqual(len(longer),4000)
+        self.assertEqual(self.human_section(longer).split('- 其他：')[0].strip(),section)
 
     def test_render_merge_boundaries_and_summary(self):
         md=self.render_fixture([
@@ -383,8 +460,9 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
             dict(minute=76,duration=4,category='input'),
             dict(minute=81,duration=4,project='Other')])
         self.assertIn('05:00–05:04、05:34–05:40',md)
-        self.assertIn('设计实验',md); self.assertNotIn('短段',md)
-        self.assertEqual(md.count('** '),4)
+        timeline=md.split('## 时间线',1)[1]
+        self.assertIn('设计实验',timeline); self.assertNotIn('短段',timeline)
+        self.assertEqual(timeline.count('** '),4)
         self.assertIn('回退理由',md)
 
     def test_render_fragments_after_merge(self):
@@ -427,16 +505,17 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertIn('篇幅受限',md); self.assertIn('## 可以交给 agent 的杂务',md)
 
     def test_render_real_scale_limit_and_priority(self):
-        # 45 independent concrete segments: removing agent lines must be enough,
-        # so the lower-priority fragments still survive.
+        # 45 segments now also include a protected project overview.
         rows=[dict(minute=i*6,duration=4,project=f'项目{i}',summary='检查实验结果并整理观察记录') for i in range(45)]
         outputs=[dict(time=self.start+(i*6+1)*60,text='结论'*40,source='codex',session=str(i),project=f'项目{i}') for i in range(45)]
         md=self.render_fixture(rows+[dict(minute=400,duration=1,app='碎片')],outputs)
         self.assertLessEqual(len(md),4000)
         self.assertGreater(len(md.encode('utf-8')),len(md))
         self.assertNotIn('agent 同时在做',md)
+        self.assertIn('## 人做了什么',md)
+        self.assertIn('项目0',md.split('## 时间线')[0])
         self.assertIn('**零碎** 碎片',md)
-        self.assertEqual(md.count('** '),46)  # All 45 headings plus fragments.
+        self.assertEqual(md.split('## 时间线')[1].count('** '),46)
         # 60 rich segments overflow even after agent and fragments removal.
         rows=[dict(minute=i*6,duration=4,project=str(i),summary='写'*100,
                    learned=['学'*100,'读'*100],produced=['造'*100,'改'*100]) for i in range(60)]

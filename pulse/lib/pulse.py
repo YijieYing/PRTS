@@ -417,6 +417,7 @@ def render(data, date, c):
     warn_spans(data)
     segs = sorted((s for s in data['segments'] if not computer_history.system_app(s,c['sources'])),
                   key=lambda s: s['start'])
+    segs = [dict(s, project=s.get('project') or '线下') if s['source']=='ear' else s for s in segs]
     allocate(segs)
     segs.sort(key=lambda s: s['start'])
 
@@ -502,6 +503,55 @@ def render(data, date, c):
                 fragments[s.get('app') or s['project']] += s['active_seconds']
         else:
             visible.append(g)
+
+    # Use the existing fragment decision, but retain each attached segment's
+    # own project and allocated active time. Ear evidence is included even when
+    # a short recording is only a fragment in the detailed timeline.
+    human_members = {id(s): s for g in visible for s in g['members'] + g['simultaneous']}
+    human_members.update((id(s), s) for s in segs if s['source']=='ear' and s.get('value')!='low')
+    human_projects = defaultdict(list)
+    for s in human_members.values():
+        if s['active_seconds'] > 0 and s.get('category') != 'other':
+            human_projects[s.get('project') or '未归属'].append(s)
+    ranked = sorted(human_projects.items(),
+                    key=lambda item: (-sum(s['active_seconds'] for s in item[1]), item[0]))
+    human_rows = []
+    for project, members in ranked[:8]:
+        members = sorted(members, key=lambda s: -s['active_seconds'])
+        counts = ' · '.join(f"{label} {minutes(sum(s['active_seconds'] for s in members if s.get('category')==cat))}"
+                            for cat, label in CATEGORIES.items()
+                            if cat != 'other' and (cat != 'unclassified' or any(s.get('category')==cat for s in members)))
+        base = f"- **{brief(project,40)}** {minutes(sum(s['active_seconds'] for s in members))} 分（{counts}）"
+        summaries = list(dict.fromkeys(brief(s['summary'],100) for s in members
+                                     if s.get('category') in ('input','output','chore') and s.get('summary')))[:2]
+        children = []
+        for key, label in (('learned','学到'), ('produced','产出')):
+            values = list(dict.fromkeys(brief(v,80) for s in members for v in s.get(key,[]) if v))[:2]
+            children.extend(f'  - {label}：{v}' for v in values)
+        human_rows.append([base, summaries, children])
+
+    def human_section():
+        if not human_rows: return []
+        lines = ['', '## 人做了什么', '']
+        for base, summaries, children in human_rows:
+            lines.append(base + ('：' + '；'.join(summaries) if summaries else ''))
+            lines.extend(children)
+        if len(ranked) > 8:
+            lines.append('- 其他：' + minutes(sum(s['active_seconds'] for _, members in ranked[8:] for s in members)) + ' 分')
+        return lines + ['']
+
+    # Keep project totals: remove lower-ranked children before second summaries,
+    # then shorten the remaining prose only if unusually long names still fill it.
+    for field, minimum in ((2, 0), (1, 1)):
+        for row in reversed(human_rows):
+            while len('\n'.join(human_section())) > 1200 and len(row[field]) > minimum:
+                row[field].pop()
+    limit = 100
+    while len('\n'.join(human_section())) > 1200 and limit > 0:
+        limit = max(0, limit - 10)
+        for row in human_rows:
+            row[1] = [brief(v, limit) for v in row[1]] if limit else []
+    header[2:2] = human_section()
 
     def suggestions(members):
         seen = set()
