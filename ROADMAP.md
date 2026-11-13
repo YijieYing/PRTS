@@ -34,6 +34,8 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | R15 | 💤 | **模型放服务器，不在本地部署** | 用户 11-13 口述：「Ollama 不好，我不想部署在本地」，并提醒「这个事情开始变重了，小心」。依赖第三台服务器（提醒事项里的「服务器装起来」）。用户自己要弄懂的问题已放进提醒事项：Ollama 单机并发能否同时加载多份模型参数 |
 | R16 | 💤 | **ASR 常用词纠错，说话人结合环境判断** | Ear 的产品功能，11-13 已转给「Ear 项目架构」，由它在 EchoAsRecord 以 proposed 提案的形式提出。<br>① 常用词误识别，比如「Ear」被转成 year、Eer、夜：可以用纠错表或记忆让 LLM 改正，也可以按用户声音微调、做 embedding。PRTS 的 Ear 分诊已经在用 people.md、yyj.md 做纠错表。<br>② 说话人归属结合环境：例如「骑车时风声里的 A」，把内容、环境声、ASR、声纹合成一个多维判断。这是 R9 之后的扩展。<br>Ear 架构 session 的判断（11-13）：<br>- ① 值得写成提案，范围收窄为「用户词表」：转写本身只追加、不改，词表作为 ④ 的输入并登记依赖；按用户声音微调 ASR 只列为备选。<br>- ② 暂不提，等 ③ 跑起来再说。<br>- 另建议把「合并人物」提前进 MVP：新 ③ 会把用户本人的声音拆成很多未命名人物，和旧 Ear margin 不够是同一个问题。<br>11-13 Ear 架构 session 已在 EchoAsRecord 本地分支 `proposals/asr-glossary-person-merge`（8347e66）上写好三份 proposed 提案：`asr-user-glossary`、`person-merge-mvp`、`place-names-editable`（地名可改、一个地点可有多个别名）。还没推送，也没开 PR。 |
 | R6 | 🔨 | **周报改用 `reporter/bin/notify`** | 双发已实现，等用户改 CodexBridge 后关 outbox。周报摘要走 `notify phone`，`weekly_outbox = true` 默认保留 outbox；用户改掉读 `Reporter/outbox` 的 `/auto` 任务后设为 false，兼容链接暂时保留 |
+| R17 | ⏭ | **事件语义层过滤（slow path）** | 11-14 用户同意，依据见 [研究 session 的 PRTS 对照笔记](../research/DsHarness/local-notes/2026-11-14-PRTS对照与diff.md)。`interaction/bin/event` 现在只有纯规则的 fast path（`classify()`），新来源没规则可认时直接归 L0，等于当噪音丢掉。补一条 slow path：规则认不出的事件交模型判一次该不该进复核队列。`pulse/lib/ear.py` 的 `triage()` 已经是这个模式（prompt + `interaction/bin/run --output-schema` + 手写 schema 校验），这次是把它抽成共享库给 `event` 复用，不是重新发明。见 §三-R17 |
+| R18 | ⏭ | **Thread / 订阅机制** | 11-14 用户同意，依据同上。dsh-superagent 的 Thread：同一个外部对象（PR、IM 话题）上的连续事件，一旦有 Worker 订阅，后续事件由程序直通，不再经总控决定转发给谁。PRTS 现在没有这样的外部事件源，也没有订阅登记，续接任务全靠总控手动 `wake`/`resume`。分四步，B0 是前提：B0 给 dispatch 开的 PR 接一个最小的 GitHub 轮询 Source；B1 登记 `{thread_key, task}` 订阅；B2 让匹配到订阅的事件自动 `codex queue` 给对应任务，绕开总控；B3（多个任务订阅同一个 thread）先不做。见 §三-R18 |
 
 ## 二、以后再说（候选池）
 
@@ -97,6 +99,25 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 - 起因：2026-10-30 讨论模块化时，用户把总控说的「console」（指总控）误认为 AgentConsole。两个名字太像。
 - 另外，它只观察、产生事件、不做判断，`monitor` 比 `Console` 更准确。GLOSSARY 已经把它的英文名写成 monitor。
 - 要改的地方：目录、launchd（`com.yijieying.agentconsole`、`com.agentconsole.backup`）、`~/.agentconsole/`、GitHub 仓库名，以及各处文档。用户 2026-11-09 同意，和 R3 的清理一起做。
+
+### R17 事件语义层过滤（slow path）
+- 来源：研究 session 读完 DeepSeek Harness 的 `dsh-superagent` 设计文档后做的对照，用户 11-14 同意采用。
+- 抽共享库：
+  - `interaction/lib/run_model.py`：从 `pulse/lib/ear.py` 的 `triage()` 挪出"写 tempdir prompt+schema → 调 `interaction/bin/run --output-schema` → 校验 → 返回"这一串，参数化 prompt/schema/timeout；`ear.py` 改成调它，不留两份实现。
+  - `interaction/lib/schema.py`：挪出现在手写的 `validate()`，两边共用。
+- `interaction/bin/event` 加慢速分支：`classify()` 认不出的 `kind`，不再直接归 L0，改成调模型分类器；prompt 判断"要不要进复核队列"，schema 固定为 `{level: L0|L1|L2, reason: string}`，和 `classify()` 的返回契约一致，接入时不改调用方。
+  - 只对白名单里的 `source` 启用，新配置 `interaction/config/filter.toml`（格式仿 `reporter/config/questions.toml`）；默认关闭，新来源要显式打开，防止意外烧 token。
+  - 模型调用失败或超时，默认判 **L1**（不是 L0）：漏掉一件该管的事，比多问一句贵得多。
+- 测试仿 `pulse/tests/test_ear.py` 和 `interaction/tests/test_modules.py` 的替身模式：给 `run_model.py` 一个假的 `bin/run`，覆盖"规则认不出 → 调模型 → 按 schema 落地"和"模型调用失败 → 退到 L1"两条路径。
+- 文档：`interaction/README.md` 补慢速分支说明和 `filter.toml` 字段。
+
+### R18 Thread / 订阅机制
+- 来源同 R17。
+- **B0（前提）**：最小的 GitHub 轮询 Source。新增 `interaction/lib/github_poll.py`（或脚本），按 launchd 定时跑，对 `registry.jsonl` 里出现过的 `cwd`（跑过 dispatch 的仓库），用 `gh pr list`/`gh pr view --json comments,statusCheckRollup` 查有没有新评论、CI 状态变化，和上次记录的游标（每个 PR 记 `updated_at`/评论数）做差，有变化就调 `interaction/bin/event add`，事件带上 `thread_key`（形如 `owner/repo#123`）。单独就有价值：PR 有新评论现在要自己去 GitHub 看，接上后至少进事件队列。
+- **B1（订阅登记）**：dispatch 出去的任务一旦知道自己开了哪个 PR，记下 `{task, thread_key}`。倾向扫 `last.md`/`run.log` 里 `gh pr create` 产生的 URL 自动抓取，不改任务说明里的约定。新增只读查询 `interaction/bin/status threads`，列出 `{thread_key, task, thread_uuid}`。
+- **B2（路由）**：`event add` 收到带 `thread_key` 的事件时先查有没有活着的订阅：有，且任务没被标记"人已经叫停"，直接 `codex queue --thread <uuid> --message <事件内容>`（已有原语，`interaction/lib/codex:93,122-123`），记一条 `routed` 事件留痕，不进 L1 队列。没有匹配，照常走 R17 的 fast/slow path。
+- **B3（多对多）**：dsh 允许多个 Worker 订阅同一个 Thread；PRTS 目前一个任务一个 PR 够用，真的出现"两个任务碰到同一个 PR"再加，现在加是过度设计，不排期。
+- B0 和 R17 可以并行；B1/B2 依赖 B0 先跑出真实的 `thread_key` 事件。
 
 ## 四、已完成（最近的在上）
 - R5 ✅（2026-11-13）：**Codex 派发的沙盒选项**。dispatch / resume 支持显式 `--sandbox network` / `full`，必须附非空 `--approved-by`，start 事件记录沙盒与批准依据；默认不变，dry-run 与替身回归验证通过，未实际派发放宽沙盒的任务。用法见 [interaction/README.md](interaction/README.md)。
