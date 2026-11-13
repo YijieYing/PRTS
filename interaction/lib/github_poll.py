@@ -1,0 +1,163 @@
+"""GitHub changes become L1 events; no subscriptions or routing."""
+import datetime as dt
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import runpy
+import subprocess
+import sys
+
+I = Path(__file__).resolve().parents[1]
+registry = runpy.run_path(str(I / 'lib/registry'))
+TIMEOUT = 30
+COMPACT_BYTES = 1024 * 1024
+PR_LIMIT = 10000
+
+
+def run(args, **kwargs):
+    return subprocess.run(args, stdin=subprocess.DEVNULL, capture_output=True,
+                          text=True, timeout=TIMEOUT, check=True, **kwargs).stdout
+
+
+def error(context, exc):
+    detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+    print(f'github_poll: {context}: {detail}', file=sys.stderr)
+
+
+def repositories():
+    result = set()
+    cwds = {r.get('cwd') for r in registry['rows']() if isinstance(r.get('cwd'), str) and r['cwd']}
+    for cwd in sorted(cwds):
+        try:
+            remote = run(['git', '-C', cwd, 'remote', 'get-url', 'origin']).strip()
+        except (OSError, subprocess.SubprocessError):
+            continue  # Deleted directories and non-repositories are ordinary registry history.
+        match = re.fullmatch(r'(?:git@github\.com:|(?:https?|ssh|git)://(?:git@)?github\.com/)([\w.-]+/[\w.-]+?)(?:\.git)?/?', remote, re.I)
+        if match:
+            result.add(match[1].lower())
+    return sorted(result)
+
+
+def ci_state(checks):
+    if not isinstance(checks, list):
+        raise ValueError('statusCheckRollup must be a list')
+    if not checks:
+        return 'none'
+    states = []
+    for check in checks:
+        if not isinstance(check, dict):
+            raise ValueError('invalid check')
+        if 'status' in check:
+            value = check.get('conclusion') if check['status'] == 'COMPLETED' else 'PENDING'
+        else:
+            value = check.get('state')
+        states.append(str(value or 'UNKNOWN').upper())
+    if any(s in {'FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'} for s in states):
+        return 'failure'
+    if any(s in {'PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED'} for s in states):
+        return 'pending'
+    if all(s in {'SUCCESS', 'NEUTRAL', 'SKIPPED'} for s in states):
+        return 'success'
+    return 'unknown'
+
+
+def read_cursors(path):
+    latest = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            try:
+                row = json.loads(line)
+                key = row['key']
+                if row.get('deleted'):
+                    latest.pop(key, None)
+                else:
+                    latest[key] = row
+            except (ValueError, KeyError, TypeError):
+                continue  # Incomplete trailing records can be retried on the next poll.
+    return latest
+
+
+def append(path, row):
+    with path.open('a', encoding='utf-8') as stream:
+        # Repair a torn trailing line before appending another JSON record.
+        if path.stat().st_size:
+            with path.open('rb') as check:
+                check.seek(-1, 2)
+                if check.read(1) != b'\n':
+                    stream.write('\n')
+        stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def poll(repo: str, state_dir: Path) -> list[dict]:
+    """Serialize compare/delivery/checkpoint, returning successfully queued events."""
+    events = []
+    state_dir = Path(state_dir).resolve()
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        with (state_dir / '.github_poll.lock').open('a') as lock:
+            # Skip overlapping runs instead of waiting indefinitely for another poller.
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return events
+            path = state_dir / 'github_poll.jsonl'
+            latest = read_cursors(path)
+            prs = json.loads(run(['gh', 'pr', 'list', '--repo', repo, '--state', 'open',
+                                 '--json', 'number,updatedAt', '--limit', str(PR_LIMIT)]))
+            if not isinstance(prs, list) or len(prs) >= PR_LIMIT:
+                raise ValueError('invalid or truncated open PR list')
+            numbers = {pr['number'] for pr in prs}
+            if any(type(n) is not int or n <= 0 for n in numbers):
+                raise ValueError('invalid PR number')
+            now = dt.datetime.now(dt.timezone.utc).isoformat()
+            for number in sorted(numbers):
+                key = f'{repo}#{number}'
+                try:
+                    detail = json.loads(run(['gh', 'pr', 'view', str(number), '--repo', repo,
+                                             '--json', 'comments,statusCheckRollup,updatedAt']))
+                    if not isinstance(detail['comments'], list) or not isinstance(detail['updatedAt'], str):
+                        raise ValueError('invalid PR details')
+                    row = dict(key=key, updated_at=detail['updatedAt'], comments=len(detail['comments']),
+                               ci=ci_state(detail['statusCheckRollup']))
+                    old = latest.get(key)
+                    fields = ('updated_at', 'comments', 'ci')
+                    if old and all(old.get(f) == row[f] for f in fields):
+                        continue
+                    if old:
+                        changes = []
+                        if old['comments'] != row['comments']:
+                            changes.append(f"评论数从 {old['comments']} 变成 {row['comments']}")
+                        if old['ci'] != row['ci']:
+                            changes.append(f"CI 从 {old['ci']} 变成 {row['ci']}")
+                        text = key + ' ' + '；'.join(changes or ['有更新'])
+                        env = dict(os.environ, PRTS_INTERACTION_STATE=str(state_dir))
+                        run([str(I / 'bin/event'), 'add', 'L1', 'github_poll', text], env=env)
+                        events.append(dict(level='L1', source='github_poll', text=text))
+                    row['t'] = now
+                    append(path, row)  # Never advance a cursor if event delivery failed.
+                    latest[key] = row
+                except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as exc:
+                    error(key, exc)
+            # Closed PRs are no longer viewed. Tombstones keep replay correct until compaction.
+            active = {f'{repo}#{n}' for n in numbers}
+            for key in list(latest):
+                if key.startswith(repo + '#') and key not in active:
+                    append(path, dict(key=key, deleted=True, t=now))
+                    del latest[key]
+            if path.exists() and path.stat().st_size > COMPACT_BYTES:
+                tmp = path.with_suffix('.tmp')
+                tmp.write_text(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in latest.values()))
+                tmp.replace(path)  # Stable separate lock also covers replacement.
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as exc:
+        error(repo, exc)
+    return events
+
+
+def main():
+    for repo in repositories():
+        poll(repo, registry['state']())
+    return 0

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>LANG</key>
+		<string>en_US.UTF-8</string>
+		<key>PATH</key>
+		<string>/Users/prts/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>com.prts.interaction-github-poll</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/prts/PRTS/interaction/bin/github_poll</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/Users/prts/PRTS/interaction/state/github_poll.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/prts/PRTS/interaction/state/github_poll.log</string>
+	<key>StartInterval</key>
+	<integer>600</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/prts/PRTS</string>
+</dict>
+</plist>
