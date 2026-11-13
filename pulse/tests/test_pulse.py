@@ -21,6 +21,67 @@ from test_ear import EarTests
 from test_focus import FocusTests
 
 class PulseTests(unittest.TestCase):
+    def test_codex_day_span_uses_one_observed_minute(self):
+        rows=history.aggregate([dict(time=self.start+3605,kind='mouse.click',app='Codex',bundle='codex',title='Task',domain='')])
+        segs=[]
+        pulse.computer(segs,[dict(session='cx',title='Task',project='Octopus',start=self.start,end=self.end-1)],rows,[],self.start,self.end,self.c)
+        self.assertEqual((segs[0]['start'],segs[0]['end']),(self.start+3600,self.start+3660))
+        segs[0].update(category='chore',summary='短暂查看',learned=[],produced=[])
+        other=dict(source='computer',session='other',start=self.start+7200,end=self.start+7500,
+                   intervals=[[self.start+7200,self.start+7500]],project='Other',category='input',summary='阅读论文',messages=[])
+        data=dict(segments=segs+[other],warnings=[])
+        md=pulse.render(data,'2026-11-11',self.c)
+        self.assertIn('**零碎** Octopus 1.0 分',md)
+        self.assertNotIn('同时：',md)
+        self.assertEqual(data['warnings'],[])
+
+    def test_session_gap_and_actual_overlap(self):
+        segs=pulse.segments([self.event(60),self.event(600)],self.start,self.end,self.c)
+        self.assertEqual(len(segs),2)
+        self.assertLess(segs[0]['end'],segs[1]['start'])
+        a=dict(intervals=[[0,60],[10000,10060]])
+        self.assertEqual(pulse.overlap(a,dict(intervals=[[5000,6000]])),0)
+
+    def test_codex_title_shared_with_focus_adapter(self):
+        path=self.root/'codex'/'2026'/'11'/'11'; path.mkdir(parents=True)
+        rows=[dict(timestamp=datetime.fromtimestamp(t,pulse.ZoneInfo('Asia/Tokyo')).isoformat(),type=kind,payload=payload)
+              for t,kind,payload in [(self.start-60,'event_msg',dict(type='user_message',message='研究活动分段')),
+                                     (self.start+60,'event_msg',dict(type='user_message',message='继续'))]]
+        (path/'uuid.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
+        users=[]
+        _,activity=sources.codex(self.c['sources'],self.start,self.end,self.c['mapping'],set(),users=users)
+        self.assertEqual(activity[0]['title'],'研究活动分段')
+        self.assertEqual(users[0]['title'],activity[0]['title'])
+
+    def test_render_disjoint_chatgpt_and_short_host(self):
+        md=self.render_fixture([
+            dict(minute=0,duration=600,source='chatgpt',summary='分次阅读',
+                 intervals=[[self.start,self.start+300],[self.start+35700,self.start+36000]]),
+            dict(minute=100,duration=1,source='codex',category='chore',summary='短暂查看'),
+            dict(minute=100,duration=5,project='Other',summary='独立工作')])
+        self.assertIn('05:00–05:05、14:55–15:00',md)
+        self.assertNotIn('05:00–15:00',md)
+        self.assertNotIn('同时：',md)
+        self.assertIn('**零碎**',md)
+
+    def test_computer_inactive_edges_do_not_extend_activity(self):
+        rows=history.aggregate([dict(time=self.start+t,kind=kind,app='Editor',bundle='editor',title='Task',domain='')
+                                for t,kind in [(5,'window.changed'),(65,'mouse.click'),(125,'window.changed')]])
+        segs=[]
+        pulse.computer(segs,[],rows,[],self.start,self.end,self.c)
+        self.assertEqual((segs[0]['start'],segs[0]['end']),(self.start+60,self.start+120))
+
+    def test_span_warning_before_render_repairs_bounds(self):
+        import io
+        s=dict(source='codex',session='bad',start=self.start,end=self.end-1,
+               intervals=[[self.start+60,self.start+120]],project='Octopus',category='input')
+        data=dict(segments=[s],warnings=[])
+        stderr=io.StringIO()
+        with patch('sys.stderr',stderr): pulse.render(data,'2026-11-11',self.c)
+        self.assertEqual(len(data['warnings']),1)
+        self.assertIn('活动跨度异常',stderr.getvalue())
+        self.assertEqual(s['end']-s['start'],60)
+
     def test_classify_prompt_is_compacted_and_batched(self):
         minute={'type':'minute','time':0,'app':'WeChat','title':'Weixin','domain':'','counts':{'typing':2,'clicks':1},'active':True}
         seg={'id':'s1','source':'computer','messages':[],'intervals':[[0,60]],'computer_minutes':[minute]*300,
@@ -299,7 +360,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
             dict(minute=71,duration=4),
             dict(minute=76,duration=4,category='input'),
             dict(minute=81,duration=4,project='Other')])
-        self.assertIn('05:00–05:40',md)
+        self.assertIn('05:00–05:04、05:34–05:40',md)
         self.assertIn('设计实验',md); self.assertNotIn('短段',md)
         self.assertEqual(md.count('** '),4)
         self.assertIn('回退理由',md)
@@ -390,7 +451,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
             dict(minute=57,duration=5,source='codex',category='chore',summary='修复服务',topic='修复',suggestion='第二主题'),
             dict(minute=0,duration=10,source='claude',summary='设计实验'),
             dict(minute=1,duration=4,summary='查看图表')])
-        self.assertLess(md.index('05:00–05:10'),md.index('05:40–06:02'))
+        self.assertLess(md.index('05:00–05:10'),md.index('05:40–05:50、05:51–05:56、05:57–06:02'))
         self.assertEqual(md.count('  - 同时：'),2)
         self.assertIn('同时：阅读论文；整理笔记',md)
         self.assertNotIn('05:41–05:45',md); self.assertNotIn('05:42–05:46',md)

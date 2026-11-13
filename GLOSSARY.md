@@ -73,16 +73,16 @@
 ## reporter/（报告与通知 / reporting & notification）
 | 名字 | English | 做什么 |
 |---|---|---|
-| `bin/notify <log\|wechat\|phone\|alert> [--title T] (--text\|--file)` | notify | 送达一条通知。log 只记录；wechat 发微信；phone 用 Bark 推到 iPhone；alert = Bark + macOS 通知（11-12 起不再发微信）。旧用法（不带级别）等同 wechat |
+| `bin/notify <log\|wechat\|phone\|alert\|note> [--title T] (--text\|--file) [--url U] [--folder F]` | notify | 送达一条通知。log 只记录；wechat 发微信；phone 用 Bark 推到 iPhone（`--url` 点开时打开）；alert = Bark + macOS 通知（11-12 起不再发微信）；note 把全文写进 Apple 备忘录文件夹（11-14 起日报全文放这里）。旧用法（不带级别）等同 wechat |
 | `bin/ask add\|next\|due\|reply\|answer\|close\|expire\|render\|wait` | ask | 提问队列。紧急度：blocking（每 30 分钟重复提醒）、timely（推送一次）、soon（每日汇总）、whenever（等用户开 session）。见 reporter/README |
 | `bin/todo add\|list\|done` | todo | 用户自己的待办，存在 Apple 提醒事项的「PRTS」列表，会同步到 iPhone。见 reporter/README |
-| `bin/recap` | recap | 每晚由 launchd 运行：pulse day → 推送时间线（Bark + macOS）。见 reporter/README |
+| `bin/recap` | recap | 每晚由 launchd 运行：pulse day → 全文写进备忘录「PRTS 日报」，推送前 8 行（Bark + macOS）。见 reporter/README |
 | `bin/remind` | remind | 每小时由 launchd 运行：pulse check → ask due，有问题才推送（Bark + macOS）。见 reporter/README |
 | `pulse focus` | focus | 专注时段：set 目标和截止时间，launchd（com.prts.pulse-focus，每 5 分钟）跑 check，偏离目标太久就推送提醒；离开电脑不计。见 pulse/README §十一 |
 | `bin/report weekly [日期]` | report | 生成并送达周报 |
 | `bin/report daily` | report | 把 aquant 日报校验后放进微信发件箱（launchd 每 10 分钟和文件变化时触发） |
 | `lib/collect.py`、`compose.md`、`render.py`、`deliver.py` | collect / compose / render / deliver | 收集素材、写成文字、排版、投递 |
-| `lib/channels/` | channels | 各送达渠道的适配器；wechat 调用 CodexBridge 的 `weixin notify` |
+| `lib/channels/` | channels | 各送达渠道的适配器；wechat 调用 CodexBridge 的 `weixin notify`；notes 写 Apple 备忘录 |
 | `config/config.toml` | configuration | 收件人、发件箱路径、日报开关 |
 | `state/out/` | delivery log | 生成的中间文件和送达记录 |
 | `state/outbox/` | outbox | 等 CodexBridge `/auto` 任务取走的文本。`reporter/outbox` 是指向它的链接，因为你的 `/auto` 任务还在读旧路径 |

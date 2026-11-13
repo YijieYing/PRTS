@@ -139,7 +139,7 @@ def segments(events, start, end, c):
             next_time = users[positions[id(last)]+1]['time'] if positions[id(last)]+1 < len(users) else end
             # Keep real user anchors for cached classification, including boundary context.
             text = [r for r in records if first['time'] <= r['time'] < next_time and r['role'] in ('user','assistant') and r['text']]
-            bounds = [t for pair in active+held for t in pair] + [min(end,max(start,u['time'])) for u in chunk]
+            bounds = [t for pair in active+held for t in pair] or [min(end,max(start,first['time']))]
             result.append(dict(source=source, session=first['session'], title=first['title'], project=first['project'],
                                start=min(bounds), end=max(bounds), intervals=active, held_candidates=held,
                                held_evidence=evidence, estimates=estimates,
@@ -157,12 +157,42 @@ def subtract(intervals, masks):
     return result
 
 
+def activity_intervals(s):
+    """User evidence; after allocation only effective held time counts."""
+    held = s.get('held_effective', s.get('held_candidates', []))
+    return merge(s['intervals'] + held)
+
+
+def activity_bounds(s):
+    intervals = activity_intervals(s)
+    if intervals:
+        s['start'], s['end'] = intervals[0][0], intervals[-1][1]
+    else:
+        s['end'] = s['start']  # No duration without evidence.
+
+
+def overlap(left, right):
+    return sum(max(0, min(b, y)-max(a, x))
+               for a, b in activity_intervals(left) for x, y in activity_intervals(right))
+
+
+def warn_spans(data):
+    for s in data['segments']:
+        span = s['end'] - s['start']
+        coverage = sum(b-a for a, b in activity_intervals(s))
+        if span > 7200 and span > 3 * coverage:
+            warning = f"活动跨度异常：{s['source']} / {s['session']}，跨度 {span/60:.1f} 分，实际区间 {coverage/60:.1f} 分"
+            if warning not in data.setdefault('warnings', []):
+                data['warnings'].append(warning)
+                print(warning, file=sys.stderr)
+
+
 def computer(segs, activity, minutes, summaries, start, end, c):
     """Replace estimates only in observed minutes; align uniquely in time."""
     coverage=clip([[m['time'],m['time']+60] for m in minutes],start,end)
     candidates=list(segs)
     for a in activity:
-        candidates.append(dict(source='codex',session=a['session'],title=a.get('title',a['session']),
+        candidates.append(dict(source='codex',session=a['session'],title=a.get('title') or '未命名对话',
                                project=a['project'],start=a['start'],end=a['end'],intervals=[],
                                held_candidates=[],messages=[],confidence='实测',user_seconds=0))
     bounds={id(s):(s['start'],s['end']) for s in candidates}
@@ -205,6 +235,7 @@ def computer(segs, activity, minutes, summaries, start, end, c):
     for s in segs:
         s['intervals']=merge(s['intervals'])
         s['user_seconds']=sum(b-a for a,b in s['intervals'])
+        activity_bounds(s)
         s['held_activity']=[m for m in minutes if computer_history.source(m)!=s['source']
                             and any(a<m['time']+60 and b>m['time'] for a,b in s.get('held_candidates',[]))]
     segs.sort(key=lambda s:(s['start'],s['source'],s['session']))
@@ -329,7 +360,9 @@ def allocate(segs):
             for s in held:
                 s['held_seconds'] += (b-a)/len(held)
                 s['held_effective'].append([a,b])
-    for s in segs: s['seconds']=s['active_seconds']
+    for s in segs:
+        s['seconds']=s['active_seconds']
+        if 'start' in s: activity_bounds(s)
     return sum(s['active_seconds'] for s in segs)
 
 
@@ -369,9 +402,11 @@ def local(ts,c): return datetime.fromtimestamp(ts, ZoneInfo(c['timezone'])).strf
 
 def render(data, date, c):
     """Build a bounded reading view; keep full evidence and timing in JSON."""
+    warn_spans(data)
     segs = sorted((s for s in data['segments'] if not computer_history.system_app(s,c['sources'])),
                   key=lambda s: s['start'])
     allocate(segs)
+    segs.sort(key=lambda s: s['start'])
 
     def brief(value, limit=100):
         value = ' '.join(str(value).split())
@@ -385,15 +420,16 @@ def render(data, date, c):
     header = [f"# {date[5:]} 回顾", ' · '.join(totals) +
               f"（held 另计 {minutes(sum(s['held_seconds'] for s in segs))} 分）", '', '## 时间线', '']
     fragments = defaultdict(float)
-    # Decide Ear overlap before presentation filtering/merging; even an otherwise
-    # fragmentary desktop activity can host a valuable recording.
+    # Short activities cannot host recordings or simultaneous activities.
     ear_hosts = {}
-    desktop = [s for s in segs if s['source']!='ear' and s['active_seconds']>0]
+    desktop = [s for s in segs if s['source']!='ear' and s['active_seconds']>=180]
     for s in segs:
         if s['source']!='ear' or s.get('value')=='low': continue
-        overlaps = [(max(s['start'],d['start']),min(s['end'],d['end']),d) for d in desktop]
-        if sum(b-a for a,b in merge((a,b) for a,b,d in overlaps)) > (s['end']-s['start'])/2:
-            ear_hosts[id(s)] = max(overlaps,key=lambda x:x[1]-x[0])[2]
+        overlaps = [(overlap(s,d),d) for d in desktop]
+        covered = merge((max(a,x),min(b,y)) for d in desktop
+                        for a,b in activity_intervals(s) for x,y in activity_intervals(d))
+        if sum(b-a for a,b in covered) > sum(b-a for a,b in activity_intervals(s))/2:
+            ear_hosts[id(s)] = max(overlaps,key=lambda x:x[0])[1]
     host_ids = {id(d) for d in ear_hosts.values()}
     concrete = []
     for s in segs:
@@ -406,12 +442,12 @@ def render(data, date, c):
         else:
             concrete.append(s)
     # Presentation only: allocated time and raw evidence remain unchanged.
-    conversations = [s for s in concrete if s['source'] in ('claude','codex')]
+    conversations = [s for s in concrete if s['source'] in ('claude','codex') and s['active_seconds']>=180]
     simultaneous = defaultdict(list)
     primary = []
     owners = {}
     for s in concrete:
-        overlaps = [(max(0,min(s['end'],d['end'])-max(s['start'],d['start'])),d)
+        overlaps = [(overlap(s,d),d)
                     for d in conversations] if s['source']=='computer' else []
         overlaps = [(duration,d) for duration,d in overlaps if duration>0]
         if overlaps:
@@ -478,7 +514,9 @@ def render(data, date, c):
     for g in visible:
         if rows: rows.append(('body', ''))
         s = max(g['members'], key=lambda s: s['active_seconds'])
-        rows.append(('body', f"**{local(g['start'],c)}–{local(g['end'],c)} · {CATEGORIES[g['category']]} · {brief(g['project'],60)}** {brief(s.get('summary') or s.get('reason','未分类'))}"))
+        ranges = '、'.join(f'{local(a,c)}–{local(b,c)}' for a,b in merge(
+            interval for m in g['members'] for interval in activity_intervals(m)))
+        rows.append(('body', f"**{ranges} · {CATEGORIES[g['category']]} · {brief(g['project'],60)}** {brief(s.get('summary') or s.get('reason','未分类'))}"))
         for key, label in (('learned','学到'), ('produced','产出')):
             values = list(dict.fromkeys(v for m in g['members'] for v in m.get(key,[]) if v))[:2]
             rows.extend(('body', f'  - {label}：{brief(v)}') for v in values)

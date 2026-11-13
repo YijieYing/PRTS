@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Bark (iPhone) push: bark <title> <text>. Key in config/secrets.toml (not in git)."""
+"""Bark (iPhone) push: bark <title> <text> [<url opened on tap>]. Key in config/secrets.toml (not in git)."""
 import json, sys, tomllib, urllib.request
 from pathlib import Path
 cfg = tomllib.loads((Path(__file__).resolve().parents[2] / 'config/secrets.toml').read_text())
 title, text = sys.argv[1], sys.argv[2]
+url = sys.argv[3] if len(sys.argv) > 3 else ''
 # APNs caps the whole payload at 4 KB; 3500 *characters* of Chinese is ~10 KB → HTTP 413 (recap 11-13).
 LIMIT = 2600  # UTF-8 bytes of body, leaving room for title and envelope
 if len(text.encode()) > LIMIT:
@@ -12,7 +13,7 @@ if len(text.encode()) > LIMIT:
     text = cut[:cut.rfind('\n')] if '\n' in cut else cut
     text += tail
 body = json.dumps({'device_key': cfg['bark_device_key'], 'title': title[:120], 'body': text,
-                   'group': 'PRTS'}).encode()
+                   'group': 'PRTS', **({'url': url} if url else {})}).encode()
 req = urllib.request.Request(cfg.get('bark_server', 'https://api.day.app') + '/push', data=body,
                              headers={'Content-Type': 'application/json; charset=utf-8'})
 try:

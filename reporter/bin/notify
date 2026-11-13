@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""notify <log|wechat|phone|alert> [--title T] (--text TEXT | --file PATH).
-phone = Bark push to the iPhone; alert = phone + macOS banner (no longer WeChat, 2026-11-12)."""
+"""notify <log|wechat|phone|alert|note> [--title T] (--text TEXT | --file PATH) [--url U] [--folder F].
+phone = Bark push to the iPhone (--url opens on tap); alert = phone + macOS banner (no longer WeChat, 2026-11-12);
+note = full text into Apple Notes folder F (default "PRTS"), same title replaces the body."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -11,8 +12,9 @@ if args == ['outbox']:
     sys.exit(subprocess.run([str(channels / 'wechat'), 'outbox']).returncode)
 if args and args[0].startswith('--'): args.insert(0, 'wechat')  # legacy compatibility
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument('level', choices=['log', 'wechat', 'phone', 'alert'])
+p.add_argument('level', choices=['log', 'wechat', 'phone', 'alert', 'note'])
 p.add_argument('--title', default='PRTS')
+p.add_argument('--url', default=''); p.add_argument('--folder', default='PRTS')
 g = p.add_mutually_exclusive_group(required=True)
 g.add_argument('--text'); g.add_argument('--file')
 a = p.parse_args(args)
@@ -22,7 +24,9 @@ try:
         sys.exit(subprocess.run([str(channels / 'log'), a.title, text]).returncode)
     if a.level == 'wechat':
         sys.exit(subprocess.run([str(channels / 'wechat'), '--title', a.title, '--text', text]).returncode)
-    rc = subprocess.run([str(channels / 'bark'), a.title, text]).returncode
+    if a.level == 'note':
+        sys.exit(subprocess.run([str(channels / 'notes'), a.folder, a.title, text]).returncode)
+    rc = subprocess.run([str(channels / 'bark'), a.title, text] + ([a.url] if a.url else [])).returncode
     if a.level == 'alert':
         mac = subprocess.run([str(channels / 'macos'), a.title, text]).returncode
         rc = rc or mac

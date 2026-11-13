@@ -4,12 +4,12 @@
 
 | 命令 | 用法 |
 |---|---|
-| `bin/notify` | `<log或wechat或phone或alert> [--title T] (--text TEXT 或 --file PATH)` |
+| `bin/notify` | `<log或wechat或phone或alert或note> [--title T] (--text TEXT 或 --file PATH) [--url U] [--folder F]`；`--url` 是点开 Bark 推送时打开的链接；`note` 把全文写进 Apple 备忘录文件夹 F（默认 PRTS），同名替换正文，只动这个文件夹 |
 | `bin/notify outbox` | 查询 CodexBridge 微信发件箱 |
 | `bin/report weekly [YYYY-MM-DD]` | 采集最近七天内容，通过 interaction dispatch 生成周报，再推送手机摘要、邮件投递，并默认暂存微信短版 |
 | `bin/report daily` | 校验 aquant 日报后暂存到微信发件箱；重复内容不再投递 |
 
-notify 的 log 只追加 `state/out/notifications.jsonl`；wechat 调用 CodexBridge `weixin notify`；phone 调用 Bark；alert 同时尝试 Bark 与 macOS 弹窗，任一失败返回非零。以 `--` 开头的旧调用等同 wechat，`outbox` 旧调用也保留。微信上下文过期时由 CodexBridge 暂存，等用户下一条消息后补发。
+notify 的 log 只追加 `state/out/notifications.jsonl`；wechat 调用 CodexBridge `weixin notify`；phone 调用 Bark；alert 同时尝试 Bark 与 macOS 弹窗，任一失败返回非零；note 调 `lib/channels/notes`，用 osascript 写 Apple 备忘录（首次需用户允许自动化访问备忘录），只新建或更新给定文件夹里同名的那一条，不读、不删其他备忘录。以 `--` 开头的旧调用等同 wechat，`outbox` 旧调用也保留。微信上下文过期时由 CodexBridge 暂存，等用户下一条消息后补发。
 
 默认数据根为本模块 `state/`，可用绝对路径 `PRTS_REPORTER_STATE` 覆盖：
 
@@ -102,13 +102,13 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
   - 用户在任意 Claude session 里回复「Q12 …」，通常是 PRTS 总控（手机 Claude app 里也能回），由那个 session 运行 `ask reply` 记录。
   - 为什么不用 Claude 定时任务：每次运行都会开一个 session，即使没东西要问，跑完 app 也会弹「完成」通知（11-12 用户反馈）。原来的 `prts-reminders` 任务已暂停，prompt 留在 `config/claude-tasks/prts-reminders.md` 备查。
   - 安装：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind.plist`。plist 要先从 config 复制过去。这一步由用户执行，agent 的权限检查不允许自动装开机常驻任务。
-- **每日回顾（11-13 起改为 launchd）**：`bin/recap` 运行 `pulse day <今天>`，用 `notify alert` 推送时间线，标题是总计那一行。plist 在 `config/launchd/com.prts.reporter-recap.plist`，每天 23:40 运行，日志写到 `state/out/recap.log`。11-13 已安装，下面的 Claude 任务已暂停。
+- **每日回顾（11-13 起改为 launchd）**：`bin/recap` 运行 `pulse day <今天>`，全文用 `notify note` 写进 Apple 备忘录文件夹「PRTS 日报」（标题「YYYY-MM-DD 回顾」，重跑时替换同名备忘录的正文，Mac 和 iPhone 经 iCloud 同步）；再用 `notify alert --url mobilenotes://` 推送时间线前 8 行和「全文见备忘录」，标题是总计那一行。备忘录写入失败时，推送里写明全文在 `pulse/state/days/日期.md`（用户 11-14：Bark 和 Mac 通知都会截断，要有地方看全文）。plist 在 `config/launchd/com.prts.reporter-recap.plist`，每天 23:40 运行，日志写到 `state/out/recap.log`。11-13 已安装，下面的 Claude 任务已暂停。
 - **每日回顾（旧）**：Claude 定时任务 `prts-daily-recap`（`config/claude-tasks/prts-daily-recap.md`），每晚 23:40 运行 `pulse day`，把回顾推给用户。它每天只跑一次、本来就要推送，并且用户可以在那个 session 里纠正分类，所以保留为 Claude 任务。
 
 2026-11-12 已按用户批准创建，保存为 Auto 模式，可以在 app 侧边栏的 Scheduled 里修改。Claude app 开着时才会运行；app 关着的话，在下次打开时补跑。
 
 ### 手机渠道：Bark（2026-11-12）
 - `notify phone` 用 Bark 推到 iPhone；`notify alert` = Bark + macOS 通知（之前是微信 + macOS 通知）。`notify wechat` 仍然保留。
-- Bark 正文按 UTF-8 字节截到约 2.6 KB（APNs 整个负载上限 4 KB），在行边界截断并注明「已截断，全文见 Mac 通知」。11-13 每日回顾约 7 KB，未截断时 Bark 返回 413。
+- Bark 正文按 UTF-8 字节截到约 2.6 KB（APNs 整个负载上限 4 KB），在行边界截断并注明「已截断，全文见 Mac 通知」（Mac 通知同样截断；日报全文见备忘录「PRTS 日报」）。11-13 每日回顾约 7 KB，未截断时 Bark 返回 413。
 - 设备 key 在 `config/secrets.toml`，权限 600，已加入 `.gitignore`，不进 git。
 - 为什么不用 Claude app 推送：定时任务的 session 不连 Remote Control，也不能为它打开，PushNotification 到不了手机（11-12 实测）。

@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Apple Notes: notes <folder> <title> <markdown>. Creates the note, or replaces the body of the
+note with the same title in that folder (idempotent reruns). Syncs to iPhone via iCloud.
+Only touches the given folder; never reads or deletes other notes. Prints the note id."""
+import html, re, subprocess, sys
+
+SCRIPT = '''on run argv
+set {F, T, B} to argv
+tell application "Notes"
+  if not (exists folder F) then make new folder with properties {name:F}
+  set hits to (notes of folder F whose name is T)
+  if (count of hits) > 0 then
+    set n to item 1 of hits
+    set body of n to B
+  else
+    set n to make new note at folder F with properties {body:B}
+  end if
+  return id of n
+end tell
+end run'''
+
+
+def inline(text):
+    text = html.escape(text, quote=False)
+    return re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+
+
+def to_html(title, md):
+    """Small Markdown subset used by pulse day: #/## headings, **bold**, (indented) - bullets."""
+    lines = md.splitlines()
+    if lines and lines[0].startswith('# '):
+        lines = lines[1:]                       # the note's own title replaces the Markdown H1
+    out = [f'<h1>{html.escape(title)}</h1>']
+    for line in lines:
+        if line.startswith('## '):
+            out.append(f'<h2>{inline(line[3:])}</h2>')
+        elif line.startswith('# '):
+            out.append(f'<h1>{inline(line[2:])}</h1>')
+        elif re.match(r'\s*- ', line):
+            depth = (len(line) - len(line.lstrip())) // 2
+            out.append(f'<div>{"&nbsp;" * 4 * (depth + 1)}• {inline(line.lstrip()[2:])}</div>')
+        elif not line.strip():
+            out.append('<div><br></div>')
+        else:
+            out.append(f'<div>{inline(line)}</div>')
+    return '\n'.join(out)
+
+
+if __name__ == '__main__':
+    folder, title, md = sys.argv[1:4]
+    r = subprocess.run(['osascript', '-', folder, title, to_html(title, md)], input=SCRIPT,
+                       capture_output=True, text=True)
+    if r.returncode:
+        print('notes: ' + r.stderr.strip(), file=sys.stderr); sys.exit(1)
+    print(r.stdout.strip())

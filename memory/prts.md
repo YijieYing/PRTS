@@ -1182,3 +1182,4 @@ PRTS 的长期愿景是：
 
 这不是一个已经确定答案的问题。PRTS 应当首先成为探索它的工具和实验平台，而非预先假定自己就是答案。
 | 2026-11-13 | 用户要求今晚专注：先运动，回来学 agent 框架（DsHarness、比较 Codex/opencode 的设计），在 Ear 调试等事上走神太久就提醒。Codex 实现 `pulse focus`（555f868）；总控在沙盒外用真实模型回放，判定合理（视频、EarRecorder 联调、OS 选题都判为偏离）。已 set 今晚时段到 01:30；`com.prts.pulse-focus` 由用户安装。 |
+| 2026-11-14 | 每日回顾修复：11-13 23:40 首次跑满一整天 Computer History，接连撞上 ARG_MAX、Codex 104 万字符输入上限、Bark 4 KB 负载上限（413）。改为 stdin 传提示词、按窗口压缩并分批分类、Bark 按字节截断（c7f5703、550b48c、7c2ba12）。用户问 Mac 上在哪看全文 → 日报全文写进 Apple 备忘录「PRTS 日报」（同名替换），推送只带前 8 行，点开打开备忘录。超长段（Codex session 跨度当成段起止）派 Codex 修（pulse-span-fix）。 |

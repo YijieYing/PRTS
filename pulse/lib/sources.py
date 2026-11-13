@@ -150,17 +150,19 @@ def codex(config, start, end, mapping, warnings, users=None):
                 sid, cwd = p.get('id', sid), p.get('cwd', '')
             try: t = stamp(r['timestamp'])
             except (KeyError, ValueError, TypeError): continue
+            if t >= end: continue
+            if r.get('type') == 'event_msg' and p.get('type') == 'user_message':
+                title = title or p.get('message', '')[:160]
             if not start <= t < end: continue
             times.append(t)
             if r.get('type') == 'event_msg' and p.get('type') == 'user_message':
-                title = title or p.get('message', '')[:160]
                 if users is not None:
                     users.append(dict(time=t, source='codex', session=sid, role='user',
                                       title=title, cwd=cwd))
             if r.get('type') == 'response_item' and p.get('role') == 'assistant' and p.get('type') == 'message':
                 text = content(p.get('content'))
                 if text: outputs.append(dict(time=t, source='codex', session=sid, project=project(cwd, mapping), text=text, cwd=cwd, verified=False, final=p.get('channel')=='final' if p.get('channel') else None))
-        if times: activity.append(dict(start=min(times), end=max(times), session=sid, project=project(cwd, mapping), user_seconds=0))
+        if times: activity.append(dict(start=min(times), end=max(times), session=sid, title=title or '未命名对话', project=project(cwd, mapping), user_seconds=0))
     return outputs, activity
 
 
