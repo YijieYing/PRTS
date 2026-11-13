@@ -400,6 +400,18 @@ def minutes(seconds):
 def local(ts,c): return datetime.fromtimestamp(ts, ZoneInfo(c['timezone'])).strftime('%H:%M')
 
 
+def display_intervals(s, c):
+    """Bridge short gaps for presentation only; never mutate timing evidence."""
+    result = []
+    gap = c.get('display_merge_minutes', 15) * 60
+    for a, b in activity_intervals(s):
+        if result and a - result[-1][1] <= gap:
+            result[-1][1] = b
+        else:
+            result.append([a, b])
+    return result
+
+
 def render(data, date, c):
     """Build a bounded reading view; keep full evidence and timing in JSON."""
     warn_spans(data)
@@ -512,10 +524,14 @@ def render(data, date, c):
     outputs += latest.values()
     rows = []
     for g in visible:
+        g['display_intervals'] = merge(interval for m in g['members']
+                                       for interval in display_intervals(m, c))
+    visible.sort(key=lambda g: g['display_intervals'][0][0] if g['display_intervals'] else g['start'])
+    for g in visible:
         if rows: rows.append(('body', ''))
         s = max(g['members'], key=lambda s: s['active_seconds'])
-        ranges = '、'.join(f'{local(a,c)}–{local(b,c)}' for a,b in merge(
-            interval for m in g['members'] for interval in activity_intervals(m)))
+        labels = [f'{local(a,c)}–{local(b,c)}' for a,b in g['display_intervals']]
+        ranges = '、'.join(labels) if len(labels) <= 2 else f'{labels[0]}、…、{labels[-1]}（共 {len(labels)} 段）'
         rows.append(('body', f"**{ranges} · {CATEGORIES[g['category']]} · {brief(g['project'],60)}** {brief(s.get('summary') or s.get('reason','未分类'))}"))
         for key, label in (('learned','学到'), ('produced','产出')):
             values = list(dict.fromkeys(v for m in g['members'] for v in m.get(key,[]) if v))[:2]

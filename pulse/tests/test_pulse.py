@@ -82,6 +82,28 @@ class PulseTests(unittest.TestCase):
         self.assertIn('活动跨度异常',stderr.getvalue())
         self.assertEqual(s['end']-s['start'],60)
 
+    def test_display_intervals_merge_limit_and_evidence(self):
+        intervals=[]
+        cursor=self.start
+        for i in range(9):
+            intervals.append([cursor,cursor+60])
+            cursor += 60 + (2+i%4)*60
+        segment=dict(intervals=intervals)
+        original=copy.deepcopy(segment)
+        self.assertEqual(pulse.display_intervals(segment,self.c),[[intervals[0][0],intervals[-1][1]]])
+        self.assertEqual(segment,original)
+        md=self.render_fixture([dict(minute=0,duration=60,intervals=intervals,summary='九次活动')])
+        self.assertIn('05:00–'+pulse.local(intervals[-1][1],self.c)+' ·',md)
+        far=[[self.start,self.start+300],[self.start+14400,self.start+14700]]
+        md=self.render_fixture([dict(minute=0,duration=245,intervals=far)])
+        self.assertIn('05:00–05:05、09:00–09:05',md)
+        far.append([self.start+28800,self.start+29100])
+        md=self.render_fixture([dict(minute=0,duration=485,intervals=far)])
+        self.assertIn('05:00–05:05、…、13:00–13:05（共 3 段）',md)
+        self.assertEqual(pulse.display_intervals(dict(intervals=[[0,60],[960,1020]]),self.c),[[0,1020]])
+        self.assertEqual(pulse.display_intervals(dict(intervals=[[0,60],[961,1020]]),self.c),[[0,60],[961,1020]])
+        self.assertEqual(pulse.display_intervals(segment,dict(display_merge_minutes=0)),intervals)
+
     def test_classify_prompt_is_compacted_and_batched(self):
         minute={'type':'minute','time':0,'app':'WeChat','title':'Weixin','domain':'','counts':{'typing':2,'clicks':1},'active':True}
         seg={'id':'s1','source':'computer','messages':[],'intervals':[[0,60]],'computer_minutes':[minute]*300,
@@ -451,7 +473,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
             dict(minute=57,duration=5,source='codex',category='chore',summary='修复服务',topic='修复',suggestion='第二主题'),
             dict(minute=0,duration=10,source='claude',summary='设计实验'),
             dict(minute=1,duration=4,summary='查看图表')])
-        self.assertLess(md.index('05:00–05:10'),md.index('05:40–05:50、05:51–05:56、05:57–06:02'))
+        self.assertLess(md.index('05:00–05:10'),md.index('05:40–05:50、…、05:57–06:02（共 3 段）'))
         self.assertEqual(md.count('  - 同时：'),2)
         self.assertIn('同时：阅读论文；整理笔记',md)
         self.assertNotIn('05:41–05:45',md); self.assertNotIn('05:42–05:46',md)

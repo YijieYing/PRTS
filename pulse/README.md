@@ -149,10 +149,11 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；家目录本身固定为「未归属」，忽略项目登记里的家目录前缀（含 exact 项），只有更具体路径才可匹配；其他无匹配路径仍用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
 - Chrome History 复制到受限临时目录，以只读 SQLite 查询；SQL 仅查含 chatgpt.com 的记录，另校验精确 hostname，显式 CAST 时间为 INTEGER。不读取其他网站记录，退出时删除副本。项目页归属可参考窗口之前的 ChatGPT 项目页。
 - Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，仅凭这些记录用户时间为 0；Computer History 前台 active 分钟能唯一对齐其活动跨度时，才新建对应 Codex 会话段计入实测时间。git 提交存在不证明由用户手写；agent 自述标为未核实。采集保留 Codex final channel 标记；旧缓存缺标记时，以每会话最后一条消息兼容回退，不能保证是结论。
-- 段的起止取实际 active 区间与计入的 held 证据的边界；分配后 held 只取扣除 active 的有效区间。Codex session 的事件跨度仅用于归属匹配，不能充当用户活动跨度；无活动证据不产生显示时长。Claude 仍按用户消息 gap 切段，ChatGPT 同 URL 保留合段，但 Markdown 对所有来源逐个显示实际区间，不把区间之间的空白显示为连续活动。Ear 的活动区间是裁剪后的录音跨度估计。
+- 段的起止取实际 active 区间与计入的 held 证据的边界；分配后 held 只取扣除 active 的有效区间。Codex session 的事件跨度仅用于归属匹配，不能充当用户活动跨度；无活动证据不产生显示时长。Claude 仍按用户消息 gap 切段，ChatGPT 同 URL 保留合段，但 Markdown 使用下述仅用于阅读的显示范围。Ear 的活动区间是裁剪后的录音跨度估计。
+- 显示前，同一段内间隔 ≤ `display_merge_minutes`（`pulse.toml` 顶层配置，默认 15 分钟）的实际区间合成一个显示范围；最多完整显示两个范围，超过时显示「首个范围、…、末个范围（共 N 段）」，N 为显示范围数。时间线条目按首个显示范围开始时间排序。显示范围可包含短暂空白，仅为阅读简化，不改变 JSON intervals、段边界、active/held 计时或「同时」重叠判断。
 - 「同时」与录音附属按实际区间交集选择宿主；active 低于现有 3 分钟零碎阈值的段不能作为宿主。零碎仍沿用相邻合组与明确学到/产出的展示规则。
 - Codex 无标题时复用 focus 所用的 `sources.codex` 首条用户消息前 160 字回退（包括日窗口之前的首条消息），完全没有用户消息时显示「未命名对话」，不显示 UUID。
-- 渲染前检查不变量：段的起止跨度同时超过实际区间并集覆盖的 3 倍和 2 小时，在 stderr 输出「活动跨度异常」并写入 JSON `warnings`。离散活动也可能触发，须结合保留的 intervals/held 证据解释；渲染始终按实际区间显示。
+- 渲染前检查不变量：段的起止跨度同时超过实际区间并集覆盖的 3 倍和 2 小时，在 stderr 输出「活动跨度异常」并写入 JSON `warnings`。离散活动也可能触发，须结合保留的 intervals/held 证据解释；告警始终检查实际区间，显示合并不会改变告警条件。
 - 分类新增 `summary`：动词开头的一句话，描述用户做了什么，不写分类理由。渲染旧分类无 `summary` 时回退到 `reason`；缓存复用保留 `summary`。正常分类模式的一次 `day` / 达到候选时长的 `check` 按 §一原文分类，调用 `interaction/bin/run`。送模型前每段压缩：电脑分钟按窗口汇总为最多 12 条（活跃分钟、打字、点击），10min 摘要每段最多 6 条、每条描述前 400 字；再按每批约 15 万字符分批调用（11-13 全天原始分钟使提示词达 110 万字符，超出 Codex 输入上限，回顾失败）。分批时跨批的杂务 topic 可能不完全一致。每条消息最多将前 6000 字送入分类提示词，原始文本完整保存在本机结果里。LLM 失败返回非零，day 保存标有 failed 的原始 JSON 和未完成说明，不伪造分类。
 - `check` 杂务 active + held ≥ 60 分钟且占整个窗口 ≥ 50%，或同项目/同主题连续区间严格超过 30 分钟时提交建议。分类前用 active 与全部 held 候选的并集做上界，不再只因 active 少于 30 分钟就漏掉被占用的时间；不可能达到任一阈值才跳过 LLM。提醒文字分别给出 active 和 held；每次最多 3 条。日期/项目/主题为去重键，成功入队后 3 小时内不重复；有锁避免并发重复，失败不登记成功。`--dry` 不提交、不消耗去重，最终是否通知仍由 reporter 决定。
 - `--no-classify` 不调用 Codex；默认从对应日 `state/days/日期.json` 复用已有分类，也可用 `--classification-file` 指定。Claude 以真实用户 UUID 覆盖匹配、ChatGPT 以精确 URL 匹配，并要求分类与主题唯一；无法匹配则标「未分类」，不猜成杂务。缓存可能来自事后全天分析，因此此模式验证采集/计时/阈值，不验证当时实时分类是否相同。`day` 写独立的 `日期.timing.json/.md`，保留原分类报告。`check --no-classify` 必须同时 `--dry`，输出触发结果与时间证据。每次 check 保存 `state/checks/当地时刻.json`，含 active/held 明细及证据。

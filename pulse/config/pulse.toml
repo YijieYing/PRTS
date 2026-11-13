@@ -1,6 +1,7 @@
 timezone = "Asia/Tokyo"
 day_start_hour = 5
 gap_minutes = 20
+display_merge_minutes = 15
 cap_minutes = 20
 chatgpt_cap_minutes = 45
 held_cap_minutes = 60
