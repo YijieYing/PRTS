@@ -250,7 +250,7 @@ print(Path(os.environ['ANSWER']).read_text())
 
     def test_invalid_schema(self):
         for patch_value in ({'continues':'yes'},{'user_speaking':2},{'summary':['one']},{'agent_work':[{}]}):
-            with self.assertRaises(ValueError): ear.validate(self.answer | patch_value)
+            with self.assertRaises(ValueError): ear.validate(self.answer | patch_value, ear.schema())
     def test_day_overlap_low_and_agent_section(self):
         self.capture(); self.sync(True)
         rows=ear.day(self.state,self.base,self.base+3600)
