@@ -102,7 +102,7 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
   - 用户在任意 Claude session 里回复「Q12 …」，通常是 PRTS 总控（手机 Claude app 里也能回），由那个 session 运行 `ask reply` 记录。
   - 为什么不用 Claude 定时任务：每次运行都会开一个 session，即使没东西要问，跑完 app 也会弹「完成」通知（11-12 用户反馈）。原来的 `prts-reminders` 任务已暂停，prompt 留在 `config/claude-tasks/prts-reminders.md` 备查。
   - 安装：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind.plist`。plist 要先从 config 复制过去。这一步由用户执行，agent 的权限检查不允许自动装开机常驻任务。
-- **每日回顾（11-13 起改为 launchd）**：`bin/recap` 运行 `pulse day <今天>`，用 `notify alert` 推送时间线，标题是总计那一行。plist 在 `config/launchd/com.prts.reporter-recap.plist`，每天 23:40 运行，日志写到 `state/out/recap.log`。用户装好以后，停掉下面的 Claude 任务。
+- **每日回顾（11-13 起改为 launchd）**：`bin/recap` 运行 `pulse day <今天>`，用 `notify alert` 推送时间线，标题是总计那一行。plist 在 `config/launchd/com.prts.reporter-recap.plist`，每天 23:40 运行，日志写到 `state/out/recap.log`。11-13 已安装，下面的 Claude 任务已暂停。
 - **每日回顾（旧）**：Claude 定时任务 `prts-daily-recap`（`config/claude-tasks/prts-daily-recap.md`），每晚 23:40 运行 `pulse day`，把回顾推给用户。它每天只跑一次、本来就要推送，并且用户可以在那个 session 里纠正分类，所以保留为 Claude 任务。
 
 2026-11-12 已按用户批准创建，保存为 Auto 模式，可以在 app 侧边栏的 Scheduled 里修改。Claude app 开着时才会运行；app 关着的话，在下次打开时补跑。
