@@ -18,6 +18,7 @@ import pulse
 import sources
 import computer_history as history
 from test_ear import EarTests
+from test_focus import FocusTests
 
 class PulseTests(unittest.TestCase):
     def setUp(self):

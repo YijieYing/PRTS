@@ -134,6 +134,8 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 九、v1 实现与使用
 
+已实现 `bin/pulse focus set/status/stop/check` 专注守护（规则、配置、回放限制及仅提供未安装的 launchd 见 §十一）。
+
 已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`、`bin/pulse ear ack --before ISO`（重分诊与参数详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别留待后续。Ear 的 launchd 配置已提供，未安装。
 
 - `day` 默认取当地日历的昨天（凌晨 0–6 点也取前一天），窗口为 Asia/Tokyo 05:00 至次日 05:00。日期显式指定时不受运行时刻影响。
@@ -211,3 +213,34 @@ pulse/bin/pulse ear ack --before 2026-11-13T02:06:00+09:00  # 按起点清掉此
 ## 存储（2026-11-13）
 - `pulse/state/` 正常约 10 MB。**不要复制旧 Ear 的数据库**（约 1.1 GB）。11-13 冒烟时 Codex 在沙盒里复制了一份 `smoke.sqlite3`，已删除；一律只读原库。
 - Computer History 的原始事件由 Codex 自己滚动清理，实测约 8 MB；摘要约 150 KB。pulse 每小时存一份分钟聚合，不必保留原始数据。
+
+## 十一、focus：专注时段
+
+用户或总控指定目标与截止时间，`focus check` 根据 Computer History 的 active 分钟累计偏离；不受 `[user]` quiet 时段限制。目标不写死在程序里。
+
+```sh
+pulse/bin/pulse focus set --goal "读 agent 仓库，比较不同设计" --until 23:30 \
+  --on DsHarness --on opencode --off EchoAsRecord --off octopus --note "工程调试交给 agent"
+pulse/bin/pulse focus status
+pulse/bin/pulse focus check --at 2026-11-13T22:30:00+09:00 --dry
+pulse/bin/pulse focus stop
+```
+
+- `until` 支持 HH:MM 或 ISO（无时区用配置时区）；过去的时间顺延至未来一天。再次 set 总结旧时段并覆盖；到期 check 自动结束。`PULSE_STATE` 可隔离全部状态。回放应先在临时 current.json 设定历史 start/until，再按递增的 `--at` 检查，不能倒放同一个状态。
+- 只计完整分钟，不从没有输入事件的分钟推断阅读。离开包含不活跃或缺失观测，不代表已证明人在运动。每个墙钟分钟最多一票；同分钟多个窗口选输入事件数最多者，同分选最后观测者。孤立一分钟窗口作为短暂切换记 unknown；分钟聚合不能准确区分几十秒停留。系统应用沿用 Computer History 的过滤与最近前台归属规则。
+- Claude/Codex 窗口按该分钟内最后一条用户消息的 session 标题和 cwd 补充线索；没有则回溯最近用户消息。后台 agent 输出不参与选择。此归属是推断，无法证明用户正在阅读哪个 session；Codex 没有标题字段时使用首条用户消息的前 160 字作为标题线索。总控 cwd 为仓库根且同 session 连续少于 3 分钟记 unknown。
+- `--off` 优先于 `--on`，在应用、标题、域名、session 标题/cwd 上不区分大小写做子串匹配。短关键词可能误匹配（例如 Ear 也匹配 learning），建议使用完整项目名。通用 app 名如 codex 会放行所有 Codex 窗口，除非 off 先命中。
+- 剩余去重元组一次交给 `interaction/bin/run --output-schema`，带目标、note 和 §一概念；只发送元数据。缓存键含目标、note、规则和元组，避免换目标后误用旧判断。失败记 unknown、保存诊断，下次重试；成功的 unknown 同样缓存。
+- `[focus]` 默认：20 分钟窗口中 off 至少 12 分钟，或连续 off 至少 10 分钟；提醒冷却 20 分钟。最近十个墙钟分钟 on 超过一半后清除冷却。离开和 unknown 打断 off 连续计数。
+- 使用 `reporter/bin/notify alert`，标题直说偏离时长及去向，正文给目标和前三个 off 去向。部分渠道失败也计入尝试冷却，避免重复轰炸，送达标为未核实。`--dry` 记录判断但绝不通知，也不消耗提醒冷却；status/stop 刷新统计同样不通知。无进行中时段的 check 静默退出 0。
+- `state/focus/current.json` 保存当前时段及分钟账本，`log.jsonl` 保存结束总结，`checks.jsonl` 保存每次有效 check 的累计/窗口分类和提醒结果，`cache.json` 保存模型分类。全目录不提交 git。`pulse day` 在有时段时添加「专注」，按日界裁剪分钟和提醒；进行中时段仅统计上次检查已观测数据。
+
+launchd 配置仅提供文件 `config/launchd/com.prts.pulse-focus.plist`，每 300 秒调用 check，PATH 包含 `~/.local/bin`、`/opt/homebrew/bin`，日志为 `state/focus/check.log`。本次未安装；用户自行安装：
+
+```sh
+mkdir -p ~/PRTS/pulse/state/focus ~/Library/LaunchAgents
+cp ~/PRTS/pulse/config/launchd/com.prts.pulse-focus.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.pulse-focus.plist
+```
+
+隔离测试：`python3 pulse/tests/test_focus.py`。替身模型/通知关闭 stdin，不访问真实来源、不推送。

@@ -138,12 +138,12 @@ def chrome(config, start, end, warnings):
     return events
 
 
-def codex(config, start, end, mapping, warnings):
+def codex(config, start, end, mapping, warnings, users=None):
     outputs, activity = [], []
     root = Path(config['codex']).expanduser()
     if not root.exists(): warnings.add('Codex 数据目录不存在')
     for path in root.glob('*/*/*/*.jsonl'):
-        sid, cwd, times = path.stem, '', []
+        sid, cwd, times, title = path.stem, '', [], ''
         for r in records(path, warnings):
             p = r.get('payload', {})
             if r.get('type') == 'session_meta':
@@ -152,6 +152,11 @@ def codex(config, start, end, mapping, warnings):
             except (KeyError, ValueError, TypeError): continue
             if not start <= t < end: continue
             times.append(t)
+            if r.get('type') == 'event_msg' and p.get('type') == 'user_message':
+                title = title or p.get('message', '')[:160]
+                if users is not None:
+                    users.append(dict(time=t, source='codex', session=sid, role='user',
+                                      title=title, cwd=cwd))
             if r.get('type') == 'response_item' and p.get('role') == 'assistant' and p.get('type') == 'message':
                 text = content(p.get('content'))
                 if text: outputs.append(dict(time=t, source='codex', session=sid, project=project(cwd, mapping), text=text, cwd=cwd, verified=False, final=p.get('channel')=='final' if p.get('channel') else None))

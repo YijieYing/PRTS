@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 import sources
 import computer_history
 import ear
+import focus
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / 'pulse'
@@ -41,6 +42,8 @@ def config():
         if c[key] <= 0: raise ValueError(key + ' must be positive')
     for key, value in c['timing'].items():
         if value <= 0: raise ValueError(key + ' must be positive')
+    for key, value in c.get('focus', {}).items():
+        if value <= 0: raise ValueError('focus.' + key + ' must be positive')
     return c
 
 
@@ -486,6 +489,7 @@ def render(data, date, c):
         footer += ['', '## 附：数据缺口', ''] + ['- '+brief(w,200) for w in warnings[:6]]
         if len(warnings)>6: footer.append('- 其余数据缺口见同日 JSON。')
 
+    if data.get('focus'): footer += [data['focus']]
     def compose(): return '\n'.join(header+[v for _,v in rows]+footer)+'\n'
     if len(compose()) > 4000:
         rows = [(k,v) for k,v in rows if k!='agent']
@@ -597,11 +601,13 @@ def main():
     sync.add_argument('--retriage',action='store_true'); sync.add_argument('--since')
     es.add_parser('ack').add_argument('--before',required=True)
     es.add_parser('wait').add_argument('--poll',type=float,default=30)
+    focus.parser(sub)
     sub.add_parser('now'); a=p.parse_args()
     try:
         c=config()
         if a.command=='now': print(json.dumps(now(c),ensure_ascii=False)); return 0
         state=Path(os.environ.get('PULSE_STATE',MODULE/'state')).resolve(); state.mkdir(parents=True,exist_ok=True,mode=0o700)
+        if a.command=='focus': return focus.command(a,c,state)
         if a.command=='ear':
             if a.ear_command=='sync': ear.sync(c,state,a.no_notify,a.retriage,a.since)
             elif a.ear_command=='ack': ear.ack(state,a.before)
@@ -625,6 +631,7 @@ def main():
                 raise
             if not a.no_classify: data['classification_status']='complete'
             data['segments'].extend(ear.day(state,start,end))
+            data['focus']=focus.day(state,start,end,c)
             md=render(data,date,c)
             atomic(days/(date+suffix+'.json'),json.dumps(data,ensure_ascii=False,indent=2)); atomic(days/(date+suffix+'.md'),md); print(md,end='')
         else:

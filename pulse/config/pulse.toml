@@ -48,3 +48,9 @@ min_chars = 300
 continuation_gap_minutes = 30
 max_push_per_day = 4
 wait_gap_minutes = 40
+
+[focus]
+window_minutes = 20
+off_minutes = 12
+streak_minutes = 10
+cooldown_minutes = 20
