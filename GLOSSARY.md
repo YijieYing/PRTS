@@ -78,6 +78,7 @@
 | `bin/todo add\|list\|done` | todo | 用户自己的待办，存在 Apple 提醒事项的「PRTS」列表，会同步到 iPhone。见 reporter/README |
 | `bin/recap` | recap | 每晚由 launchd 运行：pulse day → 推送时间线（Bark + macOS）。见 reporter/README |
 | `bin/remind` | remind | 每小时由 launchd 运行：pulse check → ask due，有问题才推送（Bark + macOS）。见 reporter/README |
+| `pulse focus` | focus | 专注时段：set 目标和截止时间，launchd（com.prts.pulse-focus，每 5 分钟）跑 check，偏离目标太久就推送提醒；离开电脑不计。见 pulse/README §十一 |
 | `bin/report weekly [日期]` | report | 生成并送达周报 |
 | `bin/report daily` | report | 把 aquant 日报校验后放进微信发件箱（launchd 每 10 分钟和文件变化时触发） |
 | `lib/collect.py`、`compose.md`、`render.py`、`deliver.py` | collect / compose / render / deliver | 收集素材、写成文字、排版、投递 |
