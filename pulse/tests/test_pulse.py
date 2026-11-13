@@ -391,6 +391,14 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         head=[line for line in md.splitlines()[2:] if line.strip() and not line.startswith('## ')][:8]
         self.assertTrue(head[0].startswith('- **P9**'))
 
+    def test_human_unmatched_projects_merge_last(self):
+        md=self.render_fixture([dict(minute=0,duration=30,project='其他',summary='看课件。'),
+                                dict(minute=40,duration=20,project='未归属',summary='写报告。'),
+                                dict(minute=80,duration=5,project='P1',summary='读论文')])
+        rows=[line for line in self.human_section(md).splitlines() if line.startswith('- **')]
+        self.assertEqual([r.split('**')[1] for r in rows],['P1','未对上项目'])
+        self.assertIn('50.0 分',rows[1]); self.assertNotIn('。；',rows[1])
+
     def test_human_categories_summaries_and_children(self):
         md=self.render_fixture([
             dict(minute=0,duration=4,category='input',summary='阅读论文',learned=['甲','甲','乙','丙']),

@@ -19,6 +19,7 @@ import focus
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / 'pulse'
+UNMATCHED = '未对上项目'
 CATEGORIES = {'input': '输入', 'output': '输出', 'chore': '杂务', 'other': '其他', 'unclassified': '未分类'}
 
 
@@ -512,9 +513,11 @@ def render(data, date, c):
     human_projects = defaultdict(list)
     for s in human_members.values():
         if s['active_seconds'] > 0 and s.get('category') != 'other':
-            human_projects[s.get('project') or '未归属'].append(s)
+            project = s.get('project')
+            # Sources say「其他」(computer) or「未归属」(chats) when no project matched: one row, ranked last.
+            human_projects[UNMATCHED if project in (None, '', '其他', '未归属') else project].append(s)
     ranked = sorted(human_projects.items(),
-                    key=lambda item: (-sum(s['active_seconds'] for s in item[1]), item[0]))
+                    key=lambda item: (item[0]==UNMATCHED, -sum(s['active_seconds'] for s in item[1]), item[0]))
     human_rows = []
     for project, members in ranked[:8]:
         members = sorted(members, key=lambda s: -s['active_seconds'])
@@ -522,7 +525,7 @@ def render(data, date, c):
                             for cat, label in CATEGORIES.items()
                             if cat != 'other' and (cat != 'unclassified' or any(s.get('category')==cat for s in members)))
         base = f"- **{brief(project,40)}** {minutes(sum(s['active_seconds'] for s in members))} 分（{counts}）"
-        summaries = list(dict.fromkeys(brief(s['summary'],100) for s in members
+        summaries = list(dict.fromkeys(brief(s['summary'].rstrip('。. '),100) for s in members
                                      if s.get('category') in ('input','output','chore') and s.get('summary')))[:2]
         children = []
         for key, label in (('learned','学到'), ('produced','产出')):
