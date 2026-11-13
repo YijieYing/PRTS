@@ -109,5 +109,6 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 
 ### 手机渠道：Bark（2026-11-12）
 - `notify phone` 用 Bark 推到 iPhone；`notify alert` = Bark + macOS 通知（之前是微信 + macOS 通知）。`notify wechat` 仍然保留。
+- Bark 正文按 UTF-8 字节截到约 2.6 KB（APNs 整个负载上限 4 KB），在行边界截断并注明「已截断，全文见 Mac 通知」。11-13 每日回顾约 7 KB，未截断时 Bark 返回 413。
 - 设备 key 在 `config/secrets.toml`，权限 600，已加入 `.gitignore`，不进 git。
 - 为什么不用 Claude app 推送：定时任务的 session 不连 Remote Control，也不能为它打开，PushNotification 到不了手机（11-12 实测）。

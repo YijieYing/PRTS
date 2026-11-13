@@ -4,7 +4,14 @@ import json, sys, tomllib, urllib.request
 from pathlib import Path
 cfg = tomllib.loads((Path(__file__).resolve().parents[2] / 'config/secrets.toml').read_text())
 title, text = sys.argv[1], sys.argv[2]
-body = json.dumps({'device_key': cfg['bark_device_key'], 'title': title, 'body': text[:3500],
+# APNs caps the whole payload at 4 KB; 3500 *characters* of Chinese is ~10 KB → HTTP 413 (recap 11-13).
+LIMIT = 2600  # UTF-8 bytes of body, leaving room for title and envelope
+if len(text.encode()) > LIMIT:
+    tail = '\n…（已截断，全文见 Mac 通知）'
+    cut = text.encode()[:LIMIT - len(tail.encode())].decode(errors='ignore')
+    text = cut[:cut.rfind('\n')] if '\n' in cut else cut
+    text += tail
+body = json.dumps({'device_key': cfg['bark_device_key'], 'title': title[:120], 'body': text,
                    'group': 'PRTS'}).encode()
 req = urllib.request.Request(cfg.get('bark_server', 'https://api.day.app') + '/push', data=body,
                              headers={'Content-Type': 'application/json; charset=utf-8'})
