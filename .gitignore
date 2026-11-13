@@ -5,3 +5,8 @@ maintenance/backups/
 # pulse contains private local activity; never commit runtime data.
 /pulse/state/
 /pulse/**/__pycache__/
+
+# GitHub polling cursors and transient files are local runtime state.
+/interaction/state/github_poll.*
+/interaction/state/.github_poll.lock
+/interaction/**/__pycache__/

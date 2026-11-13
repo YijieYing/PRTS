@@ -46,6 +46,7 @@
 |---|---|---|
 | `dispatch <task> <workdir> <prompt文件>` | dispatch | 新开一次运行：把 prompt 存进任务目录，用 `codex exec` 启动，并确认真的启动了。`--sandbox network或full` 放宽时必须附 `--approved-by "用户原话或出处"`；默认 workspace-write、禁联网。`--dry`（兼容 `DISPATCH_DRY=1`）只记录命令、不执行或写 registry |
 | `resume <task> <session> <cwd> <消息文件>` | resume | 在已有会话上再跑一轮；模型满载时隔一段时间重试。支持同 dispatch 的 `--sandbox` / `--approved-by` / `--dry`，不继承上轮放宽 |
+| `github_poll` | GitHub polling source | 从 registry 派生仓库，把 PR 变化送进 L1 事件队列；无订阅或路由 |
 | `wake add\|list\|cancel` | wake | 预约、列出、取消定时唤醒 |
 | `event add <L0\|L1\|L2> <来源> <内容>` | event | 往事件队列加一条；L2 同时通过 reporter 弹通知 |
 | `event from-agentconsole` | event | AgentConsole 的事件处理入口（stdin 一条 JSON），按策略分级后入队 |
@@ -54,6 +55,7 @@
 ### 内部 / `lib/`
 | 名字 | English | 做什么 |
 |---|---|---|
+| `github_poll.py` | GitHub polling source | GitHub 查询、CI 汇总与游标比较，命令与来源均使用 github_poll |
 | `registry` | registry I/O | 唯一写 `state/registry.jsonl` 的代码 |
 | `codex` | Codex adapter | 封装 `codex exec`、`exec resume`、`queue`：关闭 stdin、git 写权限、容量重试。会话名到 UUID 的解析也在这里，是唯一依赖 Codex 内部文件的地方 |
 | `wake_state` | wake state machine | 唤醒的状态变化：scheduled → running → done / failed / cancelled |
@@ -66,6 +68,7 @@
 | `tasks/<task>/last.md` | run report | 最近一次运行 Codex 的最终报告 | 是 |
 | `tasks/<task>/run*.log` | run log | 运行日志 | 否 |
 | `wakes/<id>/` | wake record | 唤醒的 spec、prompt 副本和日志 | 否 |
+| `github_poll.jsonl` | GitHub cursor | 每个打开 PR 的更新时间、评论数和 CI 状态；追加并定期压缩 | 否 |
 | `registry.jsonl` | registry | 全部派发和唤醒记录，一行一条 | 是 |
 | `events/queue.jsonl` | event queue | 待验收的事件 | 否 |
 | `prompts/` | legacy drop | 过渡期：旧路径 `ops/prompts/` 指向这里；dispatch 会把 prompt 复制进任务目录 | 否 |

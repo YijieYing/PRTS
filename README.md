@@ -25,7 +25,7 @@
 
 | 模块 | 做什么 | 主要命令 |
 |---|---|---|
-| [interaction/](interaction/README.md) | 和 agent 打交道：派发、续跑、定时唤醒、事件队列 | `dispatch`、`resume`、`wake`、`event` |
+| [interaction/](interaction/README.md) | 和 agent 打交道：派发、续跑、定时唤醒、事件队列、GitHub PR 轮询 | `dispatch`、`resume`、`wake`、`event`、`github_poll` |
 | [reporter/](reporter/README.md) | 送达你：周报、aquant 日报、单条通知、提问队列 | `report`、`notify`、`ask` |
 | `AgentConsole/` | 全机 agent 监视（http://127.0.0.1:7788，独立仓库），产生事件交给 `interaction/bin/event` | — |
 | [pulse/](pulse/README.md) | 用户本人的状态：每日回顾有效时间花在输入、输出还是杂务上；杂务过长时提醒；此刻是否方便被打扰 | `pulse day`、`pulse check`、`pulse now` |
@@ -52,6 +52,7 @@ PRTS 以外的改动：CodexBridge 本地分支 `fix/durable-weixin-replies` 在
 | 派一个新任务给 Codex | `interaction/bin/dispatch <task> <workdir> <prompt文件>` |
 | 让已结束的 Codex session 再跑一轮 | `codex queue`，或 `interaction/bin/resume` |
 | Codex 做完后让总控知道 | AgentConsole → `event from-agentconsole` → 事件队列，总控下次开工时验收 |
+| GitHub PR 评论或 CI 变化进入复核队列 | `interaction/bin/github_poll`（launchd 模板每 10 分钟运行） |
 | 到某个时间点让 agent 去做事 | `interaction/bin/wake` |
 | 定时跑纯代码（抓行情、发日报） | launchd plist |
 | 程序给你发通知 | `reporter/bin/notify <log\|wechat\|alert>` |
