@@ -1,6 +1,6 @@
 # interaction：与 agent 交互
 
-负责派发、续跑、一次性唤醒，以及交给总控验收的事件队列。模块间只调用 `bin/`。
+负责派发、续跑、一次性唤醒，以及交给总控验收的事件队列。模块间通过 `bin/` 调用命令；结构化模型调用的共享 Python 原语见下文。
 
 | 命令 | 用法 |
 |---|---|
@@ -13,7 +13,7 @@
 
 `wake` 的 HH:MM 按日本时间解释，过去的时分预约到明天；按分钟向上取整。resume 完成表示本轮退出，queue 完成只表示入队。`WAKE_DRY=1` 跳过 Codex，**仍会注册 launchd**。取消仅限未运行任务。
 
-L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify alert`。通知失败返回非零，事件仍保留为 new。`ack` 幂等，改为 acked 并追加 acked_at；未知 id 报错。AgentConsole 的 dormant（cwd 出现在 registry）、idle_long、stale 为 L1，host_down 为 L2，其他为 L0；不写 human inbox。
+L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify alert`。通知失败返回非零，事件仍保留为 new。`ack` 幂等，改为 acked 并追加 acked_at；未知 id 报错。AgentConsole 的 dormant（cwd 出现在 registry）、idle_long、stale 为 L1，host_down 为 L2，其余已知类型为 L0；不写 human inbox。未知 `event` 类型走可选的模型慢速分支：`config/filter.toml` 的 `allowed_sources` 是事件 JSON 中 `source` 的白名单，默认空列表（关闭），未列入的来源仍为 L0、不调用模型；`timeout` 是单次调用超时秒数，默认 60。模型返回 L0/L1/L2 和理由；调用或校验失败退化为 L1，理由保留错误摘要。已知类型始终按原规则处理。`add` 仍直接采用调用方指定的级别。
 
 默认数据根为本模块 `state/`，可用绝对路径 `PRTS_INTERACTION_STATE` 覆盖：
 
@@ -52,3 +52,5 @@ interaction/bin/resume example SESSION_UUID /path/to/repo message.md 6 600 --san
 `bin/run <prompt文件> [--output-schema <JSON Schema文件>] [-o <最终回复文件>]`：一次同步 `codex exec`，只读沙盒、提示词经 stdin 传入（避免长提示词超过命令行参数上限）、不重试、不写 registry，最终回复打印到 stdout，诊断到 stderr，失败传播退出码。实现复用 `lib/codex`，已有 dispatch/resume 权限不变。
 
 同步适配回归：`python3 interaction/tests/test_run.py`（替身验证只读参数、schema/output 转发、提示词经 stdin、超长提示词和失败退出码）。参数依据本机 `codex exec --help` 及 [OpenAI 非交互模式文档](https://learn.chatgpt.com/docs/non-interactive-mode)。
+
+共享原语：`lib/schema.py` 提供 `object_schema()` / `validate(value, spec)`；`lib/run_model.py` 的 `classify_with_model(prompt, schema, state_dir, *, run_bin=None, timeout=600)` 复用 `bin/run`，在调用方已创建的数据目录下暂存并清理 prompt/schema，校验 stdout JSON，失败抛异常。`run_bin` 优先，其次 `PRTS_RUN_MODEL`，默认本模块 `bin/run`；Ear 保留 `PULSE_RUN` 覆盖并自行定义 prompt/schema。此共享库是跨模块 Python 复用的显式例外。测试：`python3 interaction/tests/test_filter.py` 和 `python3 pulse/tests/test_ear.py`。

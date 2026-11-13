@@ -14,12 +14,16 @@ from pathlib import Path
 import re
 import sqlite3
 import subprocess
-import tempfile
+import sys
 import time
 import tomllib
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
+# Shared structured-model primitives; prompts and schemas remain owned by Ear.
+sys.path.insert(0, str(ROOT))
+from interaction.lib.schema import object_schema, validate
+from interaction.lib.run_model import classify_with_model
 TZ = ZoneInfo('Asia/Tokyo')
 DEFAULT_DB = '~/.octopus/local/service/herryying30/octopus-service-ear/db/ear.sqlite3'
 
@@ -103,10 +107,6 @@ def evidence(db, capture):
     return '\n'.join(lines)+'\n', sum(len(re.sub(r'\s', '', s[2])) for s in speech)
 
 
-def object_schema(props):
-    return dict(type='object', properties=props, required=list(props), additionalProperties=False)
-
-
 def schema():
     string = {'type':'string'}
     array = {'type':'array', 'items':string}
@@ -119,23 +119,6 @@ def schema():
         learned=array, produced=array, todos=array,
         agent_work={'type':'array','items':object_schema({'project':string,'what':string})},
         category={'type':'string','enum':['input','output','chore','other']}, continues={'type':'boolean'}))
-
-
-def validate(value, spec=None):
-    spec = spec or schema()
-    kind = spec['type']
-    valid = {'object':isinstance(value,dict), 'array':isinstance(value,list),
-             'string':isinstance(value,str), 'boolean':type(value) is bool,
-             'number':type(value) in (int,float) and math.isfinite(value) if type(value) in (int,float) else False}[kind]
-    if not valid: raise ValueError('Ear 分诊字段类型错误: '+kind)
-    if 'enum' in spec and value not in spec['enum']: raise ValueError('Ear 分诊枚举无效')
-    if kind == 'number' and not spec.get('minimum',-math.inf) <= value <= spec.get('maximum',math.inf): raise ValueError('Ear 分诊数值越界')
-    if kind == 'object':
-        if set(value) != set(spec['properties']): raise ValueError('Ear 分诊字段缺失或多余')
-        for k,v in value.items(): validate(v,spec['properties'][k])
-    if kind == 'array':
-        if not spec.get('minItems',0) <= len(value) <= spec.get('maxItems',math.inf): raise ValueError('Ear 分诊行数错误')
-        for v in value: validate(v,spec['items'])
 
 
 def vocabulary():
@@ -170,17 +153,7 @@ def triage(markdown, previous, state):
               + definitions + '\n纠错词表（需结合上下文）：\n' + vocabulary()
               + '\n前一段：\n' + json.dumps(previous,ensure_ascii=False)
               + '\n当前录音：\n' + markdown)
-    with tempfile.TemporaryDirectory(prefix='triage-',dir=state) as tmp:
-        tmp = Path(tmp)
-        (tmp/'prompt.txt').write_text(prompt)
-        (tmp/'schema.json').write_text(json.dumps(schema()))
-        result = subprocess.run([os.environ.get('PULSE_RUN',str(ROOT/'interaction/bin/run')), str(tmp/'prompt.txt'),
-                                 '--output-schema',str(tmp/'schema.json'),'-o',str(tmp/'answer.json')],
-                                stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=600)
-        if result.returncode: raise RuntimeError('Ear 分诊失败: '+result.stderr[-2000:])
-        answer = json.loads(result.stdout)
-        validate(answer)
-        return answer
+    return classify_with_model(prompt, schema(), state, run_bin=os.environ.get('PULSE_RUN'))
 
 
 def write(path, value):

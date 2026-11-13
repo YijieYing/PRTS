@@ -4,7 +4,7 @@
 用词约定：「总控 / controller」指 PRTS 的 Claude 总控会话；「AgentConsole」指监视程序。两者不是一回事。
 
 ## 通用约定 / Conventions
-每个模块都由下面几类东西组成。代码和数据严格分开，模块之间只通过 `bin/` 调用。
+每个模块都由下面几类东西组成。代码和数据严格分开，模块之间通过 `bin/` 调用命令；共享 Python 库例外见下文「只走接口」。
 
 | 名字 | English | 含义 | 进 git？ |
 |---|---|---|---|
@@ -109,4 +109,4 @@
 ## 规则 / Rules
 - **单写者**：每个目录只有一个写入者，见上表。`human/inbox.md` 只由总控写：各处发现的事先进 `interaction` 的事件队列，总控验收时整理进 inbox。
 - **不循环读自己**：总控改了 `human/` 就立刻提交。「人类修改」事件只认 `human/` 中**未提交**的改动，所以总控自己的改动不会被再读一遍。
-- **只走接口**：模块之间只调用对方的 `bin/`，不读写对方的 `lib/` 或 `state/`。外部工具（Codex、CodexBridge）也只用它们的公开命令；唯一的例外写在 `interaction/lib/codex` 里。
+- **只走接口**：模块之间只调用对方的 `bin/`，不读写对方的 `lib/` 或 `state/`；显式共享库例外为 `interaction/lib/schema.py` 和 `interaction/lib/run_model.py`（Ear 与事件分诊共用，领域 prompt/schema 由调用方持有）。外部工具（Codex、CodexBridge）也只用它们的公开命令；唯一的例外写在 `interaction/lib/codex` 里。
