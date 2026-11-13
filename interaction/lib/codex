@@ -65,7 +65,7 @@ def record_thread(name, log):
 
 
 def run_sync(argv):
-    """One read-only execution; no registry writes, retries or inherited stdin."""
+    """One read-only execution; no registry writes or retries; the prompt is fed on stdin."""
     p = argparse.ArgumentParser(prog='interaction/bin/run')
     p.add_argument('prompt', help='UTF-8 prompt file')
     p.add_argument('--output-schema')
@@ -79,8 +79,9 @@ def run_sync(argv):
         cmd = ['codex', 'exec', '--sandbox', 'read-only', '-c', 'approval_policy="never"',
                '--ephemeral', '--skip-git-repo-check', '-o', str(output)]
         if a.output_schema: cmd += ['--output-schema', str(Path(a.output_schema).resolve())]
-        cmd += ['--', prompt]
-        result = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=sys.stderr, stderr=sys.stderr)
+        # Prompt goes via stdin: a long day's prompt overflows ARG_MAX as an argument (recap 11-13).
+        cmd += ['-']
+        result = subprocess.run(cmd, input=prompt, text=True, stdout=sys.stderr, stderr=sys.stderr)
         if result.returncode: return result.returncode
         if not output.is_file(): raise ValueError('Codex succeeded without a final response')
         print(output.read_text(), end='')

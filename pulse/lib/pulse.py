@@ -244,6 +244,39 @@ def schema():
     return {'type':'object', 'properties':{'segments':{'type':'array', 'items':item}}, 'required':['segments'], 'additionalProperties':False}
 
 
+# Codex rejects inputs over 1,048,576 chars; a full day of raw Computer History minutes
+# reached 1.1M (recap 11-13). Segments are compacted, then batched under this budget.
+PROMPT_BUDGET = 150_000
+
+
+def pack(s):
+    """Model view of one segment: messages trimmed, computer evidence summarised, not raw minutes."""
+    out = {k:v for k,v in s.items() if k not in ('intervals', 'messages', 'held_evidence', 'estimates', 'computer_minutes', 'computer_summaries')}
+    out['messages'] = [{'role':m['role'], 'text':m['text'][:6000], 'time':m['time']} for m in s.get('messages', [])]
+    windows = {}
+    for m in s.get('computer_minutes', []):
+        key = ' | '.join(x for x in (m.get('app'), m.get('title'), m.get('domain')) if x)
+        w = windows.setdefault(key, {'window':key, 'active_minutes':0, 'typing':0, 'clicks':0})
+        w['active_minutes'] += bool(m.get('active')); w['typing'] += m.get('counts',{}).get('typing',0)
+        w['clicks'] += m.get('counts',{}).get('clicks',0)
+    if windows:
+        out['computer_windows'] = sorted(windows.values(), key=lambda w:-w['active_minutes'])[:12]
+    if s.get('computer_summaries'):
+        out['computer_summaries'] = [{'time':x.get('time'), 'title':x.get('title',''), 'description':(x.get('description') or '')[:400]}
+                                     for x in s['computer_summaries'][:6]]
+    return out
+
+
+def batches(items, budget):
+    batch, size = [], 0
+    for x in items:
+        n = len(json.dumps(x, ensure_ascii=False)) + 2
+        if batch and size + n > budget:
+            yield batch; batch, size = [], 0
+        batch.append(x); size += n
+    if batch: yield batch
+
+
 def classify(data, state):
     if not data['segments']: return
     definitions = (MODULE / 'README.md').read_text().split('## 一、',1)[1].split('## 二、',1)[0]
@@ -255,19 +288,17 @@ def classify(data, state):
               'summary 用一句话概括用户做了什么，动词开头，不写分类理由或“混合、主要意图”等措辞。'
               '不属于杂务时 topic/suggestion 可为空。learned 和 produced 各 0–3 条。\n'
               + definitions + '\n判断标准是用户的脑子在做什么\n活动 JSON：\n')
-    packed = []
-    for s in data['segments']:
-        packed.append({k:v for k,v in s.items() if k not in ('intervals', 'messages', 'held_evidence', 'estimates')} | {'messages':[
-            {'role':m['role'], 'text':m['text'][:6000], 'time':m['time']} for m in s['messages']]})
+    packed = [pack(s) for s in data['segments']]
+    items = []
     with tempfile.TemporaryDirectory(prefix='classify-', dir=state) as tmp:
         tmp = Path(tmp)
-        (tmp/'prompt.txt').write_text(prompt + json.dumps(packed, ensure_ascii=False))
         (tmp/'schema.json').write_text(json.dumps(schema()))
         command = os.environ.get('PULSE_RUN', str(ROOT/'interaction/bin/run'))
-        result = run([command, str(tmp/'prompt.txt'), '--output-schema', str(tmp/'schema.json'), '-o', str(tmp/'answer.json')])
-        if result.returncode: raise RuntimeError('分类失败: ' + result.stderr[-2500:])
-        answer = json.loads(result.stdout)
-    items = answer['segments']
+        for n, batch in enumerate(batches(packed, PROMPT_BUDGET - len(prompt))):
+            (tmp/'prompt.txt').write_text(prompt + json.dumps(batch, ensure_ascii=False))
+            result = run([command, str(tmp/'prompt.txt'), '--output-schema', str(tmp/'schema.json'), '-o', str(tmp/f'answer-{n}.json')])
+            if result.returncode: raise RuntimeError('分类失败: ' + result.stderr[-2500:])
+            items += json.loads(result.stdout)['segments']
     if len(items) != len(data['segments']) or {r['id'] for r in items} != {s['id'] for s in data['segments']}:
         raise ValueError('分类 id 不完整或重复')
     by_id = {r['id']:r for r in items}

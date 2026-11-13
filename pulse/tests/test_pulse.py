@@ -21,6 +21,18 @@ from test_ear import EarTests
 from test_focus import FocusTests
 
 class PulseTests(unittest.TestCase):
+    def test_classify_prompt_is_compacted_and_batched(self):
+        minute={'type':'minute','time':0,'app':'WeChat','title':'Weixin','domain':'','counts':{'typing':2,'clicks':1},'active':True}
+        seg={'id':'s1','source':'computer','messages':[],'intervals':[[0,60]],'computer_minutes':[minute]*300,
+             'computer_summaries':[{'time':0,'title':'t','description':'d'*2000}]*20}
+        packed=pulse.pack(seg)
+        self.assertNotIn('computer_minutes',packed); self.assertEqual(packed['computer_windows'][0]['active_minutes'],300)
+        self.assertEqual(len(packed['computer_summaries']),6); self.assertEqual(len(packed['computer_summaries'][0]['description']),400)
+        items=[{'id':str(i),'x':'y'*100} for i in range(50)]
+        groups=list(pulse.batches(items,1000))
+        self.assertGreater(len(groups),1); self.assertEqual(sum(groups,[]),items)
+        self.assertTrue(all(len(json.dumps(g))<=1000 or len(g)==1 for g in groups))
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
         self.c=pulse.config(); self.start,self.end=pulse.day_window('2026-11-11',self.c)

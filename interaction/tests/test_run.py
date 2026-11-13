@@ -8,13 +8,13 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[2]
 class RunTests(unittest.TestCase):
-    def test_read_only_and_stdin(self):
+    def test_read_only_and_prompt_on_stdin(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp)
             fake=p/'codex'; fake.write_text('''#!/usr/bin/env python3
 import json,sys,os
 from pathlib import Path
-assert sys.stdin.read()==''
+assert sys.stdin.read()=='classify fixture'; assert sys.argv[-1]=='-'
 Path(os.environ['ARGS']).write_text(json.dumps(sys.argv[1:]))
 Path(sys.argv[sys.argv.index('-o')+1]).write_text('{"ok":true}')
 '''); fake.chmod(0o755)
@@ -23,6 +23,15 @@ Path(sys.argv[sys.argv.index('-o')+1]).write_text('{"ok":true}')
             r=subprocess.run([str(ROOT/'interaction/bin/run'),str(p/'prompt'),'--output-schema',str(p/'schema'),'-o',str(p/'out')],env=env,stdin=subprocess.DEVNULL,text=True,capture_output=True)
             self.assertEqual(r.returncode,0,r.stderr); self.assertEqual(json.loads(r.stdout),{'ok':True})
             args=json.loads((p/'args').read_text()); self.assertIn('read-only',args); self.assertNotIn('workspace-write',args); self.assertIn('--output-schema',args)
+    def test_long_prompt_does_not_hit_arg_max(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp); fake=p/'codex'; fake.write_text('''#!/usr/bin/env python3
+import sys
+from pathlib import Path
+n=len(sys.stdin.read()); Path(sys.argv[sys.argv.index('-o')+1]).write_text(str(n))
+'''); fake.chmod(0o755); (p/'prompt').write_text('x'*3_000_000)
+            r=subprocess.run([str(ROOT/'interaction/bin/run'),str(p/'prompt')],env=dict(os.environ,PATH=tmp+os.pathsep+os.environ['PATH']),stdin=subprocess.DEVNULL,text=True,capture_output=True)
+            self.assertEqual(r.returncode,0,r.stderr); self.assertEqual(r.stdout,'3000000')
     def test_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp); fake=p/'codex'; fake.write_text('#!/bin/sh\nexit 7\n'); fake.chmod(0o755); (p/'prompt').write_text('x')
