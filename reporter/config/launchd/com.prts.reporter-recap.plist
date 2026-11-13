@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>LANG</key>
+		<string>en_US.UTF-8</string>
+		<key>PATH</key>
+		<string>/Users/prts/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>com.prts.reporter-recap</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/prts/PRTS/reporter/bin/recap</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/Users/prts/PRTS/reporter/state/out/recap.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/prts/PRTS/reporter/state/out/recap.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>23</integer>
+		<key>Minute</key>
+		<integer>40</integer>
+	</dict>
+</dict>
+</plist>

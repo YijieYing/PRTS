@@ -15,7 +15,7 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 
 | # | 状态 | 事项 | 要点 |
 |---|---|---|---|
-| R1 | 🔨 | **question queue（总控主动提问）** | 第 1 步完成（11-12）：`reporter/bin/ask`，新增 timely 紧急度给杂务提醒用。送达：每小时由 launchd 运行 `reporter/bin/remind`，只在有问题时推送（11-12 从 Claude 定时任务改过来，因为后者每次跑完都会弹通知）；每晚回顾仍是 Claude 定时任务。原记录：送达走 Claude 定时任务（已创建：每小时提醒、每晚回顾），等第一次真实推送来验收。原计划：| 方案见 §三-R1。分三步：`reporter/bin/ask` 和开工时批量问 → 按紧急度推送 → 手机端回答。送达时机依赖 R2 |
+| R1 | 🔨 | **question queue（总控主动提问）** | 第 1 步完成（11-12）：`reporter/bin/ask`，新增 timely 紧急度给杂务提醒用。送达：每小时由 launchd 运行 `reporter/bin/remind`，只在有问题时推送（11-12 从 Claude 定时任务改过来，因为后者每次跑完都会弹通知）；每晚回顾：11-13 写好了 `reporter/bin/recap`，由 launchd 在 23:40 运行 `pulse day` 并推送（`config/launchd/com.prts.reporter-recap.plist`），**等用户安装**。装上以后停掉 Claude 任务 `prts-daily-recap`。分类纠正改在任意 session 里告诉总控。最终所有推送都收到 Ear 手机端（R12）。原记录：送达走 Claude 定时任务（已创建：每小时提醒、每晚回顾），等第一次真实推送来验收。原计划：| 方案见 §三-R1。分三步：`reporter/bin/ask` 和开工时批量问 → 按紧急度推送 → 手机端回答。送达时机依赖 R2 |
 | R2 | 🔨 | **用户状态模块 `pulse`** | v1 已实现（11-12）：`pulse day`、`check`、`now`；ChatGPT 从 Chrome 历史读，时间分 active 和 held。11-12 已接入 Codex Computer History（不和 agent 对话的时间也能看到，active 改为实测）。下一步：日报改成按时间线分段（11-12 用户要求）。设计稿 [pulse/README.md](pulse/README.md)。两件事：每日回顾，即有效时间花在输入、输出还是杂务上，学到和产出了什么（先做）；以及感知用户「现在」是否方便被打扰，比如离开、专注、空闲、休息时段。quiet hours、digest 时间这类用户属性归它，不写在 reporter 的 config 里。和 Ear 的区别：Ear 总结已经发生的事，pulse 只看当下。见 §三-R2 |
 | R3 | ⏭ | **约 2026-11-21：清理过渡期** | 搜一遍还有没有人用 `~/PRTS/ops/` 的旧路径，没有就删掉 `ops/` 和全局 CLAUDE.md 里的旧路径提示。同时把 `AgentConsole` 改名为 `monitor`，原因见 §三-R3 |
 | R4 | ✅ | **手机推送渠道不只靠微信** | 11-12 接入 Bark：`notify phone`，`alert` 改为 Bark + macOS。原记录： 微信受 24 小时 token 限制。11-12 实测：Claude 定时任务的 session 不连 Remote Control，也不能为它打开，所以 PushNotification 推不到手机，这条路排除。候选：Bark 或 ntfy（需要用户在手机上装 app 并给出 key）；macOS 通知（只在用户坐在电脑前时有用）。由 R2 判断此刻该用哪个渠道 |
@@ -25,10 +25,14 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 - 新 Ear 的 ③ 暂时接不住，估计还要几天工程量。PR #16 已批准，但没合并；还缺登记表类型、常驻部署（journal 只支持 Linux）、确认音色的界面，以及阈值校准。
 - ③ 也按 model_version 严格过滤，所以要先核对导入数据的版本。
 - 想快速让旧 Ear 认出用户本人，最快的办法仍是报告 §7.1：在旧 Workspace 里绑定几个音色，不用改代码。
-11-13 夜里旧 Ear 的版本缺陷已修复，在分支 `fix/speaker-model-version` 上，1140 项测试通过，没有合并、没有上线。迁移只演练了一遍：77 个正式模板保留，690 个缺模型身份凭据，1421 个建议用原音重算，可以直接改标签的为 0。报告在旧 Ear 仓库的 `doc/speaker-model-version-report.md`，上线前要用户同意。GPS 地点名在等用户决定两件事：①先合并 #16，走手动命名的路线；②是否允许调用外部逆地理编码。<br>最小修复：<br>- 先由用户在旧 Workspace 里确认几个近期确实是本人的音色；<br>- 再修版本缺陷，并和旧的 `@unknown` 模板一起迁移；<br>- 用历史片段重算质心（材料都在）。<br>改旧 Ear 的代码和服务要用户同意 |
+11-13 夜里旧 Ear 的版本缺陷已修复，在分支 `fix/speaker-model-version` 上，1140 项测试通过，没有合并、没有上线。迁移只演练了一遍：77 个正式模板保留，690 个缺模型身份凭据，1421 个建议用原音重算，可以直接改标签的为 0。报告在旧 Ear 仓库的 `doc/speaker-model-version-report.md`，上线前要用户同意。GPS 地点名：「GPS地理名字字段映射」session 的 PR #17 已合并（11-13）。<br>最小修复：<br>- 先由用户在旧 Workspace 里确认几个近期确实是本人的音色；<br>- 再修版本缺陷，并和旧的 `@unknown` 模板一起迁移；<br>- 用历史片段重算质心（材料都在）。<br>改旧 Ear 的代码和服务要用户同意 |
 | R10 | ✅ | **用户的待办接 Apple 提醒事项** | 11-13：`reporter/bin/todo add/list/done`，列表「PRTS」，会同步到 iPhone。只放用户自己要做的事；agent 的活进 ROADMAP 或派发任务。日程（Calendar）暂不接，带日期的提醒会自动出现在日历里 |
 | R11 | 💤 | **推送策略像推荐系统一样学习** | 用户 11-13 口述：agent 要积极提问但控制数量，根据用户的回复调整，优先问用户更愿意回答的；利用周期性，比如「下周这个时候你会很累，提醒你去放松」；支付记录（如星巴克）可以作为信息源；各种权限（声音、屏幕、键盘、支付）让用户逐项勾选。11-13 先做了一步：推送标题直接用问题本身 |
 | R12 | 💤 | **Mouth：给口述的语音反馈** | 用户 11-13 口述：边走边想、边口述设计文档时，希望 AI 用语音回应。最终所有推送都要收到 Ear 手机端 |
+| R13 | 💤 | **Ear 手机端稳定性** | 用户 11-13 口述：长录音不能断，被系统杀掉后要自动重启，耗电（感觉录不满 24 小时）。手机端由「Octopus Flutter 音频提取与 EchoAsRecord 集成」session 负责；保活和耗电的现状见 `interaction/state/tasks/flutter-survey/report.md` §2–3（还没有同机耗电实测）。合作仓库，改公共行为前先和石伟男、shenxing 商量 |
+| R14 | 💤 | **采集手机使用情况** | 用户 11-13 口述：手机上在用什么也要采集，可以截图传给电脑；他问电脑上那个「Activity 什么」能不能用在手机上，指的可能是 ActivityWatch 或 Codex Computer History，都没有 iOS 版。可行路线见 flutter-survey 报告 §5：Android 用 UsageStatsManager，iOS 用 Screen Time / DeviceActivity，限制很多。权限要用户逐项勾选（R11） |
+| R15 | 💤 | **模型放服务器，不在本地部署** | 用户 11-13 口述：「Ollama 不好，我不想部署在本地」，并提醒「这个事情开始变重了，小心」。依赖第三台服务器（提醒事项里的「服务器装起来」）。用户自己要弄懂的问题已放进提醒事项：Ollama 单机并发能否同时加载多份模型参数 |
+| R16 | 💤 | **ASR 常用词纠错，说话人结合环境判断** | Ear 的产品功能，11-13 已转给「Ear 项目架构」，由它在 EchoAsRecord 以 proposed 提案的形式提出。<br>① 常用词误识别，比如「Ear」被转成 year、Eer、夜：可以用纠错表或记忆让 LLM 改正，也可以按用户声音微调、做 embedding。PRTS 的 Ear 分诊已经在用 people.md、yyj.md 做纠错表。<br>② 说话人归属结合环境：例如「骑车时风声里的 A」，把内容、环境声、ASR、声纹合成一个多维判断。这是 R9 之后的扩展 |
 | R6 | 🔨 | **周报改用 `reporter/bin/notify`** | 双发已实现，等用户改 CodexBridge 后关 outbox。周报摘要走 `notify phone`，`weekly_outbox = true` 默认保留 outbox；用户改掉读 `Reporter/outbox` 的 `/auto` 任务后设为 false，兼容链接暂时保留 |
 
 ## 二、以后再说（候选池）

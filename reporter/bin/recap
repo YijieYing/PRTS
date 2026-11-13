@@ -1,0 +1,10 @@
+#!/bin/bash
+# Nightly recap, run by launchd (com.prts.reporter-recap, 23:40). Pure code, no Claude session:
+# pulse day <today> → push the timeline markdown via Bark + macOS. Corrections: tell any Claude
+# session (normally PRTS 总控), which appends them to pulse/state/corrections.md.
+set -u
+M=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd); P=$(dirname "$M")
+day=$(date +%F); echo "== $(date '+%F %T') recap $day"
+md=$("$P/pulse/bin/pulse" day "$day") || { "$M/bin/notify" alert --title "PRTS 每日回顾失败" --text "pulse day $day 失败，见 reporter/state/out/recap.log"; exit 1; }
+title=$(printf '%s\n' "$md" | sed -n 2p)   # the totals line: 输入 X 分 · 输出 Y 分 · …
+exec "$M/bin/notify" alert --title "${title:-PRTS 每日回顾}" --text "$md"
