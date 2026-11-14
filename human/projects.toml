@@ -1,6 +1,7 @@
 # 项目登记表（你可以直接改）。Reporter 周报和以后的话题路由都用它。
 # path 是目录前缀（本机写 ~/...，lain 写 lain:/home/...），category 取：工程 / 学术 / 课程 / 总控 / 其他
 # 最长前缀优先匹配；exact = true 表示只匹配这个目录本身。
+# aliases = [...] 可选：同一项目的其他叫法（比如 ChatGPT 里的项目名），pulse 会归到 name 下。
 
 [[project]]
 name = "aquant 交易 bot / BigQuant"
@@ -11,9 +12,15 @@ category = "工程"
 name = "PRTS 总控台"
 path = "~/PRTS"
 category = "总控"
+aliases = ["PRTS", "PRTS 总控台（主 session）"]   # 同一项目的其他叫法（ChatGPT 里的项目名、旧名）；pulse 归成一个
 
 [[project]]
-name = "PRTS 总控台（主 session）"
+name = "PRTS 研究"   # 研究层（E1–E5 实验），和总控台分开；登记后 cwd 不再落成裸名「PRTS」
+path = "~/research/PRTS"
+category = "学术"
+
+[[project]]
+name = "PRTS 总控台"   # 家目录里的主 session 也算总控台（用户 11-14 同意合并）
 path = "~"
 category = "总控"
 exact = true   # 只匹配家目录本身，不吞掉下面的子目录

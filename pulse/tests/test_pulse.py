@@ -466,6 +466,14 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertEqual([r.split('**')[1] for r in rows],['P1','不属于项目'])
         self.assertIn('50.0 分',rows[1]); self.assertNotIn('。；',rows[1])
 
+    def test_project_aliases_merge_names(self):
+        self.c['mapping']=[{'name':'总控','path':'/work/PRTS','aliases':['PRTS','总控（主）']}]
+        md=self.render_fixture([dict(minute=0,duration=10,project='PRTS',summary='甲'),
+                                dict(minute=40,duration=10,project='总控（主）',summary='乙'),
+                                dict(minute=80,duration=10,project='总控',summary='丙')])
+        rows=[line for line in self.human_section(md).splitlines() if line.startswith('- **')]
+        self.assertEqual(len(rows),1); self.assertTrue(rows[0].startswith('- **总控** 30.0 分'))
+
     def test_human_categories_summaries_and_children(self):
         md=self.render_fixture([
             dict(minute=0,duration=4,category='input',summary='阅读论文',learned=['甲','甲','乙','丙']),

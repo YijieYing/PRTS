@@ -317,15 +317,27 @@ def project_source(s):
     return s.get('project_source') or ('none' if s.get('project') in NO_PROJECT else 'rule')
 
 
+def aliases(c):
+    """projects.toml `aliases = [...]`: other names the same project shows up under (e.g. a ChatGPT project title)."""
+    return {a: p['name'] for p in c.get('mapping', []) for a in p.get('aliases', [])}
+
+
+def canonicalize(segments, c):
+    table = aliases(c)
+    for s in segments:
+        if s.get('project') in table: s['project'] = table[s['project']]
+
+
 def classify(data, state, c=None):
     if not data['segments']: return
     c = c if c is not None else config()
+    canonicalize(data['segments'], c)
     registry = Path(c['sources']['projects']).expanduser()
     registered = []
     if registry.is_file():
         with registry.open('rb') as f:
             registered = tomllib.load(f).get('project', [])
-    candidates = sorted({p['name'] for p in registered} |
+    candidates = sorted({p['name'] for p in registered if p['name'] not in aliases(c)} |
                         {s['project'] for s in data['segments']
                          if project_source(s)=='rule' and s.get('project') not in NO_PROJECT})
     definitions = (MODULE / 'README.md').read_text().split('## 一、',1)[1].split('## 二、',1)[0]
@@ -461,6 +473,7 @@ def display_intervals(s, c):
 
 def render(data, date, c):
     """Build a bounded reading view; keep full evidence and timing in JSON."""
+    canonicalize(data['segments'], c)
     for s in data['segments']:
         s['project_source'] = project_source(s)
     warn_spans(data)
