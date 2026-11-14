@@ -118,6 +118,12 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 - **B2（路由）**：`event add` 收到带 `thread_key` 的事件时先查有没有活着的订阅：有，且任务没被标记"人已经叫停"，直接 `codex queue --thread <uuid> --message <事件内容>`（已有原语，`interaction/lib/codex:93,122-123`），记一条 `routed` 事件留痕，不进 L1 队列。没有匹配，照常走 R17 的 fast/slow path。
 - **B3（多对多）**：dsh 允许多个 Worker 订阅同一个 Thread；PRTS 目前一个任务一个 PR 够用，真的出现"两个任务碰到同一个 PR"再加，现在加是过度设计，不排期。
 - B0 和 R17 可以并行；B1/B2 依赖 B0 先跑出真实的 `thread_key` 事件。
+- **总控复核（11-14）**：R17、B0 的代码和测试都在、全绿，结构没问题。做 B1/B2 之前要先补 B0 的四个缺口：
+  1. 事件没有 `thread_key` 字段，PR 号只拼在文字里（`event add L1 github_poll "<repo>#N …"`），B2 要按它路由，得先成为结构化字段。
+  2. 只数 `comments`（PR 的普通评论），没看 `reviews` 和行内评审意见，而 PR 反馈的大头在这里。
+  3. 只要 `updatedAt` 变了就发一条「有更新」的 L1，agent 自己 push、打标签都会触发；agent 自己发的评论也会触发，L1 队列会被自己的动作灌满。应该只对「别人的评论或评审」和「CI 状态变化」发事件。
+  4. R17 和 B0 没有接上：github_poll 用 `event add L1` 直接定级，绕过了 `classify()`；`classify()` 的慢速分支只在 `from-agentconsole` 的未知 kind 上生效，所以 R17 目前没有实际的事件来源。
+  - 另外：桌面 app 对绑定到 session 的 PR 已经有自己的 CI/评论监控（Auto-fix），B2 路由时要避免和它重复处理同一个 PR。
 
 ## 四、已完成（最近的在上）
 - R5 ✅（2026-11-13）：**Codex 派发的沙盒选项**。dispatch / resume 支持显式 `--sandbox network` / `full`，必须附非空 `--approved-by`，start 事件记录沙盒与批准依据；默认不变，dry-run 与替身回归验证通过，未实际派发放宽沙盒的任务。用法见 [interaction/README.md](interaction/README.md)。
