@@ -79,6 +79,12 @@ category = "课程"
 name = "OS 课（rCore）"
 path = "lain:/home/yijieying/Undergrad_3_Autumn"
 category = "课程"
+aliases = ["Infra"]   # 11-14 用户同意合并：~/research/Infra 目前只放 OS 课；以后开始做 PRTS 硬件层探索，就给那个子目录单独登记
+
+[[project]]
+name = "OS 课（rCore）"   # 本机的 OS 课工作区（补课计划、大作业方案）
+path = "~/research/Infra"
+category = "课程"
 
 [[project]]
 name = "lain 上的项目"
