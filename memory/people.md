@@ -78,6 +78,7 @@
   - 10-27 饭局提到，和他讨论过录音分析助手（Ear）。
   - 托管 `octopus-service-person` 仓库（brain.shiweinan.com）。用户在 `~/.octopus/worktrees/person-ear-*` 往里面接入 Ear。
   - 是 NextHCI/octopus 的主要提交者之一。
+  - Octopus 的公网 FRP 中继 `vps.shiweinan.com`（注册端口 7000，HTTP 入口 6950）应是他那边运维的。11-14 起 EarRecorder 借用 6950 做加密中继（手机加密、中继只转发密文）。技术上已跑通，但**还没征得同意**，长期使用要先问他。
 - 以后若涉及 Ear 和 octopus 的合作，先想到他。
 
 ### 安阳（GitHub: aytony）
