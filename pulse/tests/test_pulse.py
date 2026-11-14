@@ -116,6 +116,73 @@ class PulseTests(unittest.TestCase):
         self.assertGreater(len(groups),1); self.assertEqual(sum(groups,[]),items)
         self.assertTrue(all(len(json.dumps(g))<=1000 or len(g)==1 for g in groups))
 
+    def test_project_attribution_rules_candidates_and_batches(self):
+        Path(self.c['sources']['projects']).write_text('[[project]]\nname="Octopus"\npath="/work/Octopus"\n')
+        self.c['mapping'].append(dict(name='仅配置未命中',path='/unused'))
+        data = dict(segments=[dict(id=str(i), source='computer', session=str(i),
+                    title='窗口'+str(i), messages=[], project=project,
+                    start=self.start+i*600, end=self.start+i*600+300,
+                    intervals=[[self.start+i*600,self.start+i*600+300]])
+                    for i, project in enumerate(['Infra','其他','未归属',None,'DsHarness'])], warnings=[])
+        answers = ['Octopus','Infra',None,'编造的项目','Octopus']
+        prompts = []
+        def model(cmd, **kwargs):
+            prompt = Path(cmd[1]).read_text(); prompts.append(prompt)
+            rows = json.loads(prompt.split('活动 JSON：\n')[1])
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(dict(segments=[dict(
+                id=r['id'], category='input', reason='阅读', summary='看课件', topic='', suggestion='',
+                learned=[], produced=[], project=answers[int(r['id'])], project_hint='机械设计课')
+                for r in rows])), '')
+        with patch.object(pulse,'run',side_effect=model), patch.object(pulse,'PROMPT_BUDGET',100), patch('sys.stderr'):
+            pulse.classify(data,self.state,self.c)
+        self.assertEqual(len(prompts),5)
+        candidates = [json.loads(p.split('项目候选 JSON：')[1].split('\n')[0]) for p in prompts]
+        self.assertTrue(all(c==['DsHarness','Infra','Octopus'] for c in candidates))
+        self.assertEqual([s['project'] for s in data['segments']],['Infra','Infra',None,None,'DsHarness'])
+        self.assertEqual([s['project_source'] for s in data['segments']],['rule','model','none','none','rule'])
+        self.assertEqual([s['project_hint'] for s in data['segments']],['','','机械设计课','机械设计课',''])
+        self.assertEqual(len(data['warnings']),1); self.assertIn('编造的项目',data['warnings'][0])
+        md=pulse.render(data,'2026-11-11',self.c)
+        self.assertTrue(all(s['active_seconds']==300 for s in data['segments']))
+        self.assertIn('**Infra** 10.0 分',md)
+        self.assertIn('**不属于项目** 10.0 分',md)
+        self.assertIn('可能的新项目：机械设计课（2 段，10.0 分）',md)
+        self.assertEqual(pulse.schema()['properties']['segments']['items']['properties']['project']['type'],['string','null'])
+
+    def test_project_hints_top_three_and_unmatched_beyond_limit(self):
+        rows=[dict(minute=i*40,duration=i+4,project=None,project_source='none',project_hint=hint)
+              for i,hint in enumerate(['甲','乙','丙','丁','丁'])]
+        rows += [dict(minute=300+i*40,duration=4,project='P'+str(i)) for i in range(10)]
+        section=self.human_section(self.render_fixture(rows))
+        hint_line=section.split('可能的新项目：')[1]
+        self.assertEqual(hint_line,'丁（2 段，15.0 分）；丙（1 段，6.0 分）；乙（1 段，5.0 分）')
+        self.assertLessEqual(len(section),1200)
+        self.assertGreater(section.index('**不属于项目**'),section.index('- 其他：'))
+        self.assertEqual(len([line for line in section.splitlines() if line.startswith('- **')]),8)
+
+    def test_project_cache_legacy_and_model_provenance(self):
+        fresh=dict(source='computer',session='cache',start=self.start,end=self.start+300,
+                   intervals=[[self.start,self.start+300]],messages=[],project='Octopus')
+        old=dict(fresh,category='input',reason='阅读',topic='',suggestion='',learned=[],produced=[])
+        del old['project']
+        path=self.state/'cached.json'
+        path.write_text(json.dumps(dict(segments=[old])))
+        data=dict(segments=[copy.deepcopy(fresh)],warnings=[])
+        pulse.reuse(data,path)
+        self.assertEqual(data['segments'][0]['project'],'Octopus')
+        self.assertEqual(data['segments'][0]['project_source'],'rule')
+        self.assertIn('Octopus',pulse.render(data,'2026-11-11',self.c))
+        old.update(project='Infra',project_source='model',project_hint='')
+        path.write_text(json.dumps(dict(segments=[old])))
+        fresh['project']='其他'
+        data['segments']=[copy.deepcopy(fresh)]
+        pulse.reuse(data,path)
+        self.assertEqual(data['segments'][0]['project'],'Infra')
+        self.assertEqual(data['segments'][0]['project_source'],'model')
+        fresh['project']='Octopus'; data['segments']=[fresh]
+        pulse.reuse(data,path)
+        self.assertEqual(fresh['project'],'Octopus')
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
         self.c=pulse.config(); self.start,self.end=pulse.day_window('2026-11-11',self.c)
@@ -396,7 +463,7 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
                                 dict(minute=40,duration=20,project='未归属',summary='写报告。'),
                                 dict(minute=80,duration=5,project='P1',summary='读论文')])
         rows=[line for line in self.human_section(md).splitlines() if line.startswith('- **')]
-        self.assertEqual([r.split('**')[1] for r in rows],['P1','未对上项目'])
+        self.assertEqual([r.split('**')[1] for r in rows],['P1','不属于项目'])
         self.assertIn('50.0 分',rows[1]); self.assertNotIn('。；',rows[1])
 
     def test_human_categories_summaries_and_children(self):

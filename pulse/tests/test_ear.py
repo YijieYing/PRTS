@@ -156,7 +156,7 @@ print(Path(os.environ['ANSWER']).read_text())
     def test_day_never_reclassifies_ear(self):
         self.capture(); self.sync(True)
         data=dict(segments=[],outputs=[],warnings=[])
-        def classify(data,state): self.assertEqual(data['segments'],[])
+        def classify(data,state,c=None): self.assertEqual(data['segments'],[])
         with patch.object(pulse,'config',return_value=self.c), patch.object(pulse,'collect',return_value=data), \
              patch.object(pulse,'classify',side_effect=classify) as model, \
              patch.object(sys,'argv',['pulse','day','2026-11-12']), redirect_stdout(io.StringIO()):

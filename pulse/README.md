@@ -113,7 +113,8 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 ```
 
 - 只有一行 active 总计，held 另计；不展示项目大表或独立的学习、产出、前台窗口记录节。
-- 「人做了什么」紧跟总计行、位于时间线之前。按各项目计入的 active 分钟降序（同分按项目名），列最多 8 个项目，其余合为「其他：N 分」。没对上项目的活动（来源标为「其他」或「未归属」）合成一行「未对上项目」，固定排最后。summary 去掉句末句号后用「；」连接。每行格式为 `- **项目** N 分（输入 x · 输出 y · 杂务 z）：summary；summary`；有未分类活动时额外列「未分类 N」，计入项目总分钟但不选其 summary。分钟保留一位小数，使用已分摊的 active，不另算时长。
+- 「人做了什么」紧跟总计行、位于时间线之前。按各项目计入的 active 分钟降序（同分按项目名），列最多 8 个项目，其余合为「其他：N 分」。规则和模型都没归上、或模型判定不属于任何项目的活动合成一行「不属于项目」，固定排最后（超过 8 个项目时为它保留一个名额，其余项目合并行放在它之前）。模型补上的项目正常计入分钟，不在项目名后加标记。summary 去掉句末句号后用「；」连接。每行格式为 `- **项目** N 分（输入 x · 输出 y · 杂务 z）：summary；summary`；有未分类活动时额外列「未分类 N」，计入项目总分钟但不选其 summary。分钟保留一位小数，使用已分摊的 active，不另算时长。
+- 当天有 `project_hint` 时，概览末尾加一行「可能的新项目：机械设计课（N 段，M 分）」；按完整 hint 去重聚合全部非系统段的已分摊 active，分钟降序取最多 3 个（同分按文字），不自动修改项目登记。
 - 项目概览复用现有零碎判定，排除零碎、「其他」类和无 active 段；附属的电脑段仍按自己的项目计入。Ear 的 value 非 low 段按自身项目计入，即使短于零碎阈值或附在电脑段下；缺项目归「线下」，仍排除「其他」类和无 active。概览不含 agent/git 线索。
 - 每个项目按原段 active 降序选最多 2 条不重复 summary，不用 reason 补 summary；学到、产出各去重取最多 2 条缩进子行。只复用已有分类，不调用模型。整节最多 1200 Unicode 字符，先从排名靠后项目移除子行，再减少第二条 summary，仍过长则缩短 summary；保留项目和分类分钟。
 - 推送沿用 reporter 从第 3 行起取前 8 个非空、非标题行的规则，因此开头是项目概览；子行也占名额，不保证全部项目进入推送。没有符合条件的用户活动时不显示此节。
@@ -155,6 +156,9 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - held 只给已分类为 chore 的会话：用户消息之后，已有 assistant/tool 工作证据时，计到第一次回复结束或下一条用户消息（较早者），每条最多 `held_cap_minutes`（60 分钟）。在回放截止时尚未结束的 turn，可估到截止时刻，但仍受 60 分钟上限约束；没有任何工作证据则不补 held。最终回复后的无消息等待不自动延长。窗口边缘裁剪，不读取 `--at` 之后的消息/工具记录。JSON 保存候选区间及完整时间戳证据，未分类候选不算 held。
 - `user_seconds` 是段内合并后的原始 active 估计；`active_seconds`（兼容字段 `seconds`）为跨段重叠等分后的 active。held 先扣除所有 active 区间，再在杂务段之间等分，写入 `held_seconds`。Markdown 总计行单列 held。小于 0.05 分钟的非零值显示 `<0.1`，避免“0.0 分钟却有高占比”。
 - 项目映射优先读取 `human/projects.toml` 的 `[[project]]`（最长路径前缀、支持 exact），其次只读 reporter 配置里的同名表，pulse 配置可补充路径；家目录本身固定为「未归属」，忽略项目登记里的家目录前缀（含 exact 项），只有更具体路径才可匹配；其他无匹配路径仍用 cwd 最后一级。ChatGPT 项目页只提供归属，以同一 `g-p-…` 前缀映射，不计项目页的用户时间。
+- 项目归属规则优先：路径、标题、域名、ChatGPT 项目页规则命中后不可被模型改写。模型在现有活动分类调用中只补未命中段，不新增调用；schema 增加 `project`（候选项目名或 null）、`project_hint`（可为空的一句话；project 非空时清空）。候选为 `[sources].projects` 指向的项目登记名（默认 `human/projects.toml`，只读）加本次窗口全部段由规则命中的项目名（含 cwd 推出的 Infra、DsHarness 等），去重排序，在分批前固定，各批完全一致。
+- 提示词要求仅凭清楚证据归项目；看视频、闲聊、刷新闻、查生活信息可以不属于任何项目，拿不准填 null，不为填而填。候选外返回值按 null 处理，并写入 JSON `warnings` 和 stderr。JSON 每段 `project_source` 为 `rule` / `model` / `none`，模型未归属用 `project: null`；疑似未登记项目仅记 `project_hint` 供用户查看。
+- `--no-classify` 复用旧缓存没有 `project` / `project_source` 时保留当前规则归属；新缓存只有明确的 model/none 来源且匹配段归属一致时才补未命中段，当前规则命中始终优先。无额外模型调用。
 - Chrome History 复制到受限临时目录，以只读 SQLite 查询；SQL 仅查含 chatgpt.com 的记录，另校验精确 hostname，显式 CAST 时间为 INTEGER。不读取其他网站记录，退出时删除副本。项目页归属可参考窗口之前的 ChatGPT 项目页。
 - Codex 文本和 git 提交作为产出线索保留；Codex 的事件跨度只表示 agent 活动线索，仅凭这些记录用户时间为 0；Computer History 前台 active 分钟能唯一对齐其活动跨度时，才新建对应 Codex 会话段计入实测时间。git 提交存在不证明由用户手写；agent 自述标为未核实。采集保留 Codex final channel 标记；旧缓存缺标记时，以每会话最后一条消息兼容回退，不能保证是结论。
 - 段的起止取实际 active 区间与计入的 held 证据的边界；分配后 held 只取扣除 active 的有效区间。Codex session 的事件跨度仅用于归属匹配，不能充当用户活动跨度；无活动证据不产生显示时长。Claude 仍按用户消息 gap 切段，ChatGPT 同 URL 保留合段，但 Markdown 使用下述仅用于阅读的显示范围。Ear 的活动区间是裁剪后的录音跨度估计。
@@ -179,7 +183,7 @@ Computer History 接入规则：
 
 数据写入 `state/days/日期.json`、同名 `.md` 和 `state/reminders.json`，**整个 state 已忽略，不进 git**。检测缺数据时在 stderr 提示；时间估计无法确认持续阅读或用户是否真的关注页面；线下活动仅覆盖已同步的 Ear 录音，不能作为精确工时。分类通过用户配置的 Codex 模型执行，采集与存储在本机；若该模型是远程服务，提示词仍会经 Codex 发往该服务，并非离线模型推理。
 
-「人做了什么」在 render 内复用现有分类和 active，正式与 `--no-classify` 回顾都生成；无额外模型调用，计时与分类 JSON 结构不变。沿用 `project`、`category`、`summary`、`learned`、`produced`、`active_seconds`，没有新增模块或同义核心类型。
+「人做了什么」在 render 内复用现有分类和 active，正式与 `--no-classify` 回顾都生成；无额外模型调用，计时规则不变，分类 JSON 增加项目归属及来源字段。沿用 `project`、`category`、`summary`、`learned`、`produced`、`active_seconds`，没有新增模块或同义核心类型。
 
 渲染 fixture 新增项目概览排序、8 项及其他合并、分类/未分类分钟、学到/产出去重、Ear 与附属项目、空活动、推送开头及小节/全文裁剪保护；原有 fixture 覆盖合并边界、零碎排序与 6 项上限、系统程序过滤及事件归属、对话与计算机段重叠展示、单条 topic 建议、agent/git 独立分节、45/60 段规模下的裁剪顺序和字符上限及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
 
