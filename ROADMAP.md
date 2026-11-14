@@ -35,7 +35,10 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | R16 | 💤 | **ASR 常用词纠错，说话人结合环境判断** | Ear 的产品功能，11-13 已转给「Ear 项目架构」，由它在 EchoAsRecord 以 proposed 提案的形式提出。<br>① 常用词误识别，比如「Ear」被转成 year、Eer、夜：可以用纠错表或记忆让 LLM 改正，也可以按用户声音微调、做 embedding。PRTS 的 Ear 分诊已经在用 people.md、yyj.md 做纠错表。<br>② 说话人归属结合环境：例如「骑车时风声里的 A」，把内容、环境声、ASR、声纹合成一个多维判断。这是 R9 之后的扩展。<br>Ear 架构 session 的判断（11-13）：<br>- ① 值得写成提案，范围收窄为「用户词表」：转写本身只追加、不改，词表作为 ④ 的输入并登记依赖；按用户声音微调 ASR 只列为备选。<br>- ② 暂不提，等 ③ 跑起来再说。<br>- 另建议把「合并人物」提前进 MVP：新 ③ 会把用户本人的声音拆成很多未命名人物，和旧 Ear margin 不够是同一个问题。<br>11-13 Ear 架构 session 已在 EchoAsRecord 本地分支 `proposals/asr-glossary-person-merge`（8347e66）上写好三份 proposed 提案：`asr-user-glossary`、`person-merge-mvp`、`place-names-editable`（地名可改、一个地点可有多个别名）。还没推送，也没开 PR。 |
 | R6 | 🔨 | **周报改用 `reporter/bin/notify`** | 双发已实现，等用户改 CodexBridge 后关 outbox。周报摘要走 `notify phone`，`weekly_outbox = true` 默认保留 outbox；用户改掉读 `Reporter/outbox` 的 `/auto` 任务后设为 false，兼容链接暂时保留 |
 | R17 | ✅ | **事件语义层过滤（slow path）** | 11-14 用户同意，依据见 [研究 session 的 PRTS 对照笔记](../research/DsHarness/local-notes/2026-11-14-PRTS对照与diff.md)。Codex 完成并经复核合入 main（`71fc1c9`/`b032fb6`）：抽出共享 `interaction/lib/schema.py`、`run_model.py`（`ear.py` 改为调用，不留两份实现）；`event` 的 `classify()` 对规则认不出的来源，白名单内走模型分诊，不在白名单仍维持原 L0 默认，模型调用失败退化为 L1；新增 `interaction/config/filter.toml`（默认关闭）。测试：`interaction/tests/test_filter.py`、`pulse/tests/test_ear.py` 全绿，已知事件类型行为与改动前一致。见 §三-R17 |
-| R18 | 🔨 | **Thread / 订阅机制** | 11-14 用户同意，依据同上。dsh-superagent 的 Thread：同一个外部对象（PR、IM 话题）上的连续事件，一旦有 Worker 订阅，后续事件由程序直通，不再经总控决定转发给谁。PRTS 现在没有这样的外部事件源，也没有订阅登记，续接任务全靠总控手动 `wake`/`resume`。分四步：**B0 已完成**（`36cdf91`/`8b8407b`）：`interaction/bin/github_poll` 从 registry 的 cwd 历史派生 GitHub 仓库，轮询 open PR 的评论数和 CI 汇总，变化进 L1 事件队列；游标 `interaction/state/github_poll.jsonl`，带锁、关闭的 PR 立刻清游标、超过 1 MiB 自动压缩；10 分钟一次的 launchd 模板已生成，**未安装**。测试 `interaction/tests/test_github_poll.py` 全绿，未接真实网络。B1（登记 `{thread_key, task}` 订阅）、B2（匹配到订阅的事件自动 `codex queue` 给对应任务，绕开总控）还没做；B3（多个任务订阅同一个 thread）先不做。见 §三-R18 |
+| R18 | 🔨 | **Thread / 订阅机制** | 11-14 用户同意，依据同上。dsh-superagent 的 Thread：同一个外部对象（PR、IM 话题）上的连续事件，一旦有 Worker 订阅，后续事件由程序直通，不再经总控决定转发给谁。PRTS 现在没有这样的外部事件源，也没有订阅登记，续接任务全靠总控手动 `wake`/`resume`。分四步：**B0 已完成**（`36cdf91`/`8b8407b`）：`interaction/bin/github_poll` 从 registry 的 cwd 历史派生 GitHub 仓库，轮询 open PR 的评论数和 CI 汇总，变化进 L1 事件队列；游标 `interaction/state/github_poll.jsonl`，带锁、关闭的 PR 立刻清游标、超过 1 MiB 自动压缩；10 分钟一次的 launchd 模板已生成，**未安装**。测试 `interaction/tests/test_github_poll.py` 全绿，未接真实网络。B1（登记 `{thread_key, task}` 订阅）、B2（匹配到订阅的事件自动 `codex queue` 给对应任务，绕开总控）还没做；B3（多个任务订阅同一个 thread）先不做。**11-14 用户调整方向**：DS 的设计基于企业环境（GitHub、飞书），PRTS 是 personal agent，主要来源是 Computer History 和 Ear；订阅单位改为「项目组」。见 §三-R18「个人版」 |
+| R19 | 💤 | **提前行动（投机执行，DS §3.4）** | 用户 11-14：DS 的例子是提前草拟回复邮件；用户的例子是「看到我在上课，就去清华网络学堂把这节课的课件拉到对应目录」。见 §三-R19 |
+| R20 | 💤 | **链式召回实验（DS §3.3）** | 用户 11-14：和研究层 E2「上下文压缩 = 页面置换，存根把静默缺页变成显式缺页」最相关，可以设计实验。归研究层，见 §三-R20 |
+| R21 | 💤 | **全双工 agent loop（DS §4.1）** | 用户 11-14：Codex 似乎已经能做到。总控核对（11-14）：本机 Codex 的 app-server 协议里有 `turn/steer`（往正在跑的 turn 里注入输入）和 `turn/interrupt`；PRTS 现在只用 `codex queue`（排到下一轮）。待验证 steer 能不能在工具调用还没返回时让模型看到新消息 |
 
 ## 二、以后再说（候选池）
 
@@ -124,6 +127,31 @@ PRTS 要做什么、做到哪了，都以这一份为准。
   3. 只要 `updatedAt` 变了就发一条「有更新」的 L1，agent 自己 push、打标签都会触发；agent 自己发的评论也会触发，L1 队列会被自己的动作灌满。应该只对「别人的评论或评审」和「CI 状态变化」发事件。
   4. R17 和 B0 没有接上：github_poll 用 `event add L1` 直接定级，绕过了 `classify()`；`classify()` 的慢速分支只在 `from-agentconsole` 的未知 kind 上生效，所以 R17 目前没有实际的事件来源。
   - 另外：桌面 app 对绑定到 session 的 PR 已经有自己的 CI/评论监控（Auto-fix），B2 路由时要避免和它重复处理同一个 PR。
+
+#### R18 个人版（用户 11-14）
+- **来源**：主要是 Computer History（电脑上在做什么）和 Ear（线下说了什么、在哪），GitHub 只是次要来源。目标和 DS 一致：滤掉杂讯，不让总控处理和分发太多信息。
+- **fast path 的两个作用**：
+  - 丢掉噪声（DS 的程序层过滤）；
+  - **直通**：已经有人订阅的事件，由程序直接送到订阅者，不经过总控。
+- **订阅单位是「项目组」**：一个持续进行的项目（以 `human/projects.toml` 的登记为准）下面有好几个 session，比如 Ear 有架构、手机端、GPS 等。它们订阅同一个项目组，项目相关的事件按项目分发。现成的例子：
+  - Ear 录音分诊（`pulse ear`）的 `agent_work` 已经按项目出结果，现在要靠总控手动转；
+  - Computer History 的窗口和 pulse 的分类已经带项目，「用户在某项目上卡住、反复排障」可以直通给该项目组的 session。
+- **对 B0 的影响**：上面复核出的 4 个缺口照旧要补，但 B1/B2 的订阅登记要按项目组设计，不只是 PR 的 `thread_key`。项目归属是这一切的前提，而 11-13 日报里有 352 分钟没对上项目，所以项目归属要先改进。
+
+### R19 提前行动
+- 例子：用户在上课时，自动把这节课的课件从网络学堂拉到对应课程目录。
+- **触发**：
+  - 课表是确定性规则，走 fast path；
+  - Ear 分诊的 `kind=class`、GPS 在教学楼可以作为确认信号；
+  - 不靠模型猜「是不是在上课」。
+- **动作**：下载课件是只读的，可逆，适合先做，结果只放进本地目录，不对外发任何东西。
+- **前提**：网络学堂要登录。agent 不能代输密码，要由用户自己配置一次登录态（可参考开源的 thu-learn-lib / learnX 的做法），凭据不进 git。
+- 原则沿用 DS：只先做「做错了也没代价」的准备工作，要对外的动作（发邮件、提交）仍然先问。
+
+### R20 链式召回实验
+- DS §3.3：上下文放不下时，把内容卡片截断、留一个 id 指针，模型需要时按 id 一跳一跳读回来。这对应研究层 E2 里的「存根」：E2 发现存根是最大的单一因素，链式召回相当于把一个存根换成可以多跳追溯的引用链。
+- 可以设计的对照：单层存根 vs 带 id 的多跳链；看召回准确率、跳数，以及「该回读却没回读」（静默缺页）的比例。
+- 实验设计归研究层（`~/research/PRTS`，E2/E4），由研究 session 写，这里只登记方向。
 
 ## 四、已完成（最近的在上）
 - R5 ✅（2026-11-13）：**Codex 派发的沙盒选项**。dispatch / resume 支持显式 `--sandbox network` / `full`，必须附非空 `--approved-by`，start 事件记录沙盒与批准依据；默认不变，dry-run 与替身回归验证通过，未实际派发放宽沙盒的任务。用法见 [interaction/README.md](interaction/README.md)。
