@@ -1187,3 +1187,4 @@ PRTS 的长期愿景是：
 | 2026-11-14 | DeepSeek Harness 导读 session（local_6c93f091）在 PRTS main 上合入 R17（event 慢速模型分诊，白名单默认关，抽出共享 `interaction/lib/schema.py`、`run_model.py`，ear.py 改用它）和 R18 B0（`interaction/bin/github_poll`，launchd 模板未安装）：71fc1c9/b032fb6、36cdf91/8b8407b、47908f0。R18 B1/B2 待派。总控已核对提交存在。 |
 | 2026-11-14 | 用户要求看 DsHarness session 给 PRTS 加的新架构（R17 事件慢速分诊、R18 B0 GitHub 轮询）。复核：代码和测试全绿、默认关闭、未装定时器；B0 有 4 个缺口（缺结构化 thread_key、漏看 reviews、updatedAt/自身动作产生噪音、R17 与 B0 没接上），已写进 ROADMAP R18。 |
 | 2026-11-14 | 用户对 DS 新架构的方向调整：PRTS 是 personal agent，来源以 Computer History/Ear 为主；fast path 既滤噪也直通；订阅单位是「项目组」。另立 R19 提前行动（上课→拉网络学堂课件）、R20 链式召回实验（对应研究层 E2 存根）、R21 全双工（本机 Codex app-server 有 `turn/steer`）。写入 ROADMAP。 |
+| 2026-11-14 | 项目归属（9142c87）：规则优先，模型在分类时顺带补，不硬归。11-13 真实重算（总控在沙盒外跑）：不属于项目 356→105 分；归属来源 rule 52 / model 154 / none 375 段。抽样：模型归上的 10 段全对（OS 课、EchoAsRecord、AIInfra 等），不属于项目的 10 段都合理（历史视频、股票页、微信、空白标签页）。遗留：PRTS 有三个名字（PRTS / PRTS 总控台 / PRTS 总控台（主 session）），本日 project_hint 为空。 |
