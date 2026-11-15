@@ -62,7 +62,13 @@ interaction/bin/resume example SESSION_UUID /path/to/repo message.md 6 600 --san
 
 运行 `interaction/bin/github_poll` 扫描一次。通过 `lib/registry` 读取所有历史 cwd，查询各目录的 origin，识别 github.com 的 HTTPS、SSH（含 scp 写法）和 git URL，按 owner/repo 去重；目录失效、没有 origin 或非 GitHub 地址静默跳过。不另设仓库配置表。运行环境须有已认证且能读目标仓库的 `gh`、`git`、Python 3。
 
-只列出 open PR，再逐个读取评论和 CI。首次发现只建立基线；以后 `updated_at`、评论数、CI 汇总任一改变，调用 `bin/event add L1 github_poll "owner/repo#123 …"`，同一次观测的多项变化合成一条事件。只有更新时间变化也会产生「有更新」。CI 合并 CheckRun 和 StatusContext：failure 优先于 pending，其后为 success；没有检查为 none，未识别值为 unknown；取消、超时和需要操作视为 failure，neutral/skipped 视为成功。这里的评论数来自 `gh pr view` 的 comments，不单独抓取 review 的行内评论。
+只列出 open PR，再读取 comments、reviews、分页 pulls/comments 行内意见及 CI。
+用 gh api user 取当前账号，缓存到 state/github_user.json；切换账号后删除缓存再运行。
+首次观测（含旧版游标迁移）只建基线，之后仅他人评论/评审/行内意见数量和 CI
+汇总变化产生事件，自己的内容和单纯 updatedAt 不触发。registry 的 cwd origin
+对应仓库，项目按 cwd 最长登记路径匹配；匹配不到为 null。事件带 gh:owner/repo#N，
+经 event classify，L1 是无订阅且不开 slow path 时的默认。
+CI failure 优先于 pending，再为 success；无检查 none，未识别 unknown。
 
 默认游标路径 `interaction/state/github_poll.jsonl`，随 `PRTS_INTERACTION_STATE` 更改。每行如：
 
@@ -72,11 +78,11 @@ interaction/bin/resume example SESSION_UUID /path/to/repo message.md 6 600 --san
 
 读、比较、事件入队和追加共用稳定锁 `.github_poll.lock`；并发运行遇锁跳过，留到下次。未变化不追加。成功列出的 open 集合中已消失的 PR 不再 view，追加 `{"key":"owner/repo#123","deleted":true,"t":"…"}` 清除游标，不产生关闭事件；重新打开视为首次发现。日志超过 1 MiB 时在同一锁内原子压缩，只保留每个仍被跟踪 PR 的最新游标，不保留历史或关闭项；因此大小随被跟踪 PR 数量而非轮询次数增长。
 
-外部命令 stdin 关闭，每次超时 30 秒。仓库或单个 PR 失败写 stderr，继续其他仓库/PR，失败观测不推进游标。事件成功后才记录游标，失败下轮重试；若进程恰在入队成功后、保存游标前中断，可能重复事件（不保证 exactly-once）。列表上限显式设为 10000；触及上限时拒绝本仓库本轮结果并报错，避免把被截断的 PR 当作已关闭。
+外部命令 stdin 关闭，每次超时 30 秒。仓库或单个 PR 失败写 stderr，继续其他仓库/PR，失败观测不推进游标。事件成功后才记录游标，失败下轮重试；观测派生稳定事件 ID，入队后游标保存前中断，重送不会重复投递。列表上限显式设为 10000；触及上限时拒绝本仓库本轮结果并报错，避免把被截断的 PR 当作已关闭。
 
 定时模板在 `config/launchd/com.prts.interaction-github-poll.plist`，每 600 秒一次。模板使用 `/Users/prts/PRTS` 的正式路径；用户合并后核对路径及 PATH，先创建 `interaction/state/` 和 `~/Library/LaunchAgents/`，再复制模板到 `~/Library/LaunchAgents/`，自行执行 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.interaction-github-poll.plist`。stdout/stderr 写 `interaction/state/github_poll.log`。本改动只提供模板，不自动安装。
 
-离线测试：`python3 interaction/tests/test_github_poll.py`，使用临时 state、替身 git/gh 和真实的本地 event 入队。B0 只产生 L1 事件，等待复核；不登记订阅、不路由、不调用 queue/resume，也不唤醒 agent。真实 GitHub 和 launchd 安装不属于此测试覆盖。
+离线测试：`python3 interaction/tests/test_github_poll.py`，使用临时 state、替身 git/gh 和真实的本地 event 入队。无订阅时默认 L1；有订阅可路由，测试必须隔离 state 并替换 Codex。真实 GitHub 和 launchd 安装不属于此测试覆盖。
 
 ## Worktree 派发与清理
 

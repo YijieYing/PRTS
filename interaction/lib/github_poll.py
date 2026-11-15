@@ -1,4 +1,5 @@
-"""GitHub changes become L1 events; no subscriptions or routing."""
+"""Observe other users feedback and CI transitions, then classify events."""
+import hashlib
 import datetime as dt
 import fcntl
 import json
@@ -10,6 +11,10 @@ import subprocess
 import sys
 
 I = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(I.parent))
+from interaction.lib.projects import match
+
+REPO_PROJECTS = {}
 registry = runpy.run_path(str(I / 'lib/registry'))
 TIMEOUT = 30
 COMPACT_BYTES = 1024 * 1024
@@ -37,6 +42,8 @@ def repositories():
         match = re.fullmatch(r'(?:git@github\.com:|(?:https?|ssh|git)://(?:git@)?github\.com/)([\w.-]+/[\w.-]+?)(?:\.git)?/?', remote, re.I)
         if match:
             result.add(match[1].lower())
+            from interaction.lib.projects import match as project_match
+            REPO_PROJECTS[match[1].lower()] = project_match(cwd)
     return sorted(result)
 
 
@@ -104,6 +111,12 @@ def poll(repo: str, state_dir: Path) -> list[dict]:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 return events
+            user_path = state_dir / 'github_user.json'
+            if user_path.exists():
+                login = json.loads(user_path.read_text())['login']
+            else:
+                login = json.loads(run(['gh', 'api', 'user']))['login']
+                user_path.write_text(json.dumps({'login': login}))
             path = state_dir / 'github_poll.jsonl'
             latest = read_cursors(path)
             prs = json.loads(run(['gh', 'pr', 'list', '--repo', repo, '--state', 'open',
@@ -118,24 +131,38 @@ def poll(repo: str, state_dir: Path) -> list[dict]:
                 key = f'{repo}#{number}'
                 try:
                     detail = json.loads(run(['gh', 'pr', 'view', str(number), '--repo', repo,
-                                             '--json', 'comments,statusCheckRollup,updatedAt']))
+                                             '--json', 'comments,reviews,statusCheckRollup,updatedAt']))
                     if not isinstance(detail['comments'], list) or not isinstance(detail['updatedAt'], str):
                         raise ValueError('invalid PR details')
-                    row = dict(key=key, updated_at=detail['updatedAt'], comments=len(detail['comments']),
+                    inline_pages = json.loads(run(['gh', 'api', '--paginate', '--slurp',
+                        f'repos/{repo}/pulls/{number}/comments']))
+                    inline = [comment for page in inline_pages for comment in page]
+                    def others(items):
+                        return sum(1 for item in items if
+                            (item.get('author') or item.get('user') or {}).get('login') not in (None, login))
+                    row = dict(key=key, updated_at=detail['updatedAt'], comments=others(detail['comments']),
+                               reviews=others(detail['reviews']), inline=others(inline),
                                ci=ci_state(detail['statusCheckRollup']))
                     old = latest.get(key)
-                    fields = ('updated_at', 'comments', 'ci')
+                    fields = ('comments', 'reviews', 'inline', 'ci')
                     if old and all(old.get(f) == row[f] for f in fields):
                         continue
-                    if old:
+                    if old and all(f in old for f in fields):
                         changes = []
                         if old['comments'] != row['comments']:
                             changes.append(f"评论数从 {old['comments']} 变成 {row['comments']}")
+                        for field, label in (('reviews', '评审数'), ('inline', '行内意见数')):
+                            if old[field] != row[field]:
+                                changes.append(f"{label}从 {old[field]} 变成 {row[field]}")
                         if old['ci'] != row['ci']:
                             changes.append(f"CI 从 {old['ci']} 变成 {row['ci']}")
                         text = key + ' ' + '；'.join(changes or ['有更新'])
                         env = dict(os.environ, PRTS_INTERACTION_STATE=str(state_dir))
-                        run([str(I / 'bin/event'), 'add', 'L1', 'github_poll', text], env=env)
+                        event_id = 'gh:' + hashlib.sha256(json.dumps([key, old, row], sort_keys=True).encode()).hexdigest()
+                        command = [str(I / 'bin/event'), 'add', 'L1', 'github_poll', text,
+                                   '--thread', 'gh:'+key, '--kind', 'github_poll', '--id', event_id]
+                        if REPO_PROJECTS.get(repo): command += ['--project', REPO_PROJECTS[repo]]
+                        run(command, env=env)
                         events.append(dict(level='L1', source='github_poll', text=text))
                     row['t'] = now
                     append(path, row)  # Never advance a cursor if event delivery failed.
