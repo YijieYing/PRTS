@@ -87,8 +87,8 @@
 | `bin/notify <log\|wechat\|phone\|alert\|note> [--title T] (--text\|--file) [--url U] [--folder F]` | notify | 送达一条通知。log 只记录；wechat 发微信；phone 用 Bark 推到 iPhone（`--url` 点开时打开）；alert = Bark + macOS 通知（11-12 起不再发微信）；note 把全文写进 Apple 备忘录文件夹（11-14 起日报全文放这里）。旧用法（不带级别）等同 wechat |
 | `bin/ask add\|next\|due\|reply\|answer\|close\|expire\|render\|wait` | ask | 提问队列。紧急度：blocking（每 30 分钟重复提醒）、timely（推送一次）、soon（每日汇总）、whenever（等用户开 session）。见 reporter/README |
 | `bin/todo add\|list\|done` | todo | 用户自己的待办，存在 Apple 提醒事项的「PRTS」列表，会同步到 iPhone。见 reporter/README |
-| `bin/recap` | recap | 每晚由 launchd 运行：pulse day → 全文写进备忘录「PRTS 日报」，推送前 8 行（Bark + macOS）。见 reporter/README |
-| `bin/remind` | remind | 每小时由 launchd 运行：pulse check → ask due，有问题才推送（Bark + macOS）。见 reporter/README |
+| `bin/recap` | recap | 每晚由 launchd 运行：pulse ear sync --no-notify → pulse day → 全文写进备忘录「PRTS 日报」，推送前 8 行（Bark + macOS）。见 reporter/README |
+| `bin/remind` | remind | 每小时由 launchd 运行：pulse ear sync → pulse check → ask due，有问题才推送（Bark + macOS）。见 reporter/README |
 | `pulse focus` | focus | 专注时段：set 目标和截止时间，launchd（com.prts.pulse-focus，每 5 分钟）跑 check，偏离目标太久就推送提醒；离开电脑不计。见 pulse/README §十一 |
 | `bin/report weekly [日期]` | report | 生成并送达周报 |
 | `bin/report daily` | report | 把 aquant 日报校验后放进微信发件箱（launchd 每 10 分钟和文件变化时触发） |
@@ -121,3 +121,5 @@
 - **单写者**：每个目录只有一个写入者，见上表。`human/inbox.md` 只由总控写：各处发现的事先进 `interaction` 的事件队列，总控验收时整理进 inbox。
 - **不循环读自己**：总控改了 `human/` 就立刻提交。「人类修改」事件只认 `human/` 中**未提交**的改动，所以总控自己的改动不会被再读一遍。
 - **只走接口**：模块之间只调用对方的 `bin/`，不读写对方的 `lib/` 或 `state/`；显式共享库例外为 `interaction/lib/projects.py`（项目别名和路径）、`interaction/lib/schema.py` 和 `interaction/lib/run_model.py`（Ear 与事件分诊共用，领域 prompt/schema 由调用方持有）。外部工具（Codex、CodexBridge）也只用它们的公开命令；唯一的例外写在 `interaction/lib/codex` 里。
+
+Ear：pulse 默认通过新 Ear 的只读 read_transcripts 脚本获取逐句转写，按时间窗切段；source=old 保留旧 SQLite 兼容。同步复用 reporter 的 remind/recap，无独立 Ear 定时器。

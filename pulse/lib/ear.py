@@ -1,12 +1,17 @@
-"""Compatibility dependency on legacy Ear's private SQLite payloads (schema 0.1).
+"""依赖新 Ear 的 read_transcripts 输出格式；兼容解析集中在 new_transcripts。
+
+Compatibility dependency on legacy Ear's private SQLite payloads (schema 0.1).
 
 All legacy parsing lives here. Read with mode=ro, including WAL; never immutable,
 never migrate or write the source. Replace this adapter when Ear has a public API.
 """
 from collections import defaultdict
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import fcntl
+import hashlib
+import shlex
+import shutil
 import json
 import math
 import os
@@ -22,6 +27,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[2]
 # Shared structured-model primitives; prompts and schemas remain owned by Ear.
 sys.path.insert(0, str(ROOT))
+from interaction.lib.projects import canonical
 from interaction.lib.schema import object_schema, validate
 from interaction.lib.run_model import classify_with_model
 TZ = ZoneInfo('Asia/Tokyo')
@@ -216,6 +222,68 @@ def publish(state, record, no_notify, max_push=4):
     save(state/'notifications.json',notices)
 
 
+def new_transcripts(cfg, start, end):
+    """Only compatibility boundary for the new Ear script and its JSONL format."""
+    command = os.environ.get('PULSE_EAR_COMMAND')
+    cwd = Path(cfg.get('repository', '~/research/EchoAsRecord')).expanduser()
+    env = dict(os.environ)
+    if not command:
+        env['EAR_ADAPTER_STORAGE_URL'] = env.get('EAR_ADAPTER_STORAGE_URL', 'http://127.0.0.1:18796')
+        env['EAR_ADAPTER_STORAGE_TOKEN'] = env.get('EAR_ADAPTER_STORAGE_TOKEN') or Path(
+            cfg.get('token_file', '~/Library/Application Support/EarPipeline/adapter-token')).expanduser().read_text().strip()
+    output = []
+    devices = cfg.get('devices', [])
+    if not devices: raise ValueError('ear.devices is empty')
+    for device in devices:
+        if not re.fullmatch(r'[A-Za-z0-9_-]+', device): raise ValueError('invalid Ear device')
+        args = shlex.split(command) if command else [shutil.which('uv') or next((str(p) for p in (Path('/opt/homebrew/bin/uv'), Path('~/.local/bin/uv').expanduser()) if p.is_file()), 'uv'), 'run', 'python', 'services/adapters/scripts/read_transcripts.py']
+        result = subprocess.run(args + ['--device', device, '--start', utc(start), '--end', utc(end)],
+                                cwd=None if command else cwd, env=env, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=180)
+        if result.returncode: raise RuntimeError('read_transcripts failed (rc=%s)' % result.returncode)
+        unique = {}
+        for line in result.stdout.splitlines():
+            row = json.loads(line)
+            # Real script filters by --device; optional device field helps defensive fixtures.
+            if row.get('device', device) != device: continue
+            a, b = stamp(row['start']), stamp(row['end'])
+            if not start <= a < end: continue
+            if b < a: raise ValueError('invalid transcript interval')
+            text = row['text']
+            if not isinstance(text, str): raise ValueError('invalid transcript text')
+            item = (a, b, text, str(row['speaker_scope']), str(row['speaker']))
+            unique[item] = item
+        output.extend((device, *item) for item in sorted(unique))
+    return sorted(output)
+
+
+def utc(t):
+    return datetime.fromtimestamp(t, timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def new_segments(items, width, gap):
+    groups = []
+    for device, a, b, text, scope, speaker in items:
+        window = int(a // width) * width
+        if not groups or groups[-1]['device'] != device or groups[-1]['window'] != window or a - groups[-1]['end'] > gap:
+            groups.append(dict(device=device, window=window, start=a, end=b, speech=[]))
+        g = groups[-1]; g['end'] = max(g['end'], b)
+        g['speech'].append((a, b, text, scope, speaker))
+    rows, evidence_by_id = [], {}
+    for g in groups:
+        cid = g['device'] + ':' + utc(g['start'])
+        labels = {}; lines = [f'# {cid}', '', f"时间：{local(g['start']).isoformat()} – {local(g['end']).isoformat()}（东京）", '', '说话人标签仅在本段及分离作用域内有效。', '', '## 转写']
+        for a, b, text, scope, speaker in g['speech']:
+            key = (scope, speaker)
+            labels.setdefault(key, f'S{len(labels)+1:02d}')
+            lines.append(f'[{local(a):%H:%M:%S}] {labels[key]}（作用域 {scope}）: {text}')
+        md = '\n'.join(lines)+'\n'
+        rows.append(dict(capture_id=cid, started_at=utc(g['start']), ended_at=utc(g['end']), ready=True,
+                         device=g['device'], window=g['window'], fingerprint=hashlib.sha256(json.dumps(g['speech'], ensure_ascii=False).encode()).hexdigest()))
+        evidence_by_id[cid] = (md, sum(len(re.sub(r'\s', '', x[2])) for x in g['speech']))
+    return rows, evidence_by_id
+
+
 def sync(c, root, no_notify=False, retriage=False, since=None):
     if retriage != (since is not None): raise ValueError('--retriage 和 --since 必须一起使用')
     cutoff = stamp(since) if since is not None else None
@@ -226,24 +294,53 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
     max_push = cfg.get('max_push_per_day',4)
     if type(max_push) is not int or max_push < 0: raise ValueError('ear.max_push_per_day must be a nonnegative integer')
     with locked(state/'sync.lock'):
-        with database(os.environ.get('PULSE_EAR_DB',cfg.get('database',DEFAULT_DB))) as db:
-            rows = captures(db,cfg.get('start_from','2026-11-12T12:00:00+09:00'))
-            done = read(state/'cursor.json',[])
-            pending = [(r, evidence(db,r)) for r in rows if r['ready'] and
-                       ((r['capture_id'] in done and stamp(r['started_at']) >= cutoff) if retriage else r['capture_id'] not in done)]
+        source = cfg.get('source', 'new')
+        fresh = source == 'new'
+        if source not in ('new', 'old'): raise ValueError('ear.source must be new or old')
+        if fresh:
+            width = cfg.get('window_minutes', 30) * 60
+            gap = cfg.get('gap_minutes', 10) * 60
+            lookback = cfg.get('lookback_hours', 24) * 3600
+            if width <= 0 or gap < 0 or lookback < 0: raise ValueError('invalid Ear window/gap/lookback')
+            cursor = read(state/'new-cursor.json', dict(until=None, segments={}))
+            end = time.time()
+            lower = stamp(cfg.get('start_from', '2026-11-12T12:00:00+09:00'))
+            start = max(lower, (cursor['until'] or lower) - lookback)
+            if retriage: start = max(lower, cutoff)
+            start = int(start // width) * width
+            query_start, query_end = start, end
+            try:
+                items = new_transcripts(cfg, start, end) if end > start else []
+                rows, evidence_by_id = new_segments(items, width, gap)
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.TimeoutExpired) as error:
+                save(state/'availability.json', dict(ok=False, checked=end))
+                print('warning: Ear 数据缺失：'+str(error), file=sys.stderr)
+                return
+            rows = [r for r in rows if stamp(r['started_at']) >= lower]
+            done = cursor['segments']
+            pending = [(r, evidence_by_id[r['capture_id']]) for r in rows
+                       if r['capture_id'] in done and stamp(r['started_at']) >= cutoff] if retriage else [
+                           (r, evidence_by_id[r['capture_id']]) for r in rows if done.get(r['capture_id']) != r['fingerprint']]
+        else:
+            with database(os.environ.get('PULSE_EAR_DB',cfg.get('database',DEFAULT_DB))) as db:
+                rows = captures(db,cfg.get('start_from','2026-11-12T12:00:00+09:00'))
+                done = read(state/'cursor.json',[])
+                pending = [(r, evidence(db,r)) for r in rows if r['ready'] and
+                           ((r['capture_id'] in done and stamp(r['started_at']) >= cutoff) if retriage else r['capture_id'] not in done)]
         results = state/'results'; results.mkdir(exist_ok=True)
         directory = state/'captures'; directory.mkdir(exist_ok=True)
         previous_ids = {r['capture_id']: rows[i-1]['capture_id'] if i else None for i,r in enumerate(rows)}
         for capture, (md, chars) in pending:
             cid = capture['capture_id']
-            if not re.fullmatch(r'[A-Za-z0-9_-]+',cid): raise ValueError('无效 capture_id')
+            if not re.fullmatch(r'[A-Za-z0-9_: .+-]+' if fresh else r'[A-Za-z0-9_-]+',cid): raise ValueError('无效 capture_id')
             start, end = stamp(capture['started_at']), stamp(capture['ended_at'])
             path = directory/(local(start).strftime('%Y-%m-%dT%H%M%S')+'-'+cid+'.md')
             write(path,md)
             previous = read(results/(str(previous_ids[cid])+'.json'),None)
+            if fresh and previous and previous.get('device') != capture['device']: previous = None
             if previous and not previous['start'] <= start <= previous['end'] + cfg.get('continuation_gap_minutes',30)*60: previous = None
             record = read(results/(cid+'.json'),None)
-            if record is None or retriage:
+            if record is None or retriage or (fresh and record.get('fingerprint') != capture['fingerprint']):
                 if chars < threshold:
                     answer = dict(kind='noise',user_speaking=0,value='low',title='说话内容不足，暂不分诊',
                                   summary=['说话字数低于阈值。','未调用模型，未判断说话人。','不进入用户活动时间线。'],
@@ -251,16 +348,46 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
                 else:
                     context = {k:previous[k] for k in ('title','summary')} if previous else None
                     answer = triage(md,context,state)
+                old_group = record.get('group') if record else None
+                if fresh and old_group is None:
+                    for old_path in sorted(results.glob('*.json')):
+                        old = read(old_path, {})
+                        if old.get('device') == capture['device'] and old['start'] < end and start < old['end']:
+                            old_group = old['group']; break
                 answer['continues'] = bool(answer['continues'] and previous)
                 record = dict(answer,capture=cid,start=start,end=end,time=local(start).isoformat(),
                               file=str(path.resolve()),chars=chars,
-                              group=previous['group'] if answer['continues'] else cid)
+                              group=old_group or (previous['group'] if answer['continues'] else cid))
+                if fresh: record.update(fingerprint=capture['fingerprint'], device=capture['device'], window=capture['window'])
+                for work in record['agent_work']: work['project'] = canonical(work['project'], c.get('mapping', [])) or ''
                 with locked(state/'inbox.lock'):
                     save(results/(cid+'.json'),record)
             if not retriage:
                 if record['value']=='high': publish(state,record,no_notify,max_push)
-                done.append(cid); save(state/'cursor.json',done)
+                if fresh:
+                    done[cid] = capture['fingerprint']
+                    save(state/'new-cursor.json', cursor)
+                else:
+                    done.append(cid); save(state/'cursor.json',done)
             print(json.dumps({k:record[k] for k in ('capture','time','title','value','kind')},ensure_ascii=False),flush=True)
+
+        if fresh:
+            if not retriage:
+                # Backfill can bridge a gap or move a segment's start. Retire obsolete
+                # results only after all replacement segments have succeeded.
+                ids = {r['capture_id'] for r in rows}
+                stale = set()
+                for path in results.glob('*.json'):
+                    r = read(path, {})
+                    if r.get('device') in cfg.get('devices', []) and query_start <= r.get('window', -1) < query_end and r['capture'] not in ids:
+                        stale.add(r['capture']); path.unlink()
+                        Path(r['file']).unlink(missing_ok=True)
+                        done.pop(r['capture'], None)
+                with locked(state/'inbox.lock'):
+                    write(state/'inbox.jsonl', ''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in inbox(state) if r['capture'] not in stale))
+                cursor['until'] = query_end
+                save(state/'new-cursor.json', cursor)
+            save(state/'availability.json', dict(ok=True, checked=query_end))
 
 
 def wait(root, poll=30, gap_minutes=40):

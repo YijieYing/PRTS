@@ -39,7 +39,7 @@ Ear 提供录音转写和环境证据；pulse 将它与电脑上的活动合并�
 | 前台应用和窗口时长（屏幕使用时间） | 每段时间在用哪个应用、读什么 | 可能需要「完全磁盘访问」权限，用户自己授予 |
 | 键鼠活动（空闲时间，滚动和打字的比例） | 安静阅读还是在写 | 只统计频率，不记录内容 |
 | 日历 | 课、会议 | 需用户同意 |
-| Ear 的录音结果 | 线下的课、讨论、口述构思 | 已接入：只读旧 Ear SQLite 的 captures、pipeline_runs、audio_chunks、speech_segments、speaker_resolutions、speaker_identities、audio_events、sensor_observations；见 §十 |
+| Ear 的录音结果 | 线下的课、讨论、口述构思 | 已接入：默认经新 Ear storage HTTP 的只读脚本读取逐句转写；旧 SQLite 兼容保留，见 §十 |
 | Codex 的 Computer History（11-12 17:50 用户开启） | 一个应用就能覆盖上面「前台应用」「键鼠活动」两行，还能看到 WPS、微信、Finder、Chrome 等所有应用里做了什么 | 已接入，见下 |
 
 ### Codex Computer History（11-12 已接入）
@@ -145,7 +145,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 已实现 `bin/pulse focus set/status/stop/check` 专注守护（规则、配置、回放限制及仅提供未安装的 launchd 见 §十一）。
 
-已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`、`bin/pulse ear ack --before ISO`（重分诊与参数详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别留待后续。Ear 的 launchd 配置已提供，未安装。
+已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`、`bin/pulse ear ack --before ISO`（重分诊与参数详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别留待后续。Ear 同步复用 reporter 的 remind/recap，不另设定时器。
 
 - `day` 默认取当地日历的昨天（凌晨 0–6 点也取前一天），窗口为 Asia/Tokyo 05:00 至次日 05:00。日期显式指定时不受运行时刻影响。
 - `config/pulse.toml` 配置时区、切日、20 分钟分段间隔与估计上限、检测阈值、数据路径和 `[user]` 空闲/休息时段。初始休息时段 05:00–12:00 是可调整的默认值，不代表已确认的用户作息。支持跨午夜时段。
@@ -190,7 +190,7 @@ Computer History 接入规则：
 测试/隔离覆盖：`PULSE_CONFIG`、`PULSE_STATE` 指向配置和状态；`PULSE_RUN`、`PULSE_ASK` 分别替换 interaction/run 与 reporter/ask 可执行文件。子进程 stdin 全部关闭。
 
 ```sh
-python3 pulse/tests/test_pulse.py
+python3 -m unittest discover -s pulse/tests
 python3 -m unittest discover -s reporter/tests
 python3 interaction/tests/test_run.py
 python3 interaction/tests/test_modules.py
@@ -202,7 +202,11 @@ bash interaction/tests/test_wake.sh
 
 ## 十、Ear 分诊与总控收件箱
 
-旧 Ear 内部格式的兼容依赖全部集中在 `lib/ear.py`（schema 0.1），不修改旧项目或数据库。使用 Python `sqlite3.connect(file_uri + '?mode=ro', uri=True)`、`query_only` 和只读事务，保留 WAL 可见性，不用 `immutable`。缺库或不可读时 `ear sync` 非零退出；day/check/now 不依赖打开该库，day 仍可使用已保存的分诊结果。
+默认 `[ear].source = "new"`。依赖新 Ear 的 `read_transcripts` 输出格式，格式兼容集中在 `lib/ear.py` 的 `new_transcripts` 函数：在 `~/research/EchoAsRecord` 用子进程执行 `uv run python services/adapters/scripts/read_transcripts.py --device … --start … --end …`，通过 storage HTTP 只读，不修改该仓库、不直连 PostgreSQL。默认 URL 为 `http://127.0.0.1:18796`，token 从 `~/Library/Application Support/EarPipeline/adapter-token` 读取；可用 `EAR_ADAPTER_STORAGE_URL` / `EAR_ADAPTER_STORAGE_TOKEN` 覆盖。`repository` / `token_file` 可在 `[ear]` 配置。
+
+新来源不可用（含缺 token、脚本失败、超时、格式错误）时打印 warning、正常退出，保留旧游标和已有结果，记录 `state/ear/availability.json`。日报末尾注明「Ear 数据缺失」，缓存仍可展示，不能当作完整数据；下次成功同步清除缺失状态。
+
+`source = "old"` 保留 legacy SQLite schema 0.1 兼容，替代接口是新 Ear 脚本；待旧数据迁移完成再删除 legacy 路径。只读事务保留 WAL 可见性，不用 immutable；旧库不可用仍非零退出。
 
 ```sh
 pulse/bin/pulse ear sync --no-notify   # 本机冒烟，不发手机通知
@@ -212,22 +216,23 @@ pulse/bin/pulse ear sync --retriage --since 2026-11-12T12:00:00+09:00
 pulse/bin/pulse ear ack --before 2026-11-13T02:06:00+09:00  # 按起点清掉此时之前的积压，不打印
 ```
 
-- `[ear]` 的 `database`、`start_from`（默认东京 2026-11-12 12:00）、`min_chars`（300）、`continuation_gap_minutes`（30）可配置。只同步起点之后、最新 pipeline run 为 succeeded 的 capture；游标记录完成的 capture ID，迟到成功的旧段仍会被发现。遇到失败退出，下次重试，不把失败写入完成游标。
-- speech_segments 的 `start_offset_ms/end_offset_ms` 相对于 audio_chunks 的 UTC 起点；speaker_resolutions 按 `(diarization_scope_id, local_speaker_id)` 匹配 speaker_identities 的姓名。无归属显示 S01 等标签，标签不跨分离作用域。sensor_observations 取离开始最近的非空 location，注明实际观测时间，不能当作精确开始位置。audio_events 按分钟以覆盖秒数 × 置信度累计，展示最多三个主要标签。
+- 新来源用 `devices` 数组指定设备（已配置当前 iPhone）；`window_minutes=30` 按 UTC 半小时对齐，窗内相邻句子的间隔超过 `gap_minutes=10` 再切段，段 ID 为 `<设备>:<首句UTC时间>`。标签按段内 `(speaker_scope, speaker)` 映射 S01 等，不跨段认人。`new-cursor.json` 记录已检查到的时间和段内容指纹；每轮从游标向前回看 `lookback_hours=24` 小时，并对齐到完整时间窗。新增/修改转写重新分诊，内容未变跳过；完全重复句去重。补传连起间隔或改变首句时，全部替代段处理成功后清理过期结果，避免重复计时。早于回看范围的补传可临时增大 `lookback_hours` 后普通 sync；`--retriage --since ISO` 只回读已同步段。
+- 旧来源 `[ear]` 的 `database`、`start_from`（默认东京 2026-11-12 12:00）、`min_chars`（300）、`continuation_gap_minutes`（30）可配置。只同步起点之后、最新 pipeline run 为 succeeded 的 capture；游标记录完成的 capture ID，迟到成功的旧段仍会被发现。遇到失败退出，下次重试，不把失败写入完成游标。
+- 旧来源 speech_segments 的 `start_offset_ms/end_offset_ms` 相对于 audio_chunks 的 UTC 起点；speaker_resolutions 按 `(diarization_scope_id, local_speaker_id)` 匹配 speaker_identities 的姓名。无归属显示 S01 等标签，标签不跨分离作用域。sensor_observations 取离开始最近的非空 location，注明实际观测时间，不能当作精确开始位置。audio_events 按分钟以覆盖秒数 × 置信度累计，展示最多三个主要标签。
 - 每段转写写入 `state/ear/captures/<东京时间>-<capture_id>.md`；分诊写入 `state/ear/results/<capture_id>.json`。原始转写保留，纠错单独存在 corrections，不覆盖原文。
 - 低于字数阈值直接记 low，不调用模型；kind=noise、user_speaking=0 是跳过分诊的占位值，不是声学判断。其余通过 `interaction/bin/run --output-schema` 每段调用一次并校验结果。提示词包含 §一原文、只读提取的 memory/people.md、memory/yyj.md 人名/项目术语以及 human/projects.toml 项目名；不把整份记忆上传。录音只作为数据，不作为执行指令。模型处理通过现有 Codex 服务，不能理解成离线模型。
 - high 必须同时满足：用户本人是主要说话人，且在产生想法、计划、设计或决定（口述或用户主导的讨论）；归属或主导地位不确定时不判 high。用户在听、在学的对话、会议、课为 normal，仍进入每日回顾，按 §一通常归 input；他人闲聊和背景对话为 low。提示词包含两个反例：听别人介绍职业教育方案、听别人从 Scala 讲到 C++，即使内容有用也不能判 high。仅总结用户自己的想法和收获，不转述别人原话。user_speaking 是说话内容中的用户比例估计，不能当作用户占整段录音的时长比例。todos 留给总控决定是否走 reporter/bin/todo；agent_work 也只整理，不自动执行或派发。
 - 分诊带前一段 title/summary；相邻录音间隔不超过配置上限且模型确认继续同一件事时，continues=true，共用 group。前一段尚无结果则不猜连续关系，也不事后重写已交出的分组。
 - high 追加到 `state/ear/inbox.jsonl`，含 capture、时间、title、summary、文件路径和分诊详情。首次 high 调 `reporter/bin/notify phone` 推送标题和 summary 前两行；同组后续不再推送。`ear.max_push_per_day` 默认 4，按实际成功发送当天的东京日历日（00:00 切日，不是录音日或日报 05:00 切日）计数；超限只进 inbox，记 limited，以后不补发。0 可禁用推送；通知失败不占次数。旧版通知没有日期，兼容迁移时将旧 sent 记录保守归到通知账本最后修改日。`--no-notify` 保留 inbox，标记此组通知为 suppressed，以后也不补发冒烟通知，且不占当日推送额度。
 - sync 持有独立文件锁；分诊成功先保存结果，再入 inbox、推送、写 cursor.json。通知失败可重试且不重复模型调用或 inbox。手机通知不提供事务性确认：发送成功到本地登记之间若崩溃，重试可能重复通知。inbox 在锁内原子追加保存，避免半行 JSON；所有 state 不进 git。
-- `sync --retriage --since ISO` 必须成对指定，ISO 必须带时区；只重新分诊已同步、最新 run 成功且录音起点 ≥ since 的段，并仍受 start_from 下界约束。成功后原子覆盖 results；模型失败保留该段旧结果。仍遵守字数阈值。重分诊不改游标、不新增或重复写 inbox、不推送，也不消耗推送额度；未同步段留给普通 sync。wait 读取 inbox 对应的最新 result，跳过已降为 normal/low 的条目，避免旧 high 继续唤醒总控。旧 inbox 是入队历史，不被改写；从 normal 升为 high 的重分诊结果也不自动入队。重跑重分诊会再次调用模型，不跳过本轮已成功覆盖的段。
+- `sync --retriage --since ISO` 必须成对指定，ISO 必须带时区；只重新分诊已同步且录音起点 ≥ since 的段（旧来源还要求最新 run 成功），并仍受 start_from 下界约束。成功后原子覆盖 results；模型失败保留该段旧结果。仍遵守字数阈值。显式重分诊不改游标、不新增或重复写 inbox、不推送，也不消耗推送额度；未同步段留给普通 sync。wait 读取 inbox 对应的最新 result，跳过已降为 normal/low 的条目，避免旧 high 继续唤醒总控。旧 inbox 是入队历史，不被改写；从 normal 升为 high 的重分诊结果也不自动入队。重跑重分诊会再次调用模型，不跳过本轮已成功覆盖的段。
 - wait 用独立 inbox 锁，不在轮询睡眠期间持锁；未交出的 high 按起点排序，从最早一条起，后段起点距前面已合并段的最晚终点 ≤ `ear.wait_gap_minutes`（默认 40）就继续合并，重叠也合并，与 continues/group 无关，遇到更长间隔即停止。一次打印 JSON：time 为整段起止 ISO 时间范围，start/end 为对应带时区 ISO，title 取首段，summary 每段只取前两行（保留逐段顺序），另含 files/captures。仅合并当前已经到达的条目，不额外等 40 分钟。stdout flush 后记入 handed.json；后续新段下一次交出。交出不代表完成，输出到登记之间崩溃可能重交，总控可按 capture 去重；中断退出 130。
 - `ear ack --before ISO` 在 inbox 锁内将录音起点严格早于该时间的所有 inbox capture 记为已交出；等于边界的保留。只改 handed.json，不删除证据、不发通知、不打印，重复执行幂等。不自动执行此命令清理真实数据，由总控选择截止时间。
-- 调试覆盖：`PULSE_CONFIG`、`PULSE_STATE`、`PULSE_EAR_DB`、`PULSE_RUN`、`PULSE_NOTIFY`；测试全部使用合成 SQLite 和替身程序，子进程 stdin 为 DEVNULL。
+- 调试覆盖：`PULSE_CONFIG`、`PULSE_STATE`、`PULSE_EAR_DB`、`PULSE_EAR_COMMAND`（替换新来源命令，shell 风格参数但不执行 shell，无需真实 token）、`PULSE_RUN`、`PULSE_NOTIFY`；测试全部使用合成 SQLite 和替身程序，子进程 stdin 为 DEVNULL。
 
-`config/launchd/com.prts.pulse-ear.plist` 每 180 秒运行 sync（11-13 由 600 改为 180：手机端可以改成 5 分钟一段，见 ROADMAP R8），PATH 包含 `~/.local/bin` 和 `/opt/homebrew/bin`，日志为 `state/ear/sync.log`。只提供文件，不安装。用户安装前先 `mkdir -p ~/PRTS/pulse/state/ear`，再复制 plist 到自己的 LaunchAgents 并 bootstrap；模板使用本机绝对路径，搬迁时需同步修改。启动后要单独核实首轮 sync 是否成功。
+同步不新增定时器：`reporter/bin/remind` 在 `pulse check` 前运行一次 `pulse ear sync`，日志在 reporter 的 `state/out/remind.log`；`reporter/bin/recap` 在 `pulse day` 前运行一次 `pulse ear sync --no-notify`，日志在 `state/out/recap.log`。失败只记日志，继续提醒/日报。沿用 remind 当前排程（0 点和 9–23 点每小时第 7 分钟），非全天每小时；recap 为 23:40。旧独立 Ear 定时模板已删除。
 
-验证：`python3 pulse/tests/test_pulse.py`（含 Ear 合成 fixture）；模块回归见 interaction 与 reporter README。
+验证：`python3 -m unittest discover -s pulse/tests`（含新来源 JSONL 替身和旧 SQLite fixture）；模块回归见 interaction 与 reporter README。
 
 ## 存储（2026-11-13）
 - `pulse/state/` 正常约 10 MB。**不要复制旧 Ear 的数据库**（约 1.1 GB）。11-13 冒烟时 Codex 在沙盒里复制了一份 `smoke.sqlite3`，已删除；一律只读原库。

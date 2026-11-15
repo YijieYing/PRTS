@@ -21,7 +21,7 @@ class EarTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
         self.db=self.root/'ear.sqlite3'; self.state=self.root/'state'; self.state.mkdir()
-        self.c=pulse.config(); self.c['ear']=dict(database=str(self.db),start_from='2026-11-12T12:00:00+09:00',min_chars=300)
+        self.c=pulse.config(); self.c['ear']=dict(source='old',database=str(self.db),start_from='2026-11-12T12:00:00+09:00',min_chars=300)
         self.base=ear.stamp('2026-11-12T12:00:00+09:00')
         with closing(sqlite3.connect(self.db)) as db, db:
             for table,cols in dict(captures='capture_id,started_at',pipeline_runs='pipeline_run_id,capture_id,status,created_at',

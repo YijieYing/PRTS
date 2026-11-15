@@ -851,6 +851,9 @@ def main():
                 raise
             if not a.no_classify: data['classification_status']='complete'
             data['segments'].extend(ear.day(state,start,end))
+            canonicalize(data['segments'], c)
+            if not ear.read(state/'ear/availability.json', {'ok': True})['ok']:
+                data['warnings'].insert(0, 'Ear 数据缺失（同步不可用；已有缓存可能不完整）。')
             data['focus']=focus.day(state,start,end,c)
             md=render(data,date,c)
             atomic(days/(date+suffix+'.json'),json.dumps(data,ensure_ascii=False,indent=2)); atomic(days/(date+suffix+'.md'),md); print(md,end='')
