@@ -1,103 +1,152 @@
 # 项目登记表（你可以直接改）。Reporter 周报和以后的话题路由都用它。
 # path 是目录前缀（本机写 ~/...，lain 写 lain:/home/...），category 取：工程 / 学术 / 课程 / 总控 / 其他
 # 最长前缀优先匹配；exact = true 表示只匹配这个目录本身。
+# group = "大项目"：PRTS / 具身与果蝇脑 / 机器人硬件 / 课程 / 工具与赚钱 / Outreach（用户 11-16 定；Ear 属 PRTS，芯动属机器人硬件）。
+# roadmap = "路径" 可选：这个工程自己的 ROADMAP，即它的 todo 来源。
 # aliases = [...] 可选：同一项目的其他叫法（比如 ChatGPT 里的项目名），pulse 会归到 name 下。
 
 [[project]]
 name = "aquant 交易 bot / BigQuant"
 path = "~/Projects/aquant"
 category = "工程"
+group = "工具与赚钱"
 
 [[project]]
 name = "PRTS 总控台"
 path = "~/PRTS"
 category = "总控"
 aliases = ["PRTS", "PRTS 总控台（主 session）"]   # 同一项目的其他叫法（ChatGPT 里的项目名、旧名）；pulse 归成一个
+group = "PRTS"
+roadmap = "~/PRTS/ROADMAP.md"
 
 [[project]]
 name = "PRTS 研究"   # 研究层（E1–E5 实验），和总控台分开；登记后 cwd 不再落成裸名「PRTS」
 path = "~/research/PRTS"
 category = "学术"
+group = "PRTS"
 
 [[project]]
 name = "PRTS 总控台"   # 家目录里的主 session 也算总控台（用户 11-14 同意合并）
 path = "~"
 category = "总控"
 exact = true   # 只匹配家目录本身，不吞掉下面的子目录
+group = "PRTS"
 
 [[project]]
 name = "记账"
 path = "~/Projects/ledger"
 category = "工程"
+group = "工具与赚钱"
 
 [[project]]
 name = "CodexBridge 微信秘书"
 path = "~/CodexBridge"
 category = "工程"
+group = "PRTS"
 
 [[project]]
 name = "CodexBridge 秘书"
 path = "~/codexbridge-secretary"
 category = "工程"
+group = "PRTS"
 
 [[project]]
 name = "AIInfra 中转站"
 path = "~/Projects/AIInfra"
 category = "工程"
+group = "工具与赚钱"
 
 [[project]]
 name = "Codex 原理学习"
 path = "~/research/LearnCodex"
 category = "学术"
+group = "PRTS"
 
 [[project]]
 name = "果蝇脑 DigitalFly"
-path = "~/Projects/DigitalFly"
+path = "~/research/DigitalFly"   # 10-25 从 ~/Projects 移来
 category = "学术"
+group = "具身与果蝇脑"
 
 [[project]]
 name = "SwarmBot 多机器人"
 path = "~/Projects/SwarmBot"
 category = "学术"
+group = "机器人硬件"
 
 [[project]]
 name = "NatureCalls（软工课 Unity）"
 path = "~/Projects/NatureCalls"
 category = "课程"
+group = "课程"
 
 [[project]]
 name = "XinDong 小车"
 path = "~/Projects/XinDong"
 category = "课程"
+group = "机器人硬件"
 
 [[project]]
 name = "课程作业"
 path = "~/school"
 category = "课程"
+group = "课程"
 
 [[project]]
 name = "OS 课（rCore）"
 path = "lain:/home/yijieying/Undergrad_3_Autumn"
 category = "课程"
 aliases = ["Infra"]   # 11-14 用户同意合并：~/research/Infra 目前只放 OS 课；以后开始做 PRTS 硬件层探索，就给那个子目录单独登记
+group = "课程"
 
 [[project]]
 name = "OS 课（rCore）"   # 本机的 OS 课工作区（补课计划、大作业方案）
 path = "~/research/Infra"
 category = "课程"
+group = "课程"
 
 [[project]]
 name = "lain 上的项目"
 path = "lain:/home/yijieying/projects"
 category = "工程"
+group = "工具与赚钱"
 
 [[project]]
 name = "Ear 手机端（octopus-flutter）"
 path = "~/research/octopus-flutter"
 category = "工程"
+group = "PRTS"
 
 [[project]]
 name = "Ear（EchoAsRecord）"   # 新 Ear 主仓库；11-15 登记，让 thread 视图和 pulse 能认出 Ear 的工作
 path = "~/research/EchoAsRecord"
 category = "工程"
 aliases = ["EchoAsRecord"]
+group = "PRTS"
+roadmap = "~/research/EchoAsRecord/ai-docs/plans/mvp-implementation.md"
+
+
+[[project]]
+name = "SomaNet"
+path = "~/research/SomaNet"
+category = "学术"
+group = "具身与果蝇脑"
+
+[[project]]
+name = "DsHarness"   # DeepSeek super-agent 设计文档导读
+path = "~/research/DsHarness"
+category = "学术"
+group = "PRTS"
+
+[[project]]
+name = "AgentConsole"
+path = "~/PRTS/AgentConsole"
+category = "工程"
+group = "PRTS"
+roadmap = "~/PRTS/ROADMAP.md"   # AgentConsole 的事在 PRTS ROADMAP 的 M 编号里
+
+[[project]]
+name = "Outreach"   # 申请（学术、实习）；用户 11-16：重要、要跟进，暂未开始
+path = "~/outreach"
+category = "其他"
+group = "Outreach"
