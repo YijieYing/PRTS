@@ -27,7 +27,7 @@
 | `maintenance/` | maintenance | 一次性维护脚本和备份，不承诺接口 | — |
 | `ops/` | legacy links | 过渡期：只剩指向新位置的链接，2026-11-21 前后删除 | — |
 | `GLOSSARY.md` | glossary | 本文件 | 总控 |
-| `ROADMAP.md` | roadmap | 唯一的计划表：下一步、候选池、已完成 | 总控 |
+| `ROADMAP.md` | roadmap | PRTS 的计划表；其他工程的计划路径在 human/projects.toml 的 roadmap 字段登记 | 总控 |
 
 ## interaction/（与 agent 交互 / agent interaction）
 ### 对象 / Objects
@@ -40,6 +40,8 @@
 | 记录 | registry event | 派发、结束、唤醒、容量重试等动作的流水账 |
 | 事件 | event | 需要总控验收或需要你知道的事，按 L0/L1/L2 分级，进入事件队列 |
 | 验收 | review | 用户/总控验收任务；bin/review 追加 reviewed=true，--undo 撤销，新运行重置 |
+| 大项目 | group | projects.toml 中的工程分组；status threads --json 的 groups 按登记顺序输出 |
+| 工作团队 | team | 工程 thread 的订阅者及近期 registry 派发参与会话；通过 kind:id 对应 AgentConsole 会话 |
 | 事件主线 | thread | 同一外部对象或项目的连续事件，thread_key 标识；区别于 Codex 会话 UUID |
 | 订阅 | subscription | 项目或 thread 到 codex/claude 目标的显式登记；可暂停、恢复、删除 |
 | 路由 | routed | 按订阅投递的审计记录；route.status 标明已入队或待人工转发 |

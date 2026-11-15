@@ -1,5 +1,6 @@
 """Read-only projection for AgentConsole; all fields form the CLI contract."""
 from .projects import canonical, match
+from .groups import groups
 from .subscriptions import latest, read, registry, now
 
 def snapshot():
@@ -32,7 +33,8 @@ def snapshot():
                 thread['last_event_at'] = e.get('t')
                 thread['last_event'] = ' '.join(e.get('text', '').split())[:240] or None
     tasks = {}
-    for r in registry['rows']():
+    rows = registry['rows']()
+    for r in rows:
         name = r.get('name')
         if not name: continue
         if r.get('event') == 'start':
@@ -56,4 +58,6 @@ def snapshot():
         view = dict(name=name, status=task['status'], started_at=task['t'],
                     report=str(report.resolve()) if report.is_file() else None, reviewed=task['reviewed'])
         for key in keys: get(key, project)['tasks'].append(view)
-    return dict(generated_at=now(), threads=[threads[k] for k in sorted(threads)])
+    generated_at = now()
+    return dict(generated_at=generated_at, threads=[threads[k] for k in sorted(threads)],
+                groups=groups(threads, subscriptions, rows, generated_at))

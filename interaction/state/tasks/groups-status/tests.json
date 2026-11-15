@@ -1,0 +1,97 @@
+[
+  {
+    "test": "interaction/tests/test_filter.py",
+    "rc": 0,
+    "seconds": 2.1,
+    "tests": 5
+  },
+  {
+    "test": "interaction/tests/test_github_poll.py",
+    "rc": 0,
+    "seconds": 16.5,
+    "tests": 9
+  },
+  {
+    "test": "interaction/tests/test_groups.py",
+    "rc": 0,
+    "seconds": 0.4,
+    "tests": 2
+  },
+  {
+    "test": "interaction/tests/test_modules.py",
+    "rc": 0,
+    "seconds": 40.7,
+    "tests": 15
+  },
+  {
+    "test": "interaction/tests/test_run.py",
+    "rc": 0,
+    "seconds": 1.5,
+    "tests": 3
+  },
+  {
+    "test": "interaction/tests/test_threads.py",
+    "rc": 0,
+    "seconds": 7.2,
+    "tests": 6
+  },
+  {
+    "test": "interaction/tests/test_wake.sh",
+    "rc": 0,
+    "seconds": 4.9
+  },
+  {
+    "test": "interaction/tests/test_worktrees.py",
+    "rc": 0,
+    "seconds": 7.2,
+    "tests": 6
+  },
+  {
+    "test": "pulse/tests/test_ear.py",
+    "rc": 0,
+    "seconds": 16.3,
+    "tests": 18
+  },
+  {
+    "test": "pulse/tests/test_focus.py",
+    "rc": 0,
+    "seconds": 2.2,
+    "tests": 12
+  },
+  {
+    "test": "pulse/tests/test_new_ear.py",
+    "rc": 0,
+    "seconds": 4.3,
+    "tests": 5
+  },
+  {
+    "test": "pulse/tests/test_pulse.py",
+    "rc": 0,
+    "seconds": 22.9,
+    "tests": 91
+  },
+  {
+    "test": "reporter/tests/test_ear_sync.py",
+    "rc": 0,
+    "command": "python3 -m unittest discover -s reporter/tests -p test_ear_sync.py -v",
+    "tests": 1
+  },
+  {
+    "test": "reporter/tests/test_questions.py",
+    "rc": 0,
+    "seconds": 12.3,
+    "tests": 12
+  },
+  {
+    "test": "reporter/tests/test_recap.py",
+    "rc": 0,
+    "seconds": 2.8,
+    "tests": 3
+  },
+  {
+    "test": "reporter/tests/test_weekly.py",
+    "rc": 0,
+    "seconds": 12.0,
+    "tests": 6
+  }
+]

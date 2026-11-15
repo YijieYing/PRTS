@@ -3,6 +3,7 @@
 # 最长前缀优先匹配；exact = true 表示只匹配这个目录本身。
 # group = "大项目"：PRTS / 具身与果蝇脑 / 机器人硬件 / 课程 / 工具与赚钱 / Outreach（用户 11-16 定；Ear 属 PRTS，芯动属机器人硬件）。
 # roadmap = "路径" 可选：这个工程自己的 ROADMAP，即它的 todo 来源。
+# roadmap_prefix = "R" 可选：只取表格中编号以此前缀开头的条目；共享 ROADMAP 时区分工程。
 # aliases = [...] 可选：同一项目的其他叫法（比如 ChatGPT 里的项目名），pulse 会归到 name 下。
 
 [[project]]
@@ -18,6 +19,7 @@ category = "总控"
 aliases = ["PRTS", "PRTS 总控台（主 session）"]   # 同一项目的其他叫法（ChatGPT 里的项目名、旧名）；pulse 归成一个
 group = "PRTS"
 roadmap = "~/PRTS/ROADMAP.md"
+roadmap_prefix = "R"
 
 [[project]]
 name = "PRTS 研究"   # 研究层（E1–E5 实验），和总控台分开；登记后 cwd 不再落成裸名「PRTS」
@@ -144,6 +146,7 @@ path = "~/PRTS/AgentConsole"
 category = "工程"
 group = "PRTS"
 roadmap = "~/PRTS/ROADMAP.md"   # AgentConsole 的事在 PRTS ROADMAP 的 M 编号里
+roadmap_prefix = "M"
 
 [[project]]
 name = "Outreach"   # 申请（学术、实习）；用户 11-16：重要、要跟进，暂未开始

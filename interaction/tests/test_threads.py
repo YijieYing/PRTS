@@ -138,7 +138,8 @@ if '-o' in sys.argv:
             counts=object_schema({k:{'type':'number','minimum':0} for k in ('events','routed','pending')}),
             tasks={'type':'array','items':object_schema(dict(name=string,status={'type':'string','enum':['running','done','failed']},
                 started_at=string,report=nullable,reviewed={'type':'boolean'}))}))}))
-        validate(value,schema)
+        self.assertIn('groups', value)
+        validate({k: value[k] for k in ('generated_at', 'threads')},schema)
         self.assertTrue(all(t['tasks'][0]['reviewed'] for t in value['threads']))
         self.call('bin/review','task','--undo')
         self.assertFalse(json.loads(self.call('bin/status','threads','--json').stdout)['threads'][0]['tasks'][0]['reviewed'])

@@ -141,9 +141,9 @@ queue 失败保留 L1。成功 queue 只代表入队，不代表执行完成。
 
 AgentConsole 直接以关闭 stdin、捕获 stdout 的子进程调用
 `interaction/bin/status threads --json`，不需要 HTTP 服务。
-输出一个 JSON 对象，所有字段都存在；空数据为 threads=[]：
+输出一个 JSON 对象，顶层字段为 `generated_at`、`threads`、`groups`。原有 threads 条目契约不变；无活动时 threads=[]，groups 仍列出登记的所有工程：
 ```json
-{"generated_at":"ISO8601","threads":[{"key":"project:EchoAsRecord","kind":"project","project":"EchoAsRecord","title":"EchoAsRecord","subscribers":[{"id":"sub_…","to":"codex:…","paused":false}],"last_event_at":null,"last_event":null,"counts":{"events":0,"routed":0,"pending":0},"tasks":[{"name":"任务名","status":"done","started_at":"ISO8601","report":null,"reviewed":false}]}]}
+{"generated_at":"ISO8601","groups":[],"threads":[{"key":"project:EchoAsRecord","kind":"project","project":"EchoAsRecord","title":"EchoAsRecord","subscribers":[{"id":"sub_…","to":"codex:…","paused":false}],"last_event_at":null,"last_event":null,"counts":{"events":0,"routed":0,"pending":0},"tasks":[{"name":"任务名","status":"done","started_at":"ISO8601","report":null,"reviewed":false}]}]}
 ```
 kind 为 project|gh|ear|other，project/last_event_at/last_event/report 可为 null。
 tasks.status 为 running|done|failed。任务按最新 start 后的 registry 状态聚合，
@@ -151,5 +151,37 @@ tasks.status 为 running|done|failed。任务按最新 start 后的 registry 状
 同一事件可同时出现在外部 thread 与所属项目；counts 不含路由审计副本，
 routed 为完全直通事件数，pending 为仍处 new 的事件数。
 `interaction/bin/review <任务名> [--undo]` 追加 reviewed 记录；新一轮 start 重置 false。
+
+新增 `groups` 是「大项目 → 工程 → 工作团队」投影，前端默认显示到工程，展开再显示团队：
+```json
+{"name":"PRTS","projects":[{"name":"AgentConsole","thread":"project:AgentConsole","paths":["~/PRTS/AgentConsole"],"roadmap":{"path":"/Users/prts/PRTS/ROADMAP.md","open":[{"id":"M1","title":"检测 agent 在等人","status":"💤"}],"error":null},"team":[{"kind":"codex","id":"codex:<UUID>","title":"任务名","subscribed":false,"last_active":"ISO8601"}],"tasks_running":0,"tasks_unreviewed":0,"last_event_at":null}]}
+```
+上例为 groups 数组的一个元素。工程来自 `human/projects.toml`（测试可用 `PRTS_PROJECTS` 替换），
+同名项合并 paths、去重并保持登记顺序；group/roadmap/roadmap_prefix 取同名项第一个非空值。
+组按 group 首次出现顺序排列，缺 group 的工程归最后的「未分组」。没有活动或 ROADMAP 也保留工程。
+paths 保留配置写法；roadmap.path 展开 `~`，未配置则为 null，open=[]、error=null。
+
+ROADMAP 支持 `| R12 | 💤 | **标题** | …` 编号表格和 `- [ ] 标题` 任务清单，
+表格状态含 ✅ 的行和 `[x]`/`[X]` 不算未完成，代码围栏里的示例跳过。
+open 按文件顺序最多 5 条；任务清单的 id/status 为 null。读文件失败或未识别任何受支持条目时，
+open=[] 且 error 为原因，不中断 status；全部完成或前缀未命中属于正常空结果。
+可选 `roadmap_prefix` 只保留指定编号前缀的表格行（无编号清单不匹配前缀）。
+共享 PRTS ROADMAP 的「PRTS 总控台」配置 R，「AgentConsole」配置 M。
+
+team 使用现有订阅和 PRTS registry，不依赖 AgentConsole HTTP 服务或扫描对话全文：
+- 未暂停、未删除且订阅该 project thread 的目标全部保留，subscribed=true；PR/ear 等其他 thread 的订阅不扩展为工程订阅。
+- 历史团队来自每次 dispatch/resume 的 Codex thread 与 caller；按该次 cwd/worktree.repo 最长目录前缀归属。
+  caller 表示派发参与者，不能证明 caller 自身 cwd 在工程内；未经过 PRTS 派发且未订阅的桌面会话不在此来源中。
+  Codex 的 last_active 为该次 start/thread/exit/gave_up 最新时间；caller 仅取 start 时间，review 不算会话活动。
+  title 为最近派发任务名（并非桌面自定义标题）；未知 title/last_active 为 null。
+- 按 kind:id 去重，订阅覆盖历史身份；历史非订阅成员仅取最近 14 天（含边界，不含未来）最多 10 个。
+  显式订阅不受历史窗口/数量限制；整个 team 按 last_active 倒序、空值最后，同时间按 id 排序。
+- AgentConsole 左栏匹配：去掉 `codex:` 后是其 agent.id（Codex 线程 UUID）；
+  `claude:` 后是 CLI session ID 时匹配 agent.id，是 `local_…` 时匹配 agent.app_session_id。
+  两种 Claude ID 在 registry 无映射时分别保留，不推测它们是同一会话。
+
+tasks_running 统计原有对应 project thread 中 status=running 的任务；tasks_unreviewed 统计
+已结束（done/failed）且 reviewed=false 的任务；last_event_at 沿用该 thread，无 thread 则 0/0/null。
+新增 fixture 验收：`python3 interaction/tests/test_groups.py`；所有测试 CLI 子进程关闭 stdin。
 
 R18 离线验收：python3 interaction/tests/test_threads.py（含严格字段 schema 校验）；pulse/tests/test_ear.py 与 test_pulse.py 的 PULSE_EVENT 替身验证来源，所有测试状态均隔离。
