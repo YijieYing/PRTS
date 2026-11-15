@@ -159,6 +159,13 @@ def main():
         if rc == 0 or not any('at capacity' in line for line in tail):
             if not a.wake_id:
                 registry['append'](dict(name=a.name, event='exit', rc=rc, via=a.mode) | {'try': i})
+            if rc == 0 and a.worktree and a.mode == 'exec':
+                record_thread(a.name, log)
+                sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+                from interaction.lib.subscriptions import auto
+                try: auto(a.name, log, a.output, json.loads(a.worktree))
+                except (OSError, ValueError) as exc:
+                    registry['append'](dict(name=a.name, event='subscription_failed', reason=str(exc)))
             return rc
         if a.wake_id:
             subprocess.run([str(Path(__file__).with_name('wake_state')), '_capacity', a.wake_id, str(i)], check=True)

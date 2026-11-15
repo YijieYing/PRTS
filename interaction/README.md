@@ -107,3 +107,14 @@ clean 使用本地 `origin/<默认分支>` 引用判断提交包含关系（不�
 `interaction/lib/projects.py`，未知名称保留，未归属为 null。
 thread_key 约定：GitHub PR 为 `gh:<owner>/<repo>#<n>`；
 项目为 `project:<规范名>`；连续录音为 `ear:<首段 capture_id>`。
+
+登记：`subscribe add --project PRTS --to codex:<UUID>` 或
+`subscribe add --thread gh:owner/repo#123 --to claude:local_<id>`；
+`subscribe list`、`subscribe pause <id>`、`resume <id>`、`remove <id>`。
+subscriptions.jsonl 只追加、取最新记录，修改带锁。有效订阅指未删除、未暂停；
+不依赖 UI 在线状态，Codex 可排队到已有线程。多个目标可订阅同一项目。
+成功的 worktree dispatch 从本次 last.md/run.log 的 PR URL 自动登记到该次
+Codex UUID；不自动订阅整个 cwd 项目。需项目范围时手动用上述 --project 命令。
+PR URL 提取不能证明链接一定是本次新建的 PR，报告引用的 PR 也可能匹配，
+请用 list/remove 管理。绑定桌面 app Auto-fix 的 PR 不要登记 PRTS 订阅；
+PRTS 无法判断 app 的 PR 绑定状态。
