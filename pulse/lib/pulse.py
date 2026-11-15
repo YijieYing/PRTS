@@ -317,9 +317,7 @@ def project_source(s):
     return s.get('project_source') or ('none' if s.get('project') in NO_PROJECT else 'rule')
 
 
-def aliases(c):
-    """projects.toml `aliases = [...]`: other names the same project shows up under (e.g. a ChatGPT project title)."""
-    return {a: p['name'] for p in c.get('mapping', []) for a in p.get('aliases', [])}
+from interaction.lib.projects import aliases
 
 
 def canonicalize(segments, c):

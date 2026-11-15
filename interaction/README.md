@@ -99,3 +99,11 @@ clean 使用本地 `origin/<默认分支>` 引用判断提交包含关系（不�
 有已跟踪改动或未跟踪文件就跳过；忽略文件不计入改动。未合并时说明原因，并在没有任何远程引用包含当前提交时标为「未推送」。通过检查后仅用 `git worktree remove`、`git branch -d`，不用强制删除。若 `-d` 拒绝（例如 squash 后无可证明已合并的 upstream），工作树已移除而分支保留，并打印原因。`--dry` 只读，不移除工作树或分支；运行中的任务应由调用方验收后再清理。
 
 回归：`python3 interaction/tests/test_worktrees.py`，真实临时仓库和裸远程、Codex/gh 替身，子进程关闭 stdin；不清理真实工作树。
+
+## thread 与订阅
+
+事件可带 `--thread <key> --project <name> --kind <kind>`。规范字段是
+`thread_key`、`project`、`kind`；项目 aliases 与 pulse 共用
+`interaction/lib/projects.py`，未知名称保留，未归属为 null。
+thread_key 约定：GitHub PR 为 `gh:<owner>/<repo>#<n>`；
+项目为 `project:<规范名>`；连续录音为 `ear:<首段 capture_id>`。

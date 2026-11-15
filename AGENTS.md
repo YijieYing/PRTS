@@ -9,7 +9,7 @@
   - 反过来，属于输入和输出的部分（实验设计、玩家体验、研究概念）要留给用户，agent 提供材料和选项，不替用户定。
 - `human/`：给人看的入口，必须简短易读，人类可以直接写。产出报告时，要同步更新 `human/README.md` 里的链接。开工时先用 `git diff human/` 读取人类的修改。
 - `memory/`：只由总控写。其他 agent 只读，产出写到自己的项目里。
-- 模块结构见 `README.md` 和 `GLOSSARY.md`：每个模块分 `bin/`（对外命令）、`lib/`（内部）、`config/`、`state/`（运行时数据）。模块之间只调用对方的 `bin/`；显式共享库例外：`interaction/lib/schema.py`、`interaction/lib/run_model.py` 供 Ear 与事件分诊共用，领域 prompt/schema 留在调用方。运行日志（`*.log`）不进 git。
+- 模块结构见 `README.md` 和 `GLOSSARY.md`：每个模块分 `bin/`（对外命令）、`lib/`（内部）、`config/`、`state/`（运行时数据）。模块之间只调用对方的 `bin/`；显式共享库例外：`interaction/lib/projects.py（项目别名与路径匹配）、interaction/lib/schema.py`、`interaction/lib/run_model.py` 供 Ear 与事件分诊共用，领域 prompt/schema 留在调用方。运行日志（`*.log`）不进 git。
 - `interaction/`：派发（`bin/dispatch`）、续跑、唤醒、事件队列。任务说明和报告在 `interaction/state/tasks/<任务>/`。
 - `reporter/`：周报、日报、通知（`bin/notify`）。只有它对外发消息，而且只发给用户本人。
 - `human/inbox.md` 只由总控写；其他代码有事要报告时，调用 `interaction/bin/event add`。
