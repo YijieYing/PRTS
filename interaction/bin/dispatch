@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: dispatch <task> <workdir> [prompt-file] [--sandbox network|full --approved-by TEXT] [--dry] [extra codex exec args...]
+# usage: dispatch <task> <workdir> [prompt-file] [--worktree BRANCH [--base REF]] [--sandbox network|full --approved-by TEXT] [--dry] [extra codex exec args...]
 set -eu
 I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 S=${PRTS_INTERACTION_STATE:-$I/state}
@@ -9,9 +9,14 @@ wd=$(cd "$wd" && pwd)
 LOG=$S/tasks/$name
 prompt=$LOG/prompt.md
 if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then prompt=$1; shift; fi
+branch=""; base=""
 options=(); extra=(); dry=${DISPATCH_DRY:-0}
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --worktree|--base)
+      [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
+      [ -n "$2" ] || { echo "$1 requires a nonempty value" >&2; exit 2; }
+      if [ "$1" = --worktree ]; then branch=$2; else base=$2; fi; shift 2 ;;
     --sandbox|--approved-by)
       [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
       options+=("$1" "$2"); shift 2 ;;
@@ -21,11 +26,21 @@ while [ "$#" -gt 0 ]; do
     *) extra+=("$1"); shift ;;
   esac
 done
+[ -z "$base" ] || [ -n "$branch" ] || { echo "--base requires --worktree" >&2; exit 2; }
 mkdir -p "$LOG"
 [ "$(cd "$(dirname "$prompt")" && pwd)/$(basename "$prompt")" = "$(cd "$LOG" && pwd)/prompt.md" ] || cp "$prompt" "$LOG/prompt.md"
 args=(--cwd "$wd" --prompt "$LOG/prompt.md" --name "$name" --log "$LOG/run.log" --output "$LOG/last.md")
 # Bash 3.2 with nounset needs the + expansion for empty arrays.
 args+=(${options[@]+"${options[@]}"})
+# Validate permissions before creating a worktree.
+"$I/lib/codex" "${args[@]}" --check exec -- ${extra[@]+"${extra[@]}"}
+if [ -n "$branch" ]; then
+  wtargs=(prepare --repo "$wd" --branch "$branch")
+  [ -z "$base" ] || wtargs+=(--base "$base")
+  metadata=$(python3 "$I/lib/worktrees.py" "${wtargs[@]}" < /dev/null)
+  wd=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["path"])' "$metadata")
+  args+=(--cwd "$wd" --worktree "$metadata")
+fi
 if [ "$dry" = 1 ]; then
   exec "$I/lib/codex" "${args[@]}" --dry exec -- ${extra[@]+"${extra[@]}"}
 fi

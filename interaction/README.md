@@ -4,7 +4,8 @@
 
 | 命令 | 用法 |
 |---|---|
-| `bin/dispatch` | `<task> <workdir> [prompt文件] [--sandbox network或full --approved-by "用户原话或出处"] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）只复制 prompt、记录命令，不启动 Codex 或写 registry |
+| `bin/dispatch` | `<task> <workdir> [prompt文件] [--worktree 分支 [--base ref]] [--sandbox network或full --approved-by "用户原话或出处"] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）复制 prompt、记录命令（带 `--worktree` 时也准备工作树），不启动 Codex 或写 registry |
+| `bin/worktrees` | `list` 或 `clean [--dry] [--all]`：列出工作树；只清理干净且已合并的工作树 |
 | `bin/resume` | `<task> <session UUID> <cwd> <消息文件> [重试次数=6] [间隔秒=600] [--sandbox network或full --approved-by "用户原话或出处"] [--dry]`；同步执行 |
 | `bin/wake` | `add <带时区ISO时间或HH:MM> <UUID或精确会话名> <prompt文件> [--name NAME] [--mode resume或queue]`；`list`；`cancel <id>` |
 | `bin/github_poll` | 不带参数运行一次，从 registry 的 cwd 派生 GitHub 仓库，PR 变化进入 L1 复核队列 |
@@ -76,3 +77,25 @@ interaction/bin/resume example SESSION_UUID /path/to/repo message.md 6 600 --san
 定时模板在 `config/launchd/com.prts.interaction-github-poll.plist`，每 600 秒一次。模板使用 `/Users/prts/PRTS` 的正式路径；用户合并后核对路径及 PATH，先创建 `interaction/state/` 和 `~/Library/LaunchAgents/`，再复制模板到 `~/Library/LaunchAgents/`，自行执行 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.interaction-github-poll.plist`。stdout/stderr 写 `interaction/state/github_poll.log`。本改动只提供模板，不自动安装。
 
 离线测试：`python3 interaction/tests/test_github_poll.py`，使用临时 state、替身 git/gh 和真实的本地 event 入队。B0 只产生 L1 事件，等待复核；不登记订阅、不路由、不调用 queue/resume，也不唤醒 agent。真实 GitHub 和 launchd 安装不属于此测试覆盖。
+
+## Worktree 派发与清理
+
+```sh
+interaction/bin/dispatch feature-task /path/to/repo prompt.md --worktree feature/example
+interaction/bin/dispatch other-task /path/to/repo prompt.md --worktree feature/other --base main
+interaction/bin/worktrees list
+interaction/bin/worktrees clean --dry
+interaction/bin/worktrees clean
+```
+
+**worktree 由 dispatch 建，不要让 Codex 自己建 worktree。** 一次派发对应一个 worktree；多个分支分别派发。`workdir` 必须属于 Git 仓库，主检出和已有 worktree 均可。统一目录为 `~/.worktrees/<主检出目录名>/<分支名，斜杠换成短横线>`；`PRTS_WORKTREE_ROOT` 可覆盖根目录（测试使用临时目录）。同名仓库或分支路径映射冲突时拒绝，不覆盖目录。
+
+已有分支如果已检出，复用其登记路径（可在统一目录之外）；否则新建 worktree。新分支默认先 `git fetch origin`，从 `origin` 默认分支创建；没有远程时从当前 HEAD 创建。只有其他远程而没有 origin 时须显式给 `--base`。`--base` 只用于新分支；显式指定时不 fetch。创建失败不启动 Codex。start 事件增加 `worktree: {path, branch, repo}`，repo 为主检出路径，cwd 为实际 worktree。沙箱策略不变。`--dry --worktree` 仍会准备 worktree，但不启动 Codex、不写 registry；命令日志记录实际 cwd。
+
+dispatch 不自动清理。**调用方验收、合并之后，运行 `worktrees clean`。** list 输出路径、分支、仓库、改动、合并状态和 registry 中对应任务名。默认只扫描统一根目录中的登记工作树；`--all` 扩展到当前仓库、统一根目录与 registry 所发现仓库的全部登记工作树，始终保留主检出、锁定工作树和 detached HEAD。
+
+clean 使用本地 `origin/<默认分支>` 引用判断提交包含关系（不自动 fetch；需要最新状态时先自行 fetch）；无远程时使用主检出 HEAD。也可通过 `gh pr list --head <分支> --state merged` 识别 squash 合并，限定默认目标分支并核对 PR 的 headRefOid 等于当前提交，防止误用同名旧 PR。gh 不可用或失败时只依赖提交包含关系。
+
+有已跟踪改动或未跟踪文件就跳过；忽略文件不计入改动。未合并时说明原因，并在没有任何远程引用包含当前提交时标为「未推送」。通过检查后仅用 `git worktree remove`、`git branch -d`，不用强制删除。若 `-d` 拒绝（例如 squash 后无可证明已合并的 upstream），工作树已移除而分支保留，并打印原因。`--dry` 只读，不移除工作树或分支；运行中的任务应由调用方验收后再清理。
+
+回归：`python3 interaction/tests/test_worktrees.py`，真实临时仓库和裸远程、Codex/gh 替身，子进程关闭 stdin；不清理真实工作树。

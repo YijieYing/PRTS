@@ -1,0 +1,4 @@
+#!/bin/bash
+set -eu
+I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+exec python3 "$I/lib/worktrees.py" "$@" < /dev/null

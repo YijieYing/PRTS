@@ -44,7 +44,8 @@
 ### 命令 / `bin/`
 | 命令 | English | 做什么 |
 |---|---|---|
-| `dispatch <task> <workdir> <prompt文件>` | dispatch | 新开一次运行：把 prompt 存进任务目录，用 `codex exec` 启动，并确认真的启动了。`--sandbox network或full` 放宽时必须附 `--approved-by "用户原话或出处"`；默认 workspace-write、禁联网。`--dry`（兼容 `DISPATCH_DRY=1`）只记录命令、不执行或写 registry |
+| `dispatch <task> <workdir> <prompt文件> [--worktree 分支 [--base ref]]` | dispatch | 新开一次运行：把 prompt 存进任务目录，用 `codex exec` 启动，并确认真的启动了。`--sandbox network或full` 放宽时必须附 `--approved-by "用户原话或出处"`；默认 workspace-write、禁联网。`--dry`（兼容 `DISPATCH_DRY=1`）只记录命令（带 `--worktree` 时也准备工作树）、不执行 Codex 或写 registry |
+| `worktrees list / clean [--dry] [--all]` | worktrees | 列出工作树；验收合并后安全清理干净且已合并的工作树，保留无法用 `branch -d` 删除的分支 |
 | `resume <task> <session> <cwd> <消息文件>` | resume | 在已有会话上再跑一轮；模型满载时隔一段时间重试。支持同 dispatch 的 `--sandbox` / `--approved-by` / `--dry`，不继承上轮放宽 |
 | `github_poll` | GitHub polling source | 从 registry 派生仓库，把 PR 变化送进 L1 事件队列；无订阅或路由 |
 | `wake add\|list\|cancel` | wake | 预约、列出、取消定时唤醒 |

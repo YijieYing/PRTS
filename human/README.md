@@ -10,6 +10,7 @@
 ## 报告
 | 日期 | 报告 |
 |---|---|
+| 2026-11-15 | [dispatch worktree 创建与清理交付](../interaction/state/tasks/dispatch-worktree/report.md) |
 | 2026-10-28 | [AgentConsole 升级 × 果蝇 autoresearch：可行性评估](reports/2026-10-28-agentconsole-autoresearch-feasibility.md) |
 | 2026-10-20 | [周报：2026-10-14—2026-10-20](reports/weekly-2026-10-14_2026-10-20.md) |
 | 2026-10-22 | [E2 阶段 B 试点：存根的效果](reports/2026-10-22-E2-pilot.md) |
