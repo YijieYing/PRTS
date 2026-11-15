@@ -746,6 +746,7 @@ def check(data, at, c, state, dry, no_classify=False, classification_file=None):
     groups = defaultdict(list)
     for s in chores: groups[s['project'],s['topic']].append(s)
     notices = []
+    notice_projects = {}
     data['check'] = dict(window_seconds=window, chore_active_seconds=sum(s['active_seconds'] for s in chores),
                          chore_held_seconds=sum(s['held_seconds'] for s in chores), groups=[])
     for (project,topic), group in sorted(groups.items(),key=lambda kv:-sum(s['active_seconds']+s['held_seconds'] for s in kv[1])):
@@ -756,7 +757,9 @@ def check(data, at, c, state, dry, no_classify=False, classification_file=None):
         if not ratio_trigger and continuous <= c['check']['continuous_minutes']*60: continue
         key = datetime.fromtimestamp(at,ZoneInfo(c['timezone'])).date().isoformat()+':'+project+':'+topic
         notice = f"过去 {window/60:g} 分钟，杂务 active + held 占窗口 {duration/window:.0%}；{project} 的「{topic}」亲自操作 active {minutes(active)} 分钟、被占用 held {minutes(held)} 分钟。要不要把「{group[0]['suggestion']}」交给 agent？"
-        if len(notices)<3: notices.append((key,notice))
+        if len(notices)<3:
+            notices.append((key,notice))
+            notice_projects[key] = project
     with (state/'check.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
         path = state/'reminders.json'
@@ -767,6 +770,11 @@ def check(data, at, c, state, dry, no_classify=False, classification_file=None):
             if not dry:
                 result = run([os.environ.get('PULSE_ASK',str(ROOT/'reporter/bin/ask')), 'add',notice,'--why','确认后可把排障执行交给 agent，减少用户介入','--default','无人回答则不执行，保留建议','--urgency','timely','--source','pulse','--dedupe',key])
                 if result.returncode or not result.stdout.strip(): raise RuntimeError('ask 提交失败: '+result.stderr)
+                event_id = 'chore:' + __import__('hashlib').sha256((key+':'+str(history.get(key, 'first'))).encode()).hexdigest()
+                result = run([os.environ.get('PULSE_EVENT', str(ROOT/'interaction/bin/event')),
+                              'add', 'L1', 'computer_history', notice, '--kind', 'chore_streak',
+                              '--project', notice_projects[key], '--id', event_id], timeout=90)
+                if result.returncode: raise RuntimeError('杂务事件提交失败: '+result.stderr)
                 history[key] = at
                 atomic(path,json.dumps(history,ensure_ascii=False,indent=2))
             sent.append(notice)

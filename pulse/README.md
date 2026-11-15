@@ -263,3 +263,11 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.pulse-focus.pli
 ```
 
 隔离测试：`python3 pulse/tests/test_focus.py`。替身模型/通知关闭 stdin，不访问真实来源、不推送。
+
+Ear sync 的 high 段在 inbox 和推送之外，每条 agent_work 会提交
+`ear_agent_work` 事件，正文含 what 和摘要绝对路径，thread 使用连续录音首段
+capture（group），项目由共享 aliases 规范化。没有订阅默认 L1；有订阅直通。
+同 capture 和条目序号使用稳定 ID；重分诊不自动重发。
+check 产生杂务提醒时同时发 `chore_streak`（含项目）；dry 不投递。
+沿用提醒冷却窗口和最多三条的限制，提交失败不推进冷却记录。
+测试通过 `PULSE_EVENT` 替换事件命令，不访问真实队列。

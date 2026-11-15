@@ -190,6 +190,13 @@ def publish(state, record, no_notify, max_push=4):
         if not any(r['capture']==record['capture'] for r in entries):
             # Atomic replacement avoids a torn trailing JSONL record on a crash.
             write(state/'inbox.jsonl',''.join(json.dumps(r,ensure_ascii=False)+'\n' for r in entries+[record]))
+    for index, work in enumerate(record.get('agent_work', [])):
+        command = [os.environ.get('PULSE_EVENT', str(ROOT/'interaction/bin/event')), 'add', 'L1',
+                   'ear_agent_work', work['what']+'\n摘要：'+record['file'],
+                   '--kind', 'ear_agent_work', '--project', work['project'],
+                   '--thread', 'ear:'+record['group'], '--id', f"ear:{record['capture']}:{index}"]
+        result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=90)
+        if result.returncode: raise RuntimeError('Ear 事件提交失败: '+result.stderr[-2000:])
     notices = read(state/'notifications.json',{})
     # Legacy notices lacked a send date. Conservatively attribute old 'sent'
     # entries to the ledger's last modification day, then persist the migration.
