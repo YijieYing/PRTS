@@ -7,12 +7,6 @@
 # aliases = [...] 可选：同一项目的其他叫法（比如 ChatGPT 里的项目名），pulse 会归到 name 下。
 
 [[project]]
-name = "aquant 交易 bot / BigQuant"
-path = "~/Projects/aquant"
-category = "工程"
-group = "工具与赚钱"
-
-[[project]]
 name = "PRTS 总控台"
 path = "~/PRTS"
 category = "总控"
@@ -153,3 +147,9 @@ name = "Outreach"   # 申请（学术、实习）；用户 11-16：重要、要�
 path = "~/outreach"
 category = "其他"
 group = "Outreach"
+
+[[project]]
+name = "aquant 交易 bot / BigQuant"
+path = "~/Projects/aquant"
+category = "工程"
+group = "工具与赚钱"
