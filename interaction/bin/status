@@ -4,6 +4,16 @@ import json
 from pathlib import Path
 import runpy
 import sys
+if sys.argv[1:2] == ['threads']:
+    if sys.argv[2:] not in ([], ['--json']): sys.exit('usage: status threads [--json]')
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from interaction.lib.threads import snapshot
+    value = snapshot()
+    if '--json' in sys.argv: print(json.dumps(value, ensure_ascii=False))
+    else:
+        for t in value['threads']:
+            print(f"{t['key']} project={t['project']} subscribers={json.dumps(t['subscribers'], ensure_ascii=False)} last={t['last_event_at']} {t['last_event']} counts={t['counts']}")
+    sys.exit(0)
 if len(sys.argv) > 2: sys.exit('usage: status [task|links]')
 rows = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'lib/registry'))['rows']()
 if sys.argv[1:] == ['links']:

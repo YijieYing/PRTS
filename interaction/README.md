@@ -15,7 +15,7 @@
 
 `wake` 的 HH:MM 按日本时间解释，过去的时分预约到明天；按分钟向上取整。resume 完成表示本轮退出，queue 完成只表示入队。`WAKE_DRY=1` 跳过 Codex，**仍会注册 launchd**。取消仅限未运行任务。
 
-L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify alert`。通知失败返回非零，事件仍保留为 new。`ack` 幂等，改为 acked 并追加 acked_at；未知 id 报错。AgentConsole 的 dormant（cwd 出现在 registry）、idle_long、stale 为 L1，host_down 为 L2，其余已知类型为 L0；不写 human inbox。未知 `event` 类型走可选的模型慢速分支：`config/filter.toml` 的 `allowed_sources` 是事件 JSON 中 `source` 的白名单，默认空列表（关闭），未列入的来源仍为 L0、不调用模型；`timeout` 是单次调用超时秒数，默认 60。模型返回 L0/L1/L2 和理由；调用或校验失败退化为 L1，理由保留错误摘要。已知类型始终按原规则处理。`add` 仍直接采用调用方指定的级别。
+L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify alert`。通知失败返回非零，事件仍保留为 new。`ack` 幂等，改为 acked 并追加 acked_at；未知 id 报错。AgentConsole 的 dormant（cwd 出现在 registry）、idle_long、stale 为 L1，host_down 为 L2，其余已知类型为 L0；不写 human inbox。未知 `event` 类型走可选的模型慢速分支：`config/filter.toml` 的 `allowed_sources` 是事件 JSON 中 `source` 的白名单，默认空列表（关闭），未列入的来源仍为 L0、不调用模型；`timeout` 是单次调用超时秒数，默认 60。模型返回 L0/L1/L2 和理由；调用或校验失败退化为 L1，理由保留错误摘要。add 也经过 classify，位置级别仅作默认；详见 thread 与订阅。
 
 默认数据根为本模块 `state/`，可用绝对路径 `PRTS_INTERACTION_STATE` 覆盖：
 
@@ -138,3 +138,16 @@ queue 失败保留 L1。成功 queue 只代表入队，不代表执行完成。
 `event add ... --id <稳定事件ID>` 重复提交无副作用；省略时生成 UUID。
 事件锁覆盖路由，routes.jsonl 先记 attempt 再投递；若在投递期间崩溃，
 重送同 ID 不盲目重复 queue，而留 route_pending，由总控检查实际投递结果。
+
+AgentConsole 直接以关闭 stdin、捕获 stdout 的子进程调用
+`interaction/bin/status threads --json`，不需要 HTTP 服务。
+输出一个 JSON 对象，所有字段都存在；空数据为 threads=[]：
+```json
+{"generated_at":"ISO8601","threads":[{"key":"project:EchoAsRecord","kind":"project","project":"EchoAsRecord","title":"EchoAsRecord","subscribers":[{"id":"sub_…","to":"codex:…","paused":false}],"last_event_at":null,"last_event":null,"counts":{"events":0,"routed":0,"pending":0},"tasks":[{"name":"任务名","status":"done","started_at":"ISO8601","report":null,"reviewed":false}]}]}
+```
+kind 为 project|gh|ear|other，project/last_event_at/last_event/report 可为 null。
+tasks.status 为 running|done|failed。任务按最新 start 后的 registry 状态聚合，
+按 cwd/worktree.repo 项目、订阅 task/Codex UUID 或事件 task/thread_uuid 归属。
+同一事件可同时出现在外部 thread 与所属项目；counts 不含路由审计副本，
+routed 为完全直通事件数，pending 为仍处 new 的事件数。
+`interaction/bin/review <任务名> [--undo]` 追加 reviewed 记录；新一轮 start 重置 false。

@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+import runpy
+p = argparse.ArgumentParser()
+p.add_argument('task'); p.add_argument('--undo', action='store_true')
+a = p.parse_args()
+registry = runpy.run_path(str(Path(__file__).resolve().parents[1]/'lib/registry'))
+if not any(r.get('name') == a.task and r.get('event') == 'start' for r in registry['rows']()):
+    p.error('unknown task')
+registry['append'](dict(name=a.task, event='reviewed', reviewed=not a.undo))
