@@ -8,6 +8,16 @@ def object_schema(props):
 
 def validate(value, spec):
     kind = spec['type']
+    if isinstance(kind, list):
+        for option in kind:
+            try:
+                validate(value, dict(spec, type=option))
+                return
+            except ValueError: pass
+        raise ValueError('结构化输出字段类型错误')
+    if kind == 'null':
+        if value is not None: raise ValueError('结构化输出字段类型错误: null')
+        return
     valid = {'object':isinstance(value,dict), 'array':isinstance(value,list),
              'string':isinstance(value,str), 'boolean':type(value) is bool,
              'number':type(value) in (int,float) and math.isfinite(value) if type(value) in (int,float) else False}[kind]

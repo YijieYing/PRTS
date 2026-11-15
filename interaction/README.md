@@ -118,3 +118,17 @@ Codex UUID；不自动订阅整个 cwd 项目。需项目范围时手动用上�
 PR URL 提取不能证明链接一定是本次新建的 PR，报告引用的 PR 也可能匹配，
 请用 list/remove 管理。绑定桌面 app Auto-fix 的 PR 不要登记 PRTS 订阅；
 PRTS 无法判断 app 的 PR 绑定状态。
+
+classify 顺序：①已有的需复核/紧急规则；②匹配有效 thread 或项目订阅则直通；
+③已知 state 噪声或 noise=true 记 L0；④未知来源在 filter.toml 白名单内走模型；
+⑤保留调用者默认级别（add 的位置参数，AgentConsole 默认 L0）。
+慢速提示包含 pulse 的输入/输出/杂务定义和项目列表，输出
+`{level, project: string|null, reason}`，失败 L1；模型新识别项目不在同轮二次投递。
+
+Codex 使用 lib/codex queue 原语；Claude 无程序化投递接口，写
+`state/outbox/<local_id>.jsonl` 并保留 L1 `kind=route_pending` 给总控转发。
+每目标留一条 kind=routed 的审计事件（route.status 区分成功、待转发）。
+queue 失败保留 L1。成功 queue 只代表入队，不代表执行完成。
+`event add ... --id <稳定事件ID>` 重复提交无副作用；省略时生成 UUID。
+事件锁覆盖路由，routes.jsonl 先记 attempt 再投递；若在投递期间崩溃，
+重送同 ID 不盲目重复 queue，而留 route_pending，由总控检查实际投递结果。
