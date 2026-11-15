@@ -54,7 +54,7 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | M7 | 💤 | 项目登记表 | session → 项目 → human 入口，是 D1 话题路由的数据基础。现有 `human/projects.toml` 只给周报分类用 |
 | M8 | 💤 | 从观察走向协作和干预 | 任务目录（`goal.md`、`plan.yaml`、`claims.md`、`evidence/`、`human/`、`STOP`），以及五个干预操作：打开证据、要求复现、提反例、改目标、在检查点停止。参考 QED 的文件协议（用户 10-28 同意借 QED、不用 LibreChat）。Claude 的建议：和果蝇 autoresearch 绑在一起做，先做真值考场。详见 [可行性评估](human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md)。顺序未定 |
 | M9 | 💤 | `human/` 修改监视 | 发现 `human/` 有未提交的改动时，产生「人类修改」事件。总控自己的改动会立刻提交，所以不会循环 |
-| M10 | 💤 | 界面右侧换成「主线任务进度」 | 用户 11-14 22:10 口述（新 Ear 录音，转写把 AgentConsole 听成了 "Agent Council"）：左侧 session 列表保留，右侧的 session 详情没什么用，换掉或去掉。改为按 thread 展示：每个主线任务推进到哪一步、哪个 agent 在做什么、推进的部分里哪些用户审查过、哪些没有。数据契约已就绪（见 interaction/README）：status threads --json 提供项目/thread、订阅、任务和 reviewed，review/--undo 写验收状态 |
+| M10 | ✅ | 界面右侧换成「主线任务进度」 | 11-15 已实现（AgentConsole 8360608、08917a6，数据来自 `interaction/bin/status threads --json`），已配置上线；未做浏览器截图验收。原始需求： 用户 11-14 22:10 口述（新 Ear 录音，转写把 AgentConsole 听成了 "Agent Council"）：左侧 session 列表保留，右侧的 session 详情没什么用，换掉或去掉。改为按 thread 展示：每个主线任务推进到哪一步、哪个 agent 在做什么、推进的部分里哪些用户审查过、哪些没有。数据契约已就绪（见 interaction/README）：status threads --json 提供项目/thread、订阅、任务和 reviewed，review/--undo 写验收状态 |
 
 ### 总控与多 agent 协作
 | # | 状态 | 事项 | 要点 |

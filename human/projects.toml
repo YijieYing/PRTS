@@ -95,3 +95,9 @@ category = "工程"
 name = "Ear 手机端（octopus-flutter）"
 path = "~/research/octopus-flutter"
 category = "工程"
+
+[[project]]
+name = "Ear（EchoAsRecord）"   # 新 Ear 主仓库；11-15 登记，让 thread 视图和 pulse 能认出 Ear 的工作
+path = "~/research/EchoAsRecord"
+category = "工程"
+aliases = ["EchoAsRecord"]
