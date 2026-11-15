@@ -5,6 +5,7 @@ Compatibility dependency on legacy Ear's private SQLite payloads (schema 0.1).
 All legacy parsing lives here. Read with mode=ro, including WAL; never immutable,
 never migrate or write the source. Replace this adapter when Ear has a public API.
 """
+import collections
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -431,12 +432,14 @@ def day(root, start, end):
     titles = {}
     for r in records:
         titles.setdefault(r['group'],r['title'])
+    # Recordings get no project: the group title used to be passed off as one, and the agent
+    # work's project misfiled a walk about life direction under PRTS (11-16). Render shows「线下」.
     for r in records:
         a,b=max(start,r['start']),min(end,r['end'])
         if b<=a: continue
         low=r['value']=='low'
         result.append(dict(r,source='ear',session=r['capture'],id='ear:'+r['capture'],
-                           start=a,end=b,project=titles[r['group']],summary='；'.join(r['summary']),
+                           start=a,end=b,project=None,group_title=titles[r['group']],summary='；'.join(r['summary']),
                            intervals=[[a,b]],held_candidates=[],messages=[],
                            user_seconds=b-a,confidence='录音跨度估计',
                            category='other' if low else r['category'],reason='',topic='',suggestion=''))
