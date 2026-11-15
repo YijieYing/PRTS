@@ -45,7 +45,7 @@ print(Path(os.environ['ANSWER']).read_text())
 """)
         self.notify=self.stub('notify',"with Path(os.environ['CALLS']).open('a') as f: f.write('notify\\n')\n")
         self.answer_file=self.root/'answer.json'; self.answer_file.write_text(json.dumps(self.answer))
-        self.env=patch.dict(os.environ,{'PULSE_RUN':self.run,'PULSE_NOTIFY':self.notify,'CALLS':str(self.root/'calls'),
+        self.env=patch.dict(os.environ,{'PULSE_EVENT':self.stub('event', "with open(os.environ['CALLS']+'.events','a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')"), 'PULSE_RUN':self.run,'PULSE_NOTIFY':self.notify,'CALLS':str(self.root/'calls'),
                                       'ANSWER':str(self.answer_file),'PULSE_STATE':str(self.state),'PULSE_EAR_DB':str(self.db)})
         self.env.start()
         self.vocab=patch.object(ear,'vocabulary',return_value='测试项目'); self.vocab.start()
@@ -99,6 +99,13 @@ print(Path(os.environ['ANSWER']).read_text())
         self.assertEqual(self.calls(),['run','notify','run'])
         rows=ear.inbox(self.state/'ear'); self.assertEqual(len(rows),2)
         self.assertEqual(rows[0]['group'],rows[1]['group'])
+        events = [json.loads(l) for l in (self.root/'calls.events').read_text().splitlines()]
+        self.assertEqual(len(events), 2)
+        for event in events:
+            self.assertEqual(event[event.index('--thread')+1], 'ear:'+rows[0]['group'])
+            self.assertEqual(event[event.index('--kind')+1], 'ear_agent_work')
+            self.assertEqual(event[event.index('--project')+1], 'fixture')
+            self.assertIn('摘要：',event[3])
     def test_no_notify_and_retry(self):
         self.capture()
         with patch.dict(os.environ,{'PULSE_RUN':self.stub('bad','sys.exit(1)')}):
@@ -153,6 +160,13 @@ print(Path(os.environ['ANSWER']).read_text())
         self.capture('overlap',600); self.sync(True)
         rows=ear.inbox(self.state/'ear')
         self.assertEqual(rows[0]['group'],rows[1]['group'])
+        events = [json.loads(l) for l in (self.root/'calls.events').read_text().splitlines()]
+        self.assertEqual(len(events), 2)
+        for event in events:
+            self.assertEqual(event[event.index('--thread')+1], 'ear:'+rows[0]['group'])
+            self.assertEqual(event[event.index('--kind')+1], 'ear_agent_work')
+            self.assertEqual(event[event.index('--project')+1], 'fixture')
+            self.assertIn('摘要：',event[3])
     def test_day_never_reclassifies_ear(self):
         self.capture(); self.sync(True)
         data=dict(segments=[],outputs=[],warnings=[])

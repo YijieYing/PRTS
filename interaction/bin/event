@@ -42,6 +42,10 @@ def classify(e):
                           + '\n输入=学习理解；输出=实验设计、产品体验设计、创造；杂务=合并、部署、CI、排障、架构接口，交给 agent。按用户脑子在做什么判断。'
                           + '\n项目可为 null，不要硬归。项目列表：' + json.dumps(mapping(), ensure_ascii=False)
                           + '\n' + json.dumps(e, ensure_ascii=False))
+                pulse_readme = I.parent / 'pulse/README.md'
+                if pulse_readme.exists():
+                    definition = pulse_readme.read_text().split('## 一、', 1)[-1].split('## 二、', 1)[0]
+                    prompt += '\npulse §一：\n' + definition
                 spec = object_schema(dict(level={'type': 'string', 'enum': ['L0', 'L1', 'L2']},
                                           reason={'type': 'string'}, project={'type': ['string', 'null']}))
                 state = registry['state']() / 'events'
@@ -51,7 +55,7 @@ def classify(e):
                 return answer['level'], answer['reason']
         except Exception as exc:
             return 'L1', '分诊失败，退化为复核：' + str(exc)[-2000:]
-    return e.get('level', 'L0'), e.get('text', json.dumps(e, ensure_ascii=False))
+    return e.get('level', 'L0'), (e['text'] if 'level' in e and 'text' in e else json.dumps(e, ensure_ascii=False))
 
 def main():
     p = argparse.ArgumentParser()
@@ -78,17 +82,21 @@ def main():
                          text=args.text, thread_key=args.thread_key, project=canonical(args.project), kind=args.kind)
             e.setdefault('id', str(uuid.uuid4()))
             e['project'] = canonical(e.get('project'))
-            if e.get('thread_key', '').startswith('project:') if e.get('thread_key') else False:
+            if (e.get('thread_key') or '').startswith('project:'):
                 e['thread_key'] = 'project:' + str(canonical(e['thread_key'][8:]))
+                e['project'] = e.get('project') or canonical(e['thread_key'][8:])
             rows = [json.loads(l) for l in queue.read_text().splitlines()] if queue.exists() else []
             if any(r['id'] == e['id'] for r in rows):
                 print(e['id']); return 0
             level, reason = classify(e)
+            subscribers = matching(e) if level == 'routed' else []
+            if level == 'routed' and not subscribers:
+                level, reason = 'L1', '订阅在分诊后变更，留待复核'
             row = dict(e, t=dt.datetime.now(dt.timezone.utc).isoformat(), level=level,
                        text=e.get('text', reason), reason=reason,
                        status='logged' if level == 'L0' else 'new')
             if level == 'routed':
-                pending, traces = route(row, matching(e))
+                pending, traces = route(row, subscribers)
                 row.update(level='L1' if pending else 'L0', status='new' if pending else 'routed')
                 if pending: row.update(original_kind=row.get('kind'), kind='route_pending')
                 for trace in traces:

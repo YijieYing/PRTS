@@ -193,7 +193,7 @@ class PulseTests(unittest.TestCase):
         self.c['sources']['repos']=[]
         self.c['sources']['projects']=str(self.root/'missing')
         self.c['sources']['reporter_config']=str(self.root/'missing')
-        self.env=patch.dict(os.environ,{'PULSE_STATE':str(self.root/'state')}); self.env.start()
+        self.env=patch.dict(os.environ,{'PULSE_STATE':str(self.root/'state'), 'PULSE_EVENT':'/usr/bin/true'}); self.env.start()
         self.state=self.root/'state'; self.state.mkdir()
     def tearDown(self): self.env.stop(); self.tmp.cleanup()
     def event(self,t,role='user',text='上传排查'):
@@ -260,7 +260,8 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
             text+='['+section+']\n'+'\n'.join(k+' = '+json.dumps(v) for k,v in self.c[section].items())+'\n'
         text+='[[project]]\nname="Octopus"\npath="/work/Octopus"\n'; conf.write_text(text)
         ask=self.stub('ask',"Path(os.environ['PULSE_STATE'],'ask').open('a').write(json.dumps(sys.argv[1:])+'\\n')\nprint('Q12')\n")
-        env=dict(os.environ,PULSE_CONFIG=str(conf),PULSE_RUN=self.llm(),PULSE_ASK=ask)
+        event=self.stub('event', "Path(os.environ['PULSE_STATE'],'events').open('a').write(json.dumps(sys.argv[1:])+'\\n')")
+        env=dict(os.environ,PULSE_CONFIG=str(conf),PULSE_RUN=self.llm(),PULSE_ASK=ask,PULSE_EVENT=event)
         command=[str(pulse.MODULE/'bin/pulse'),'check','--at','2026-11-11T06:01+09:00']
         def execute(extra):
             r=subprocess.run(command+extra,stdin=subprocess.DEVNULL,capture_output=True,text=True,env=env); self.assertEqual(r.returncode,0,r.stderr); return r
@@ -268,6 +269,10 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertTrue((self.state/'computer/2026-11-11.jsonl').exists())
         self.assertIn('Octopus',execute([]).stdout); self.assertEqual(execute([]).stdout,'')
         self.assertEqual(len((self.state/'ask').read_text().splitlines()),1)
+        emitted = json.loads((self.state/'events').read_text().splitlines()[0])
+        self.assertEqual(emitted[emitted.index('--kind')+1], 'chore_streak')
+        self.assertEqual(emitted[emitted.index('--project')+1], 'Octopus')
+        self.assertEqual(len((self.state/'events').read_text().splitlines()), 1)
         self.assertEqual(execute(['--window','10m']).stdout,'')
         self.assertEqual(len((self.state/'calls').read_text().splitlines()),3)
     def test_threshold_exact(self):

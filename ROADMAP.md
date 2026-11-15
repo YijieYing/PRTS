@@ -34,8 +34,8 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | R15 | 💤 | **模型放服务器，不在本地部署** | 用户 11-13 口述：「Ollama 不好，我不想部署在本地」，并提醒「这个事情开始变重了，小心」。依赖第三台服务器（提醒事项里的「服务器装起来」）。用户自己要弄懂的问题已放进提醒事项：Ollama 单机并发能否同时加载多份模型参数 |
 | R16 | 💤 | **ASR 常用词纠错，说话人结合环境判断** | Ear 的产品功能，11-13 已转给「Ear 项目架构」，由它在 EchoAsRecord 以 proposed 提案的形式提出。<br>① 常用词误识别，比如「Ear」被转成 year、Eer、夜：可以用纠错表或记忆让 LLM 改正，也可以按用户声音微调、做 embedding。PRTS 的 Ear 分诊已经在用 people.md、yyj.md 做纠错表。<br>② 说话人归属结合环境：例如「骑车时风声里的 A」，把内容、环境声、ASR、声纹合成一个多维判断。这是 R9 之后的扩展。<br>Ear 架构 session 的判断（11-13）：<br>- ① 值得写成提案，范围收窄为「用户词表」：转写本身只追加、不改，词表作为 ④ 的输入并登记依赖；按用户声音微调 ASR 只列为备选。<br>- ② 暂不提，等 ③ 跑起来再说。<br>- 另建议把「合并人物」提前进 MVP：新 ③ 会把用户本人的声音拆成很多未命名人物，和旧 Ear margin 不够是同一个问题。<br>11-13 Ear 架构 session 已在 EchoAsRecord 本地分支 `proposals/asr-glossary-person-merge`（8347e66）上写好三份 proposed 提案：`asr-user-glossary`、`person-merge-mvp`、`place-names-editable`（地名可改、一个地点可有多个别名）。还没推送，也没开 PR。 |
 | R6 | 🔨 | **周报改用 `reporter/bin/notify`** | 双发已实现，等用户改 CodexBridge 后关 outbox。周报摘要走 `notify phone`，`weekly_outbox = true` 默认保留 outbox；用户改掉读 `Reporter/outbox` 的 `/auto` 任务后设为 false，兼容链接暂时保留 |
-| R17 | ✅ | **事件语义层过滤（slow path）** | 11-14 用户同意，依据见 [研究 session 的 PRTS 对照笔记](../research/DsHarness/local-notes/2026-11-14-PRTS对照与diff.md)。Codex 完成并经复核合入 main（`71fc1c9`/`b032fb6`）：抽出共享 `interaction/lib/schema.py`、`run_model.py`（`ear.py` 改为调用，不留两份实现）；`event` 的 `classify()` 对规则认不出的来源，白名单内走模型分诊，不在白名单仍维持原 L0 默认，模型调用失败退化为 L1；新增 `interaction/config/filter.toml`（默认关闭）。测试：`interaction/tests/test_filter.py`、`pulse/tests/test_ear.py` 全绿，已知事件类型行为与改动前一致。见 §三-R17 |
-| R18 | 🔨 | **Thread / 订阅机制** | 11-14 用户同意，依据同上。dsh-superagent 的 Thread：同一个外部对象（PR、IM 话题）上的连续事件，一旦有 Worker 订阅，后续事件由程序直通，不再经总控决定转发给谁。PRTS 现在没有这样的外部事件源，也没有订阅登记，续接任务全靠总控手动 `wake`/`resume`。分四步：**B0 已完成**（`36cdf91`/`8b8407b`）：`interaction/bin/github_poll` 从 registry 的 cwd 历史派生 GitHub 仓库，轮询 open PR 的评论数和 CI 汇总，变化进 L1 事件队列；游标 `interaction/state/github_poll.jsonl`，带锁、关闭的 PR 立刻清游标、超过 1 MiB 自动压缩；10 分钟一次的 launchd 模板已生成，**未安装**。测试 `interaction/tests/test_github_poll.py` 全绿，未接真实网络。B1（登记 `{thread_key, task}` 订阅）、B2（匹配到订阅的事件自动 `codex queue` 给对应任务，绕开总控）还没做；B3（多个任务订阅同一个 thread）先不做。**11-14 用户调整方向**：DS 的设计基于企业环境（GitHub、飞书），PRTS 是 personal agent，主要来源是 Computer History 和 Ear；订阅单位改为「项目组」。见 §三-R18「个人版」 |
+| R17 | ✅ | **事件语义层过滤（slow path）** | 已接上真实来源入口：event add 与 AgentConsole 共用五步 classify；模型输出 level/project/null/reason，包含 pulse 定义及项目列表，失败 L1。白名单默认仍关闭，未调用真实模型验收。见 §三-R17 |
+| R18 | ✅ | **Thread / 项目组订阅（个人版）** | 11-15 完成 A–F：统一字段/aliases，B0 四缺口修复，项目与 thread 多订阅、暂停、路由幂等、worktree PR 自动登记，Ear/Computer History 接入，status threads JSON 与 review 契约。Claude 为 outbox + L1 待转发；仅替身验证投递，未安装 launchd，未向真实线程 queue。见 interaction/README.md 与任务报告 |
 | R19 | 💤 | **提前行动（投机执行，DS §3.4）** | 用户 11-14：DS 的例子是提前草拟回复邮件；用户的例子是「看到我在上课，就去清华网络学堂把这节课的课件拉到对应目录」。见 §三-R19 |
 | R20 | 💤 | **链式召回实验（DS §3.3）** | 用户 11-14：和研究层 E2「上下文压缩 = 页面置换，存根把静默缺页变成显式缺页」最相关，可以设计实验。归研究层，见 §三-R20 |
 | R21 | 💤 | **全双工 agent loop（DS §4.1）** | 用户 11-14：Codex 似乎已经能做到。总控核对（11-14）：本机 Codex 的 app-server 协议里有 `turn/steer`（往正在跑的 turn 里注入输入）和 `turn/interrupt`；PRTS 现在只用 `codex queue`（排到下一轮）。待验证 steer 能不能在工具调用还没返回时让模型看到新消息 |
@@ -54,7 +54,7 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 | M7 | 💤 | 项目登记表 | session → 项目 → human 入口，是 D1 话题路由的数据基础。现有 `human/projects.toml` 只给周报分类用 |
 | M8 | 💤 | 从观察走向协作和干预 | 任务目录（`goal.md`、`plan.yaml`、`claims.md`、`evidence/`、`human/`、`STOP`），以及五个干预操作：打开证据、要求复现、提反例、改目标、在检查点停止。参考 QED 的文件协议（用户 10-28 同意借 QED、不用 LibreChat）。Claude 的建议：和果蝇 autoresearch 绑在一起做，先做真值考场。详见 [可行性评估](human/reports/2026-10-28-agentconsole-autoresearch-feasibility.md)。顺序未定 |
 | M9 | 💤 | `human/` 修改监视 | 发现 `human/` 有未提交的改动时，产生「人类修改」事件。总控自己的改动会立刻提交，所以不会循环 |
-| M10 | 💤 | 界面右侧换成「主线任务进度」 | 用户 11-14 22:10 口述（新 Ear 录音，转写把 AgentConsole 听成了 "Agent Council"）：左侧 session 列表保留，右侧的 session 详情没什么用，换掉或去掉。改为按 thread 展示：每个主线任务推进到哪一步、哪个 agent 在做什么、推进的部分里哪些用户审查过、哪些没有。依赖 R18 的 B1 订阅登记（按项目组）提供 thread 数据；「已审查」状态目前还没有数据源 |
+| M10 | 💤 | 界面右侧换成「主线任务进度」 | 用户 11-14 22:10 口述（新 Ear 录音，转写把 AgentConsole 听成了 "Agent Council"）：左侧 session 列表保留，右侧的 session 详情没什么用，换掉或去掉。改为按 thread 展示：每个主线任务推进到哪一步、哪个 agent 在做什么、推进的部分里哪些用户审查过、哪些没有。数据契约已就绪（见 interaction/README）：status threads --json 提供项目/thread、订阅、任务和 reviewed，review/--undo 写验收状态 |
 
 ### 总控与多 agent 协作
 | # | 状态 | 事项 | 要点 |
@@ -105,39 +105,34 @@ PRTS 要做什么、做到哪了，都以这一份为准。
 - 要改的地方：目录、launchd（`com.yijieying.agentconsole`、`com.agentconsole.backup`）、`~/.agentconsole/`、GitHub 仓库名，以及各处文档。用户 2026-11-09 同意，和 R3 的清理一起做。
 
 ### R17 事件语义层过滤（slow path）
-- 来源：研究 session 读完 DeepSeek Harness 的 `dsh-superagent` 设计文档后做的对照，用户 11-14 同意采用。
-- 抽共享库：
-  - `interaction/lib/run_model.py`：从 `pulse/lib/ear.py` 的 `triage()` 挪出"写 tempdir prompt+schema → 调 `interaction/bin/run --output-schema` → 校验 → 返回"这一串，参数化 prompt/schema/timeout；`ear.py` 改成调它，不留两份实现。
-  - `interaction/lib/schema.py`：挪出现在手写的 `validate()`，两边共用。
-- `interaction/bin/event` 加慢速分支：`classify()` 认不出的 `kind`，不再直接归 L0，改成调模型分类器；prompt 判断"要不要进复核队列"，schema 固定为 `{level: L0|L1|L2, reason: string}`，和 `classify()` 的返回契约一致，接入时不改调用方。
-  - 只对白名单里的 `source` 启用，新配置 `interaction/config/filter.toml`（格式仿 `reporter/config/questions.toml`）；默认关闭，新来源要显式打开，防止意外烧 token。
-  - 模型调用失败或超时，默认判 **L1**（不是 L0）：漏掉一件该管的事，比多问一句贵得多。
-- 测试仿 `pulse/tests/test_ear.py` 和 `interaction/tests/test_modules.py` 的替身模式：给 `run_model.py` 一个假的 `bin/run`，覆盖"规则认不出 → 调模型 → 按 schema 落地"和"模型调用失败 → 退到 L1"两条路径。
-- 文档：`interaction/README.md` 补慢速分支说明和 `filter.toml` 字段。
+- 已完成：共享 run_model/schema；event add 和 from-agentconsole 共用 classify。
+- 五步：已知复核/紧急规则 → 有效订阅直通 → 已知噪声 L0 → 白名单模型 → 原默认级别。
+- 模型输出 `{level, project: string|null, reason}`，提示包含 pulse §一及项目表；
+  未归属允许 null，失败退到 L1。filter.toml 默认空白名单，建议来源 github_poll、ear_agent_work。
+- 真实入口已接线，投递和模型行为以 fixture 验证；未启用真实模型过滤。
 
 ### R18 Thread / 订阅机制
-- 来源同 R17。
-- **B0（前提）**：最小的 GitHub 轮询 Source。新增 `interaction/lib/github_poll.py`（或脚本），按 launchd 定时跑，对 `registry.jsonl` 里出现过的 `cwd`（跑过 dispatch 的仓库），用 `gh pr list`/`gh pr view --json comments,statusCheckRollup` 查有没有新评论、CI 状态变化，和上次记录的游标（每个 PR 记 `updated_at`/评论数）做差，有变化就调 `interaction/bin/event add`，事件带上 `thread_key`（形如 `owner/repo#123`）。单独就有价值：PR 有新评论现在要自己去 GitHub 看，接上后至少进事件队列。
-- **B1（订阅登记）**：dispatch 出去的任务一旦知道自己开了哪个 PR，记下 `{task, thread_key}`。倾向扫 `last.md`/`run.log` 里 `gh pr create` 产生的 URL 自动抓取，不改任务说明里的约定。新增只读查询 `interaction/bin/status threads`，列出 `{thread_key, task, thread_uuid}`。
-- **B2（路由）**：`event add` 收到带 `thread_key` 的事件时先查有没有活着的订阅：有，且任务没被标记"人已经叫停"，直接 `codex queue --thread <uuid> --message <事件内容>`（已有原语，`interaction/lib/codex:93,122-123`），记一条 `routed` 事件留痕，不进 L1 队列。没有匹配，照常走 R17 的 fast/slow path。
-- **B3（多对多）**：dsh 允许多个 Worker 订阅同一个 Thread；PRTS 目前一个任务一个 PR 够用，真的出现"两个任务碰到同一个 PR"再加，现在加是过度设计，不排期。
-- B0 和 R17 可以并行；B1/B2 依赖 B0 先跑出真实的 `thread_key` 事件。
-- **总控复核（11-14）**：R17、B0 的代码和测试都在、全绿，结构没问题。做 B1/B2 之前要先补 B0 的四个缺口：
-  1. 事件没有 `thread_key` 字段，PR 号只拼在文字里（`event add L1 github_poll "<repo>#N …"`），B2 要按它路由，得先成为结构化字段。
-  2. 只数 `comments`（PR 的普通评论），没看 `reviews` 和行内评审意见，而 PR 反馈的大头在这里。
-  3. 只要 `updatedAt` 变了就发一条「有更新」的 L1，agent 自己 push、打标签都会触发；agent 自己发的评论也会触发，L1 队列会被自己的动作灌满。应该只对「别人的评论或评审」和「CI 状态变化」发事件。
-  4. R17 和 B0 没有接上：github_poll 用 `event add L1` 直接定级，绕过了 `classify()`；`classify()` 的慢速分支只在 `from-agentconsole` 的未知 kind 上生效，所以 R17 目前没有实际的事件来源。
-  - 另外：桌面 app 对绑定到 session 的 PR 已经有自己的 CI/评论监控（Auto-fix），B2 路由时要避免和它重复处理同一个 PR。
+- **B0 已完成**：GitHub PR 带 gh:owner/repo#N 与路径匹配项目；
+  统计他人 comments、reviews、分页行内意见及 CI，当前 gh 账号缓存；
+  首次/旧游标迁移只建基线，updatedAt 自身及自己评论不触发。事件进入 classify。
+- **B1 已完成**：subscribe 按项目组或 thread 登记多个目标，追加日志加锁，
+  pause/resume/remove；成功 worktree dispatch 从报告/日志 PR URL 自动登记到 Codex UUID。
+  cwd 匹配项目不自动扩大订阅范围。
+- **B2 已完成**：Codex queue；Claude 无接口，outbox + route_pending L1；
+  失败或不确定投递保留 L1。稳定事件 ID 去重，每目标审计；暂停时按无订阅。
+- **总控复核（11-14）四个缺口**：结构化 thread/project、reviews/行内意见、
+  自己评论/更新时间去噪、接上 classify 均已修复。app Auto-fix 绑定不可探测，
+  已绑定的 PR 不要再订阅 PRTS。
+- **数据契约**：status threads --json 严格输出 F 字段，直接供 AgentConsole 调 CLI；
+  review/--undo 追加验收状态。详情和边界见 interaction/README.md。
 
 #### R18 个人版（用户 11-14）
-- **来源**：主要是 Computer History（电脑上在做什么）和 Ear（线下说了什么、在哪），GitHub 只是次要来源。目标和 DS 一致：滤掉杂讯，不让总控处理和分发太多信息。
-- **fast path 的两个作用**：
-  - 丢掉噪声（DS 的程序层过滤）；
-  - **直通**：已经有人订阅的事件，由程序直接送到订阅者，不经过总控。
-- **订阅单位是「项目组」**：一个持续进行的项目（以 `human/projects.toml` 的登记为准）下面有好几个 session，比如 Ear 有架构、手机端、GPS 等。它们订阅同一个项目组，项目相关的事件按项目分发。现成的例子：
-  - Ear 录音分诊（`pulse ear`）的 `agent_work` 已经按项目出结果，现在要靠总控手动转；
-  - Computer History 的窗口和 pulse 的分类已经带项目，「用户在某项目上卡住、反复排障」可以直通给该项目组的 session。
-- **对 B0 的影响**：上面复核出的 4 个缺口照旧要补，但 B1/B2 的订阅登记要按项目组设计，不只是 PR 的 `thread_key`。项目归属是这一切的前提，而 11-13 日报里有 352 分钟没对上项目，所以项目归属要先改进。
+- 主要来源 Computer History 与 Ear，GitHub 次之；fast path 同时丢噪声和直通。
+- 项目 aliases 与 pulse 共用 projects.py。项目组可有多个 session/线程订阅。
+- Ear high 段的 agent_work 以首段 capture 的 ear thread 发事件；
+  check 的杂务提醒发 chore_streak，保持现有冷却/dry 约束。无订阅默认 L1。
+- 验收边界：fixture/替身回归与真实只读 status；没有启用 launchd、真实 queue 或真实 gh 轮询。
+- 交付报告：interaction/state/tasks/r18-threads/report.md。
 
 ### R19 提前行动
 - 例子：用户在上课时，自动把这节课的课件从网络学堂拉到对应课程目录。

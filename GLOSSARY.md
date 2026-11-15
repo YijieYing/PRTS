@@ -39,7 +39,12 @@
 | 唤醒 | wake | 预约在某个时间续跑某个会话，执行一次后作废 |
 | 记录 | registry event | 派发、结束、唤醒、容量重试等动作的流水账 |
 | 事件 | event | 需要总控验收或需要你知道的事，按 L0/L1/L2 分级，进入事件队列 |
-| 验收 | review | 总控读事件和结果，决定下一步：续跑、重派、问你，或结束 |
+| 验收 | review | 用户/总控验收任务；bin/review 追加 reviewed=true，--undo 撤销，新运行重置 |
+| 事件主线 | thread | 同一外部对象或项目的连续事件，thread_key 标识；区别于 Codex 会话 UUID |
+| 订阅 | subscription | 项目或 thread 到 codex/claude 目标的显式登记；可暂停、恢复、删除 |
+| 路由 | routed | 按订阅投递的审计记录；route.status 标明已入队或待人工转发 |
+| 快速路径 | fast path | 规则分级、订阅直通、丢噪声，无模型调用 |
+| 慢速路径 | slow path | 仅白名单未知来源调用模型，输出 level/project/reason，失败 L1 |
 
 ### 命令 / `bin/`
 | 命令 | English | 做什么 |
@@ -47,7 +52,9 @@
 | `dispatch <task> <workdir> <prompt文件> [--worktree 分支 [--base ref]]` | dispatch | 新开一次运行：把 prompt 存进任务目录，用 `codex exec` 启动，并确认真的启动了。`--sandbox network或full` 放宽时必须附 `--approved-by "用户原话或出处"`；默认 workspace-write、禁联网。`--dry`（兼容 `DISPATCH_DRY=1`）只记录命令（带 `--worktree` 时也准备工作树）、不执行 Codex 或写 registry |
 | `worktrees list / clean [--dry] [--all]` | worktrees | 列出工作树；验收合并后安全清理干净且已合并的工作树，保留无法用 `branch -d` 删除的分支 |
 | `resume <task> <session> <cwd> <消息文件>` | resume | 在已有会话上再跑一轮；模型满载时隔一段时间重试。支持同 dispatch 的 `--sandbox` / `--approved-by` / `--dry`，不继承上轮放宽 |
-| `github_poll` | GitHub polling source | 从 registry 派生仓库，把 PR 变化送进 L1 事件队列；无订阅或路由 |
+| `subscribe` | subscription registry | add/list/pause/resume/remove 项目或 thread 订阅 |
+| `review` | review | 追加任务 reviewed，--undo 撤销 |
+| `github_poll` | GitHub polling source | 从 registry 派生仓库，他人评论/评审和 CI 变化交给 classify 分级或直通 |
 | `wake add\|list\|cancel` | wake | 预约、列出、取消定时唤醒 |
 | `event add <L0\|L1\|L2> <来源> <内容>` | event | 往事件队列加一条；L2 同时通过 reporter 弹通知 |
 | `event from-agentconsole` | event | AgentConsole 的事件处理入口（stdin 一条 JSON），按策略分级后入队 |
@@ -113,4 +120,4 @@
 ## 规则 / Rules
 - **单写者**：每个目录只有一个写入者，见上表。`human/inbox.md` 只由总控写：各处发现的事先进 `interaction` 的事件队列，总控验收时整理进 inbox。
 - **不循环读自己**：总控改了 `human/` 就立刻提交。「人类修改」事件只认 `human/` 中**未提交**的改动，所以总控自己的改动不会被再读一遍。
-- **只走接口**：模块之间只调用对方的 `bin/`，不读写对方的 `lib/` 或 `state/`；显式共享库例外为 `interaction/lib/schema.py` 和 `interaction/lib/run_model.py`（Ear 与事件分诊共用，领域 prompt/schema 由调用方持有）。外部工具（Codex、CodexBridge）也只用它们的公开命令；唯一的例外写在 `interaction/lib/codex` 里。
+- **只走接口**：模块之间只调用对方的 `bin/`，不读写对方的 `lib/` 或 `state/`；显式共享库例外为 `interaction/lib/projects.py`（项目别名和路径）、`interaction/lib/schema.py` 和 `interaction/lib/run_model.py`（Ear 与事件分诊共用，领域 prompt/schema 由调用方持有）。外部工具（Codex、CodexBridge）也只用它们的公开命令；唯一的例外写在 `interaction/lib/codex` 里。

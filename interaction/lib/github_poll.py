@@ -12,7 +12,7 @@ import sys
 
 I = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(I.parent))
-from interaction.lib.projects import match
+from interaction.lib.projects import match as project_match
 
 REPO_PROJECTS = {}
 registry = runpy.run_path(str(I / 'lib/registry'))
@@ -33,7 +33,9 @@ def error(context, exc):
 
 def repositories():
     result = set()
-    cwds = {r.get('cwd') for r in registry['rows']() if isinstance(r.get('cwd'), str) and r['cwd']}
+    history = registry['rows']()
+    origins = {r.get('cwd'): (r.get('worktree') or {}).get('repo') for r in history if r.get('worktree')}
+    cwds = {r.get('cwd') for r in history if isinstance(r.get('cwd'), str) and r['cwd']}
     for cwd in sorted(cwds):
         try:
             remote = run(['git', '-C', cwd, 'remote', 'get-url', 'origin']).strip()
@@ -42,8 +44,8 @@ def repositories():
         match = re.fullmatch(r'(?:git@github\.com:|(?:https?|ssh|git)://(?:git@)?github\.com/)([\w.-]+/[\w.-]+?)(?:\.git)?/?', remote, re.I)
         if match:
             result.add(match[1].lower())
-            from interaction.lib.projects import match as project_match
-            REPO_PROJECTS[match[1].lower()] = project_match(cwd)
+            project = project_match(origins.get(cwd) or cwd)
+            if project: REPO_PROJECTS[match[1].lower()] = project
     return sorted(result)
 
 

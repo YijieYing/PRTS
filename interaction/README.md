@@ -9,13 +9,13 @@
 | `bin/resume` | `<task> <session UUID> <cwd> <消息文件> [重试次数=6] [间隔秒=600] [--sandbox network或full --approved-by "用户原话或出处"] [--dry]`；同步执行 |
 | `bin/wake` | `add <带时区ISO时间或HH:MM> <UUID或精确会话名> <prompt文件> [--name NAME] [--mode resume或queue]`；`list`；`cancel <id>` |
 | `bin/github_poll` | 不带参数运行一次，从 registry 的 cwd 派生 GitHub 仓库，PR 变化进入 L1 复核队列 |
-| `bin/event` | `add <L0或L1或L2> <source> <text>`；`from-agentconsole` 从 stdin 读一个 JSON；`list [--new]`；`ack <id>` |
+| `bin/event` | `add <L0或L1或L2> <source> <text> [--thread KEY] [--project NAME] [--kind KIND] [--id ID]`；`from-agentconsole` 从 stdin 读一个 JSON；`list [--new]`；`ack <id>` |
 | `bin/wait` | `<task> [轮询秒=30]`，等待当前运行结束，打印 last.md；退出码为运行结果（75 为重试耗尽）。此命令由总控同步维护 |
-| `bin/status` | `[task]`，输出 registry JSONL；`links` 输出显式派发关系 JSONL；供其他模块只读查询，不访问内部文件 |
+| `bin/status` | `[task]`，输出 registry JSONL；`links` 输出显式派发关系 JSONL；`threads [--json]` 输出主线投影；供其他模块只读查询，不访问内部文件 |
 
 `wake` 的 HH:MM 按日本时间解释，过去的时分预约到明天；按分钟向上取整。resume 完成表示本轮退出，queue 完成只表示入队。`WAKE_DRY=1` 跳过 Codex，**仍会注册 launchd**。取消仅限未运行任务。
 
-L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify alert`。通知失败返回非零，事件仍保留为 new。`ack` 幂等，改为 acked 并追加 acked_at；未知 id 报错。AgentConsole 的 dormant（cwd 出现在 registry）、idle_long、stale 为 L1，host_down 为 L2，其余已知类型为 L0；不写 human inbox。未知 `event` 类型走可选的模型慢速分支：`config/filter.toml` 的 `allowed_sources` 是事件 JSON 中 `source` 的白名单，默认空列表（关闭），未列入的来源仍为 L0、不调用模型；`timeout` 是单次调用超时秒数，默认 60。模型返回 L0/L1/L2 和理由；调用或校验失败退化为 L1，理由保留错误摘要。add 也经过 classify，位置级别仅作默认；详见 thread 与订阅。
+L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify alert`。通知失败返回非零，事件仍保留为 new。`ack` 幂等，改为 acked 并追加 acked_at；未知 id 报错。AgentConsole 的 dormant（cwd 出现在 registry）、idle_long、stale 为 L1，host_down 为 L2，其余已知类型为 L0；不写 human inbox。未知 `event` 类型走可选的模型慢速分支：`config/filter.toml` 的 `allowed_sources` 是事件 JSON 中 `source` 的白名单，默认空列表（关闭），未列入的来源不调用模型（AgentConsole 默认 L0，add 保留位置参数级别）；`timeout` 是单次调用超时秒数，默认 60。模型返回 L0/L1/L2、project（可为 null）和理由；调用或校验失败退化为 L1，理由保留错误摘要。add 也经过 classify，位置级别仅作默认；详见 thread 与订阅。
 
 默认数据根为本模块 `state/`，可用绝对路径 `PRTS_INTERACTION_STATE` 覆盖：
 
@@ -151,3 +151,5 @@ tasks.status 为 running|done|failed。任务按最新 start 后的 registry 状
 同一事件可同时出现在外部 thread 与所属项目；counts 不含路由审计副本，
 routed 为完全直通事件数，pending 为仍处 new 的事件数。
 `interaction/bin/review <任务名> [--undo]` 追加 reviewed 记录；新一轮 start 重置 false。
+
+R18 离线验收：python3 interaction/tests/test_threads.py（含严格字段 schema 校验）；pulse/tests/test_ear.py 与 test_pulse.py 的 PULSE_EVENT 替身验证来源，所有测试状态均隔离。

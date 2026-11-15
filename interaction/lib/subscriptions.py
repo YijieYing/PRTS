@@ -2,6 +2,7 @@
 import datetime as dt
 import fcntl
 import json
+import os
 import re
 import runpy
 import uuid
@@ -25,8 +26,13 @@ def read(path):
 
 def append(path, row):
     with path.open('a') as f:
+        if path.stat().st_size:
+            with path.open('rb') as check:
+                check.seek(-1, 2)
+                if check.read(1) != b'\n': f.write('\n')
         f.write(json.dumps(row, ensure_ascii=False) + '\n')
         f.flush()
+        os.fsync(f.fileno())
 
 @contextmanager
 def locked(name):

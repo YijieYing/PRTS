@@ -24,9 +24,11 @@ class GithubPoll(unittest.TestCase):
         self.stub = self.root / 'bin'; self.stub.mkdir()
         self.fixture = self.root / 'fixture.json'
         self.calls = self.root / 'calls.jsonl'
+        projects = self.root/'projects.toml'
+        projects.write_text('[[project]]\nname="Fixture"\npath="/repo"\n')
         self.env = dict(os.environ, PRTS_INTERACTION_STATE=str(self.state),
                         PATH=str(self.stub) + ':' + os.environ['PATH'],
-                        FIXTURE=str(self.fixture), CALLS=str(self.calls))
+                        FIXTURE=str(self.fixture), CALLS=str(self.calls), PRTS_PROJECTS=str(projects))
         script = '''#!/usr/bin/env python3
 import json, os, pathlib, sys
 args=sys.argv[1:]
@@ -37,6 +39,11 @@ if pathlib.Path(sys.argv[0]).name == 'git':
     remote=data['remotes'].get(args[1])
     if remote is None: sys.exit(1)
     print(remote); sys.exit(0)
+if args == ['api','user']:
+    print(json.dumps({'login':'me'})); sys.exit(0)
+if args[0] == 'api':
+    parts=args[-1].split('/')
+    print(json.dumps([data['repos']['/'.join(parts[1:3])][parts[4]].get('inline',[])])); sys.exit(0)
 repo=args[args.index('--repo')+1]
 if repo in data.get('fail', []): print('offline failure', file=sys.stderr); sys.exit(1)
 prs=data['repos'][repo]
@@ -50,15 +57,15 @@ else: print(json.dumps(prs[args[2]]))
         self.add_cwd('/repo')
 
     def detail(self, comments=0, ci='PENDING', updated='2026-11-14T00:00:00Z'):
-        return dict(comments=[{}] * comments, statusCheckRollup=[{'state':ci}], updatedAt=updated)
+        return dict(comments=[{'author':{'login':'other'}}] * comments, reviews=[], statusCheckRollup=[{'state':ci}], updatedAt=updated)
 
     def add_cwd(self, cwd):
         subprocess.run([str(self.root / 'interaction/lib/registry'), 'append', json.dumps({'cwd':cwd})],
-                       env=self.env, check=True, capture_output=True)
+                       env=self.env, stdin=subprocess.DEVNULL, check=True, capture_output=True)
 
     def poll(self):
         self.fixture.write_text(json.dumps(self.data))
-        result = subprocess.run([str(self.root / 'interaction/bin/github_poll')], env=self.env,
+        result = subprocess.run([str(self.root / 'interaction/bin/github_poll')], env=self.env, stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         return result
@@ -74,8 +81,7 @@ else: print(json.dumps(prs[args[2]]))
         self.assertEqual(self.events(), [])
         self.assertEqual(before, (self.state / 'github_poll.jsonl').read_bytes())
         for detail, expected in [(self.detail(comments=1), '评论数'),
-                                 (self.detail(comments=1, ci='FAILURE'), 'CI 从 pending 变成 failure'),
-                                 (self.detail(comments=1, ci='FAILURE', updated='later'), '有更新')]:
+                                 (self.detail(comments=1, ci='FAILURE'), 'CI 从 pending 变成 failure')]:
             self.data['repos']['owner/repo']['123'] = detail
             count = len(self.events())
             self.poll(); self.poll()
@@ -84,6 +90,23 @@ else: print(json.dumps(prs[args[2]]))
             self.assertIn('owner/repo#123', event['text'])
             self.assertIn(expected, event['text'])
             self.assertEqual((event['level'], event['source'], event['status']), ('L1','github_poll','new'))
+
+
+    def test_reviews_inline_self_and_updated(self):
+        self.poll()
+        detail = self.detail(updated='later')
+        detail['comments'] = [{'author': {'login':'me'}}]
+        self.data['repos']['owner/repo']['123'] = detail
+        self.poll()
+        self.assertEqual(self.events(), [])
+        detail['reviews'] = [{'author': {'login':'other'}}]
+        detail['inline'] = [{'user': {'login':'other'}}, {'user': {'login':'me'}}]
+        self.poll()
+        self.assertEqual(len(self.events()), 1)
+        self.assertEqual(self.events()[0]['thread_key'], 'gh:owner/repo#123')
+        self.assertEqual(self.events()[0]['project'], 'Fixture')
+        cursor = json.loads((self.state/'github_poll.jsonl').read_text().splitlines()[-1])
+        self.assertEqual((cursor['comments'],cursor['reviews'],cursor['inline']), (0,1,1))
 
     def test_remotes_and_deduplication(self):
         for i, remote in enumerate(['https://github.com/owner/repo.git', 'ssh://git@github.com/owner/repo.git',
@@ -146,7 +169,7 @@ else: print(json.dumps(prs[args[2]]))
         self.data['repos']['owner/repo']['123'] = self.detail(comments=1)
         self.fixture.write_text(json.dumps(self.data))
         def invoke(_):
-            return subprocess.run([str(self.root / 'interaction/bin/github_poll')], env=self.env,
+            return subprocess.run([str(self.root / 'interaction/bin/github_poll')], env=self.env, stdin=subprocess.DEVNULL,
                                   capture_output=True, timeout=15).returncode
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             self.assertEqual(list(pool.map(invoke, range(4))), [0]*4)
