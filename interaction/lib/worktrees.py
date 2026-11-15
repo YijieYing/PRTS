@@ -115,8 +115,10 @@ def inspect(repo, row, path):
         ref = default_ref(repo)
         merged = git(repo, 'merge-base', '--is-ancestor', row['HEAD'], ref, check=False).returncode == 0
         if not merged and branch and ref.startswith('refs/remotes/origin/'):
+            # Any merged PR whose head is exactly this commit counts: repos often merge into a
+            # branch other than the default (EchoAsRecord: default main, PRs into dev; 11-15).
             try:
-                pr = run(['gh', 'pr', 'list', '--head', branch, '--base', ref.removeprefix('refs/remotes/origin/'),
+                pr = run(['gh', 'pr', 'list', '--head', branch,
                           '--state', 'merged', '--json', 'headRefOid', '--limit', '1000'], cwd=repo, check=False)
                 merged = pr.returncode == 0 and any(p.get('headRefOid') == row['HEAD'] for p in json.loads(pr.stdout))
             except (OSError, ValueError, subprocess.TimeoutExpired): pass
