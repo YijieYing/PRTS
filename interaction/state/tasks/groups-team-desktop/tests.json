@@ -1,0 +1,99 @@
+{
+  "initial": [
+    {
+      "test": "interaction/tests/test_filter.py",
+      "rc": 0,
+      "output": ".....\n----------------------------------------------------------------------\nRan 5 tests in 2.000s\n\nOK\n"
+    },
+    {
+      "test": "interaction/tests/test_github_poll.py",
+      "rc": 0,
+      "output": ".github_poll: owner/repo: Command 'gh' timed out after 30 seconds\n........\n----------------------------------------------------------------------\nRan 9 tests in 19.010s\n\nOK\n"
+    },
+    {
+      "test": "interaction/tests/test_groups.py",
+      "rc": 0,
+      "output": "../Users/prts/PRTS/interaction/lib/groups.py:96: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x105d423e0>\n  def groups(threads, subscriptions, rows, generated_at):\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n.\n----------------------------------------------------------------------\nRan 3 tests in 0.530s\n\nOK\n"
+    },
+    {
+      "test": "interaction/tests/test_modules.py",
+      "rc": 0,
+      "output": "...............\n----------------------------------------------------------------------\nRan 15 tests in 50.823s\n\nOK\n"
+    },
+    {
+      "test": "interaction/tests/test_run.py",
+      "rc": 0,
+      "output": "...\n----------------------------------------------------------------------\nRan 3 tests in 2.033s\n\nOK\n"
+    },
+    {
+      "test": "interaction/tests/test_threads.py",
+      "rc": 0,
+      "output": "......\n----------------------------------------------------------------------\nRan 6 tests in 7.635s\n\nOK\n"
+    },
+    {
+      "test": "interaction/tests/test_wake.sh",
+      "rc": 0,
+      "output": "20261117T0315-capacity\t2026-11-17T03:15:00+09:00\tfailed\tresume\t11111111-1111-4111-8111-111111111111\trc=75\n20261117T0315-queue\t2026-11-17T03:15:00+09:00\tdone\tqueue\t11111111-1111-4111-8111-111111111111\trc=0\n20261117T0315-real\t2026-11-17T03:15:00+09:00\tdone\tresume\t11111111-1111-4111-8111-111111111111\trc=0\n20261117T0315-dry\t2026-11-17T03:15:00+09:00\tdone\tresume\t11111111-1111-4111-8111-111111111111\trc=0\n20261118T0309-tomorrow\t2026-11-18T03:09:00+09:00\tcancelled\tresume\t11111111-1111-4111-8111-111111111111\trc=-\n20261117T0315-iso\t2026-11-17T03:15:00+09:00\tcancelled\tresume\t11111111-1111-4111-8111-111111111111\trc=-\nPASS: time, past rejection, alias dedup, cancel, dry, delivery, injection, one-shot, capacity\n"
+    },
+    {
+      "test": "interaction/tests/test_worktrees.py",
+      "rc": 0,
+      "output": "......\n----------------------------------------------------------------------\nRan 6 tests in 7.334s\n\nOK\n"
+    },
+    {
+      "test": "pulse/tests/test_ear.py",
+      "rc": 1,
+      "output": "...............F/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:668: ResourceWarning: unclosed file <_io.TextIOWrapper name=6 encoding='UTF-8'>\n  with outcome.testPartExecutor(self):\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:668: ResourceWarning: unclosed file <_io.TextIOWrapper name=4 encoding='UTF-8'>\n  with outcome.testPartExecutor(self):\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n.F\n======================================================================\nFAIL: test_wait_blocks_groups_and_hands_once (test_ear.EarTests.test_wait_blocks_groups_and_hands_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/Users/prts/PRTS/pulse/tests/test_ear.py\", line 126, in test_wait_blocks_groups_and_hands_once\n    time.sleep(.15); self.assertIsNone(proc.poll())\n                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^\nAssertionError: 1 is not None\n\n======================================================================\nFAIL: test_wait_merges_time_gap_and_ack_cli (test_ear.EarTests.test_wait_merges_time_gap_and_ack_cli)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/Users/prts/PRTS/pulse/tests/test_ear.py\", line 251, in test_wait_merges_time_gap_and_ack_cli\n    self.assertEqual(result.returncode,0,result.stderr); self.assertEqual(result.stdout,'')\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : Traceback (most recent call last):\n  File \"/Users/prts/PRTS/pulse/bin/pulse\", line 5, in <module>\n    from pulse import main\n  File \"/Users/prts/PRTS/pulse/lib/pulse.py\", line 15, in <module>\n    import sources\n  File \"/Users/prts/PRTS/pulse/lib/sources.py\", line 13, in <module>\n    from interaction.lib.projects import match\nModuleNotFoundError: No module named 'interaction'\n\n\n----------------------------------------------------------------------\nRan 18 tests in 46.150s\n\nFAILED (failures=2)\n"
+    },
+    {
+      "test": "pulse/tests/test_focus.py",
+      "rc": 0,
+      "output": "............\n----------------------------------------------------------------------\nRan 12 tests in 6.206s\n\nOK\n"
+    },
+    {
+      "test": "pulse/tests/test_new_ear.py",
+      "rc": 0,
+      "output": "......\n----------------------------------------------------------------------\nRan 6 tests in 12.451s\n\nOK\n"
+    },
+    {
+      "test": "pulse/tests/test_pulse.py",
+      "rc": 1,
+      "output": "...............F/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:668: ResourceWarning: unclosed file <_io.TextIOWrapper name=6 encoding='UTF-8'>\n  with outcome.testPartExecutor(self):\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py:668: ResourceWarning: unclosed file <_io.TextIOWrapper name=4 encoding='UTF-8'>\n  with outcome.testPartExecutor(self):\nResourceWarning: Enable tracemalloc to get the object allocation traceback\n.....................................活动跨度异常：computer / 0，跨度 245.0 分，实际区间 10.0 分\n活动跨度异常：computer / 0，跨度 485.0 分，实际区间 15.0 分\n........................活动跨度异常：chatgpt / 0，跨度 600.0 分，实际区间 10.0 分\n..............\n======================================================================\nFAIL: test_wait_blocks_groups_and_hands_once (test_ear.EarTests.test_wait_blocks_groups_and_hands_once)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/Users/prts/PRTS/pulse/tests/test_ear.py\", line 126, in test_wait_blocks_groups_and_hands_once\n    time.sleep(.15); self.assertIsNone(proc.poll())\n                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^\nAssertionError: 1 is not None\n\n----------------------------------------------------------------------\nRan 91 tests in 81.872s\n\nFAILED (failures=1)\n"
+    },
+    {
+      "test": "pulse/tests/test_recap_status.py",
+      "rc": 0,
+      "output": "...\n----------------------------------------------------------------------\nRan 3 tests in 0.007s\n\nOK\n"
+    },
+    {
+      "test": "reporter/tests/test_ear_sync.py",
+      "rc": 0,
+      "output": ".\n----------------------------------------------------------------------\nRan 1 test in 18.561s\n\nOK\n"
+    },
+    {
+      "test": "reporter/tests/test_questions.py",
+      "rc": 0,
+      "output": "............\n----------------------------------------------------------------------\nRan 12 tests in 30.987s\n\nOK\n"
+    },
+    {
+      "test": "reporter/tests/test_recap.py",
+      "rc": 0,
+      "output": "...\n----------------------------------------------------------------------\nRan 3 tests in 7.227s\n\nOK\n"
+    },
+    {
+      "test": "reporter/tests/test_recap_end.py",
+      "rc": 0,
+      "output": "......\n----------------------------------------------------------------------\nRan 6 tests in 14.497s\n\nOK\n"
+    },
+    {
+      "test": "reporter/tests/test_weekly.py",
+      "rc": 0,
+      "output": "......\n----------------------------------------------------------------------\nRan 6 tests in 13.854s\n\nOK\n"
+    }
+  ],
+  "after_fix": {
+    "interaction/tests/test_groups.py": "test_cli_projects_roadmaps_and_legacy (__main__.Groups.test_cli_projects_roadmaps_and_legacy) ... ok\ntest_desktop_files_and_database (__main__.Groups.test_desktop_files_and_database) ... ok\ntest_team_window_dedupe_limits_counts (__main__.Groups.test_team_window_dedupe_limits_counts) ... ok\n\n----------------------------------------------------------------------\nRan 3 tests in 0.886s\n\nOK\n",
+    "pulse/tests/test_pulse.py": ".....................................................活动跨度异常：computer / 0，跨度 245.0 分，实际区间 10.0 分\n活动跨度异常：computer / 0，跨度 485.0 分，实际区间 15.0 分\n........................活动跨度异常：chatgpt / 0，跨度 600.0 分，实际区间 10.0 分\n..............\n----------------------------------------------------------------------\nRan 91 tests in 72.507s\n\nOK\n"
+  },
+  "note": "Initial pulse import failures fixed in sources.py; final test_pulse rerun includes all 18 EarTests and 12 FocusTests."
+}

@@ -22,7 +22,7 @@ category = "学术"
 group = "PRTS"
 
 [[project]]
-name = "PRTS 总控台"   # 家目录里的主 session 也算总控台（用户 11-14 同意合并）
+name = "PRTS 总控台"   # legacy 家目录登记；pulse / status 的 cwd 匹配忽略家目录项
 path = "~"
 category = "总控"
 exact = true   # 只匹配家目录本身，不吞掉下面的子目录

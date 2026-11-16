@@ -20,8 +20,12 @@ def canonical(name, items=None):
 def match(cwd, items=None):
     if not cwd: return None
     path = str(Path(cwd).expanduser()).rstrip('/')
+    if path == str(Path.home()).rstrip('/'):
+        return None
     for p in sorted(mapping() if items is None else items, key=lambda p: len(str(Path(p['path']).expanduser())), reverse=True):
         prefix = str(Path(p['path']).expanduser()).rstrip('/')
+        if prefix == str(Path.home()).rstrip('/'):
+            continue
         if path == prefix or (not p.get('exact') and path.startswith(prefix + '/')):
             return canonical(p['name'], items)
     return None

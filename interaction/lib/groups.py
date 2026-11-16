@@ -1,9 +1,10 @@
-"""Project groups, roadmap items and registry-backed teams for status."""
+"""Project groups, roadmap items and session-backed teams for status."""
 import datetime as dt
 from pathlib import Path
 import re
 
 from .projects import mapping, match
+from .sessions import scan
 
 
 def timestamp(value):
@@ -102,6 +103,37 @@ def groups(threads, subscriptions, rows, generated_at):
             if not project.get(key) and item.get(key): project[key] = item[key]
         if item.get('group'): grouped.setdefault(item['group'], [])
     teams = activity(rows, items)
+    agents = scan()
+    aliases = {'claude:'+a['id']: 'claude:'+a['app_session_id'] for a in agents
+               if a.get('kind') == 'claude' and a.get('app_session_id')}
+    archived = {aliases.get('claude:'+a['id'], 'claude:'+a['id']) for a in agents
+                if a.get('kind') == 'claude' and a.get('archived')}
+    # Normalize dispatch IDs before merging, including desktop rewind transcripts.
+    normalized = {}
+    def merge(project, member):
+        ident = aliases.get(member['id'], member['id'])
+        if ident in archived:
+            return
+        member = dict(member, id=ident)
+        members = normalized.setdefault(project, {})
+        old = members.get(ident)
+        minimum = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+        if old is None or (timestamp(member['last_active']) or minimum) >= (timestamp(old['last_active']) or minimum):
+            members[ident] = member
+    for name, members in teams.items():
+        for member in members.values():
+            merge(name, member)
+    for a in agents:
+        if a.get('kind') not in ('claude', 'codex') or a.get('archived'):
+            continue
+        active = dt.datetime.fromtimestamp(a['updated_ms']/1000, dt.timezone.utc).isoformat()
+        merge(match(a.get('cwd'), items), dict(kind=a['kind'], id=a['kind']+':'+a['id'],
+              title=a.get('title') or None, subscribed=False, last_active=active))
+        ident = aliases.get(a['kind']+':'+a['id'], a['kind']+':'+a['id'])
+        member = normalized.get(match(a.get('cwd'), items), {}).get(ident)
+        if member and a.get('title') and not a.get('fork_of'):
+            member['title'] = a['title']
+    teams = normalized
     current = timestamp(generated_at)
     cutoff = current - dt.timedelta(days=14)
     for name, project in projects.items():
@@ -112,14 +144,16 @@ def groups(threads, subscriptions, rows, generated_at):
         for sub in subscriptions:
             if sub.get('paused') or (sub.get('thread_key') or 'project:'+str(sub.get('project'))) != key:
                 continue
-            target = sub['to']
+            target = aliases.get(sub['to'], sub['to'])
+            if target in archived:
+                continue
             kind = target.split(':', 1)[0]
             subscribers[target] = dict(members.get(target) or dict(kind=kind, id=target, title=None, last_active=None), subscribed=True)
         recent = [m for ident, m in members.items() if ident not in subscribers and
                   timestamp(m['last_active']) and cutoff <= timestamp(m['last_active']) <= current]
         minimum = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
         order = lambda m: (-(timestamp(m['last_active']) or minimum).timestamp(), m['id'])
-        team = sorted([*subscribers.values(), *sorted(recent, key=order)[:10]], key=order)
+        team = sorted(subscribers.values(), key=order) + sorted(recent, key=order)[:10]
         tasks = thread.get('tasks', [])
         view = dict(name=name, thread=key, paths=project['paths'], roadmap=roadmap(project), team=team,
                     tasks_running=sum(t['status'] == 'running' for t in tasks),

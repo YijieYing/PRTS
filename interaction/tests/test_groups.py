@@ -2,14 +2,25 @@
 """Groups fixtures; CLI children have closed stdin via the shared test harness."""
 import datetime as dt
 import json
+import os
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 import test_threads
 from interaction.lib.groups import groups, roadmap
+from interaction.lib.sessions import reader, scan
+from interaction.lib.projects import match
+from pulse.lib.sources import project as pulse_project
 
 
 class Groups(unittest.TestCase):
-    setUp = test_threads.Threads.setUp
+    def setUp(self):
+        test_threads.Threads.setUp(self)
+        self.scanner = patch('interaction.lib.groups.scan', return_value=[])
+        self.scanner.start()
+        self.addCleanup(self.scanner.stop)
     call = test_threads.Threads.call
     sub = test_threads.Threads.sub
 
@@ -111,8 +122,9 @@ group="Outreach"
         self.assertEqual(p['tasks_running'],1)
         self.assertEqual(p['tasks_unreviewed'],2)
         self.assertEqual(p['last_event_at'],iso(0))
-        self.assertEqual([m['last_active'] for m in team if m['last_active']],
-                         sorted([m['last_active'] for m in team if m['last_active']],reverse=True))
+        self.assertTrue(all(m['subscribed'] for m in team[:2]))
+        recent = [m['last_active'] for m in team if not m['subscribed']]
+        self.assertEqual(recent, sorted(recent, reverse=True))
         # Inclusive 14-day boundary, CLI Claude identity, no child-completion activity for caller.
         rows = []
         run('boundary','boundary',14,dict(kind='claude',id='cli-uuid'))
@@ -122,5 +134,77 @@ group="Outreach"
             team = groups({}, [], rows, iso(0))[0]['projects'][0]['team']
         self.assertEqual({m['id'] for m in team}, {'claude:cli-uuid','codex:boundary'})
         self.assertEqual(next(m for m in team if m['kind']=='claude')['last_active'], iso(14))
+
+
+    def test_desktop_files_and_database(self):
+        module = reader()
+        if module is None:
+            self.skipTest('optional AgentConsole checkout is not installed')
+        module.HOME = str(self.root)
+        now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+        epoch = now.timestamp()
+        iso = lambda days: (now-dt.timedelta(days=days)).isoformat()
+        transcripts = self.root/'.claude/projects/repo'
+        transcripts.mkdir(parents=True)
+        metadata = self.root/'Library/Application Support/Claude/claude-code-sessions/account'
+        metadata.mkdir(parents=True)
+        def claude(sid, cwd, days=0, archived=False, local=None):
+            path = transcripts/(sid+'.jsonl')
+            path.write_text(json.dumps(dict(cwd=cwd, type='user', uuid=sid,
+                                           message=dict(content='prompt')))+'\n')
+            os.utime(path, (epoch-days*86400, epoch-days*86400))
+            local = local or 'local_'+sid
+            (metadata/(local+'.json')).write_text(json.dumps(dict(sessionId=local,
+                cliSessionId=sid, title='Desktop '+sid, isArchived=archived)))
+        claude('cli', '/repo/deep/child', 1)
+        claude('archived', '/repo/deep', archived=True)
+        claude('home', str(self.root))
+        claude('old', '/repo/deep', 15)
+        claude('edge', '/repo/deep', 14)
+        claude('future', '/repo/deep', -1)
+        claude('sibling', '/repository')
+        db = self.root/'.codex/state_5.sqlite'
+        db.parent.mkdir()
+        with closing(sqlite3.connect(db)) as con:
+            con.execute('CREATE TABLE threads (id, rollout_path, cwd, name, title, preview, source, updated_at_ms, archived, model, agent_role, model_provider)')
+            con.execute('CREATE TABLE thread_spawn_edges (child_thread_id, parent_thread_id)')
+            for i in range(12):
+                con.execute('INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (f'c{i}', '/missing', '/repo', '', f'Codex {i}', '', 'desktop',
+                     int((epoch-i*60)*1000), 0, '', '', ''))
+            for sid, days, archived in [('old',15,0), ('archived',0,1), ('future',-1,0), ('edge',14,0)]:
+                con.execute('INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                    (sid, '/missing', '/repo/deep', '', sid, '', 'desktop', int((epoch-days*86400)*1000), archived, '', '', ''))
+            con.commit()
+        items = [dict(name='Home', path=str(self.root)), dict(name='A', path='/repo'),
+                 dict(name='Deep', path='/repo/deep')]
+        rows = [dict(name='dispatch', event='start', t=iso(2), cwd='/repo/deep', caller=dict(kind='claude',id='cli')),
+                dict(name='archived', event='start', t=iso(0), cwd='/repo/deep', caller=dict(kind='claude',id='archived')),
+                dict(name='codex', event='start', t=iso(1), cwd='/repo'),
+                dict(name='codex', event='thread', t=iso(1), thread='c0')]
+        subs = [dict(project='Deep', to='claude:cli'), dict(project='Deep', to='claude:local_cli')]
+        with patch('interaction.lib.groups.scan', side_effect=lambda: scan(module)), \
+             patch('interaction.lib.groups.mapping', return_value=items), \
+             patch('time.time', return_value=epoch), patch('pathlib.Path.home', return_value=self.root):
+            projects = {p['name']:p for g in groups({}, subs, rows, iso(0)) for p in g['projects']}
+            self.assertIsNone(match(str(self.root), items))
+            self.assertIsNone(match(str(self.root/'unknown'), items))
+            self.assertIsNone(match('/repository', items))
+            self.assertEqual(match('/repo/deep/child', items), 'Deep')
+            self.assertEqual(pulse_project('/repo/deep/child', items), 'Deep')
+            self.assertEqual(pulse_project(str(self.root), items), '未归属')
+            self.assertEqual(pulse_project('/unregistered', items), 'unregistered')
+            self.assertIsNone(match('/repo/child', [dict(name='Exact',path='/repo',exact=True)]))
+        self.assertEqual(projects['Home']['team'], [])
+        deep = projects['Deep']['team']
+        self.assertEqual([m['id'] for m in deep], ['claude:local_cli', 'claude:local_edge', 'codex:edge'])
+        self.assertTrue(deep[0]['subscribed'])
+        self.assertEqual(deep[0]['title'], 'Desktop cli')
+        self.assertEqual(deep[0]['last_active'], iso(1))
+        team = projects['A']['team']
+        self.assertEqual(len(team), 10)
+        self.assertEqual([m['id'] for m in team], [f'codex:c{i}' for i in range(10)])
+        self.assertTrue(all(not m['subscribed'] for m in team))
+        self.assertEqual(team[0]['title'], 'Codex 0')
 
 if __name__ == '__main__': unittest.main(verbosity=2)

@@ -168,17 +168,23 @@ open=[] 且 error 为原因，不中断 status；全部完成或前缀未命中�
 可选 `roadmap_prefix` 只保留指定编号前缀的表格行（无编号清单不匹配前缀）。
 共享 PRTS ROADMAP 的「PRTS 总控台」配置 R，「AgentConsole」配置 M。
 
-team 使用现有订阅和 PRTS registry，不依赖 AgentConsole HTTP 服务或扫描对话全文：
+team 合并订阅、PRTS registry 和本机按目录归属的会话，不依赖 AgentConsole HTTP 服务：
 - 未暂停、未删除且订阅该 project thread 的目标全部保留，subscribed=true；PR/ear 等其他 thread 的订阅不扩展为工程订阅。
 - 历史团队来自每次 dispatch/resume 的 Codex thread 与 caller；按该次 cwd/worktree.repo 最长目录前缀归属。
-  caller 表示派发参与者，不能证明 caller 自身 cwd 在工程内；未经过 PRTS 派发且未订阅的桌面会话不在此来源中。
+  caller 表示派发参与者，不能证明 caller 自身 cwd 在工程内。
   Codex 的 last_active 为该次 start/thread/exit/gave_up 最新时间；caller 仅取 start 时间，review 不算会话活动。
-  title 为最近派发任务名（并非桌面自定义标题）；未知 title/last_active 为 null。
+  只有派发记录时 title 为最近派发任务名；未知 title/last_active 为 null。
+- 桌面会话复用只读 `AgentConsole/agent_console/scan.py` 的扫描函数（内部 API 兼容依赖；共享读取例外）。
+  Claude 从 JSONL 读取 cwd、文件 mtime 作为活动时间，desktop `claude-code-sessions` 提供标题、local ID、归档状态；
+  Codex 只读 `state_5.sqlite`，沿用扫描器的标题优先级和 updated_at_ms。无需进程扫描或读取完整对话。
+  cwd 与 pulse 共用 projects.match 按最长目录前缀匹配，支持 exact；家目录本身和家目录登记项不匹配。
+  已归档 Claude 会话从所有来源排除；缺失 AgentConsole checkout 时仅保留订阅和派发，单源读取失败在 stderr 警告。
 - 按 kind:id 去重，订阅覆盖历史身份；历史非订阅成员仅取最近 14 天（含边界，不含未来）最多 10 个。
-  显式订阅不受历史窗口/数量限制；整个 team 按 last_active 倒序、空值最后，同时间按 id 排序。
+  显式订阅不受历史窗口/数量限制；订阅者排在最前，两组各按 last_active 倒序、空值最后，同时间按 id 排序。
 - AgentConsole 左栏匹配：去掉 `codex:` 后是其 agent.id（Codex 线程 UUID）；
   `claude:` 后是 CLI session ID 时匹配 agent.id，是 `local_…` 时匹配 agent.app_session_id。
-  两种 Claude ID 在 registry 无映射时分别保留，不推测它们是同一会话。
+  通过 desktop 元数据把 CLI ID（含旧 transcript）统一为 local ID 后去重；无映射时分别保留。
+  本机会话标题优先于派发名称，last_active 取各来源最新时间。
 
 tasks_running 统计原有对应 project thread 中 status=running 的任务；tasks_unreviewed 统计
 已结束（done/failed）且 reviewed=false 的任务；last_event_at 沿用该 thread，无 thread 则 0/0/null。

@@ -5,10 +5,15 @@ import json
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+
+# Standalone pulse entry points initially put only pulse/lib on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from interaction.lib.projects import match
 
 
 def stamp(value):
@@ -44,12 +49,9 @@ def project(cwd, mapping):
     path = str(Path(cwd).expanduser()).rstrip('/')
     if path == str(Path.home()).rstrip('/'):
         return '未归属'
-    for item in mapping:
-        prefix = str(Path(item['path']).expanduser()).rstrip('/')
-        if prefix == str(Path.home()).rstrip('/'):
-            continue
-        if path == prefix or (not item.get('exact') and path.startswith(prefix + '/')):
-            return item['name']
+    matched = match(cwd, mapping)
+    if matched is not None:
+        return matched
     return Path(path).name or '未归属'
 
 
