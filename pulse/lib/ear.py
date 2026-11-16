@@ -313,8 +313,11 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
             try:
                 items = new_transcripts(cfg, start, end) if end > start else []
                 rows, evidence_by_id = new_segments(items, width, gap)
+                save(state/'activity.json', dict(ok=True, checked=end,
+                     latest_sentence=max((item[2] for item in items if item[3].strip()), default=None)))
             except (OSError, ValueError, KeyError, TypeError, RuntimeError, subprocess.TimeoutExpired) as error:
                 save(state/'availability.json', dict(ok=False, checked=end))
+                save(state/'activity.json', dict(ok=False, checked=end))
                 print('warning: Ear 数据缺失：'+str(error), file=sys.stderr)
                 return
             rows = [r for r in rows if stamp(r['started_at']) >= lower]
@@ -323,6 +326,7 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
                        if r['capture_id'] in done and stamp(r['started_at']) >= cutoff] if retriage else [
                            (r, evidence_by_id[r['capture_id']]) for r in rows if done.get(r['capture_id']) != r['fingerprint']]
         else:
+            save(state/'activity.json', dict(ok=False, checked=time.time()))
             with database(os.environ.get('PULSE_EAR_DB',cfg.get('database',DEFAULT_DB))) as db:
                 rows = captures(db,cfg.get('start_from','2026-11-12T12:00:00+09:00'))
                 done = read(state/'cursor.json',[])

@@ -533,11 +533,11 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
         self.assertNotIn('  - 学到',section)
         self.assertNotIn('  - 产出',section)
         self.assertIn('乙',section)
-        self.assertLessEqual(len(md),4000)
-        self.assertIn('篇幅受限',md)
+        self.assertGreater(len(md),4000)
+        self.assertNotIn('篇幅受限',md)
         # Whole-report pressure must not shrink the already bounded overview.
         longer=self.render_fixture(rows,warnings=['缺口'+str(i)+'长'*200 for i in range(6)])
-        self.assertLessEqual(len(longer),4000)
+        self.assertGreater(len(longer),4000)
         self.assertEqual(self.human_section(longer).split('- 其他：')[0].strip(),section)
 
     def test_render_merge_boundaries_and_summary(self):
@@ -588,31 +588,31 @@ print(json.dumps({'segments':[dict(id=r['id'],category='chore',reason='故障排
                    learned=['学'*200]*3,produced=['写'*200]*3) for i in range(30)]
         outputs=[dict(time=self.start+60,text='结论'*100,source='codex',session='x',project='0')]
         md=self.render_fixture(rows+[dict(minute=1400,duration=1,app='碎片')],outputs)
-        self.assertLessEqual(len(md),4000)
-        self.assertNotIn('agent 同时在做',md); self.assertNotIn('**零碎**',md)
-        self.assertIn('篇幅受限',md); self.assertIn('## 可以交给 agent 的杂务',md)
+        self.assertGreater(len(md),4000)
+        self.assertNotIn('agent 同时在做',md); self.assertIn('**零碎**',md)
+        self.assertNotIn('篇幅受限',md); self.assertIn('## 可以交给 agent 的杂务',md)
 
     def test_render_real_scale_limit_and_priority(self):
         # 45 segments now also include a protected project overview.
         rows=[dict(minute=i*6,duration=4,project=f'项目{i}',summary='检查实验结果并整理观察记录') for i in range(45)]
         outputs=[dict(time=self.start+(i*6+1)*60,text='结论'*40,source='codex',session=str(i),project=f'项目{i}') for i in range(45)]
         md=self.render_fixture(rows+[dict(minute=400,duration=1,app='碎片')],outputs)
-        self.assertLessEqual(len(md),4000)
         self.assertGreater(len(md.encode('utf-8')),len(md))
         self.assertNotIn('agent 同时在做',md)
         self.assertIn('## 人做了什么',md)
         self.assertIn('项目0',md.split('## 时间线')[0])
         self.assertIn('**零碎** 碎片',md)
         self.assertEqual(md.split('## 时间线')[1].count('** '),46)
-        # 60 rich segments overflow even after agent and fragments removal.
+        # All 60 rich segments survive, together with fragments and other sections.
         rows=[dict(minute=i*6,duration=4,project=str(i),summary='写'*100,
                    learned=['学'*100,'读'*100],produced=['造'*100,'改'*100]) for i in range(60)]
         md=self.render_fixture(rows+[dict(minute=400,duration=1,app='碎片')],outputs,
                                warnings=['缺口'+str(i)+'说明'*200 for i in range(50)])
-        self.assertLessEqual(len(md),4000)
+        self.assertGreater(len(md),4000)
+        self.assertEqual(md.split('## 时间线')[1].split('## agent 做了什么')[0].count('** '),61)
         self.assertIn('## 附：数据缺口',md); self.assertIn('其余数据缺口见同日 JSON',md)
-        self.assertNotIn('agent 同时在做',md); self.assertNotIn('**零碎**',md)
-        self.assertIn('篇幅受限',md)
+        self.assertNotIn('agent 同时在做',md); self.assertIn('**零碎**',md)
+        self.assertNotIn('篇幅受限',md)
 
     def test_render_system_noise_and_ranked_fragments(self):
         rows=[dict(minute=i*40,duration=10,app=name,summary='系统噪声')

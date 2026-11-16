@@ -124,7 +124,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 - 每段学到、产出各最多 2 条；只在杂务段显示已有 suggestion，按 topic 去重后取时间最早的 1 条，不串联多条建议。末尾杂务建议同样按 topic 去重、按时间取前 3 条；旧数据无 topic 时按建议正文去重。
 - 时间线只展示用户活动。agent/git 独立放在「## agent 做了什么」，按项目各一行、最多 8 行，每行最多 2 条最新线索；即使没有同项目用户段也保留。agent 每会话取最后结论性消息，正文最多 80 字，标「agent 自述，未核实」；git 只核实提交存在，不证明用户手写。
 - Ear 已分诊的段直接复用结果，不再调用模型。与 active 至少 3 分钟的电脑段的实际区间重叠并集严格超过录音跨度的一半时，在最大重叠的电脑段下显示「录音：标题」；否则独立展示，来源为 `ear`。连续同组录音可合并，low 只归入零碎。录音跨度是活动时长估计，不是实测有效思考时间；跨来源重叠继续等分计时，不重复增加总时长。
-- 全文（含项目概览）最多 4000 Unicode 字符（Python `len(md)`，不是 UTF-8 字节数；中文字符一般占 3 字节），超长先将 agent/git 各项目压缩为一条短线索，再移除零碎；仍超长则按整行省略时间线尾部并提示查看 JSON；总计行和「人做了什么」优先保留，不参与时间线裁剪。数据缺口最多显示 6 条，其余提示查看 JSON，避免缺口清单本身耗尽篇幅。
+- 全文（含项目概览、完整时间线和其余各节）不设 4000 字符总上限，不再按篇幅移除 agent 线索、零碎或时间线尾部。原有段落摘要、项目概览 1200 字符及条目数量规则保留；原始证据仍在 JSON。reporter 备忘录保存完整 Markdown，推送只取开头 8 行；check 提醒规则不变。
 
 ## 六、分阶段
 
@@ -145,7 +145,7 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 已实现 `bin/pulse focus set/status/stop/check` 专注守护（规则、配置、回放限制及仅提供未安装的 launchd 见 §十一）。
 
-已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`、`bin/pulse ear ack --before ISO`（重分诊与参数详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`。`next-available`、活动类别的实时识别留待后续。Ear 同步复用 reporter 的 remind/recap，不另设定时器。
+已实现 `bin/pulse ear sync [--no-notify]`、`bin/pulse ear wait [--poll 30]`、`bin/pulse ear ack --before ISO`（重分诊与参数详见 §十），以及 `bin/pulse day [YYYY-MM-DD] [--no-classify] [--classification-file JSON]`、`bin/pulse check [--window 90m] [--at 带时区ISO时间] [--dry] [--no-classify] [--classification-file JSON]`、`bin/pulse now`、`bin/pulse recap-status` 及只读 `bin/pulse day DATE --dry`。`next-available`、活动类别的实时识别留待后续。Ear 同步复用 reporter 的 remind/recap，不另设定时器。
 
 - `day` 默认取当地日历的昨天（凌晨 0–6 点也取前一天），窗口为 Asia/Tokyo 05:00 至次日 05:00。日期显式指定时不受运行时刻影响。
 - `config/pulse.toml` 配置时区、切日、20 分钟分段间隔与估计上限、检测阈值、数据路径和 `[user]` 空闲/休息时段。初始休息时段 05:00–12:00 是可调整的默认值，不代表已确认的用户作息。支持跨午夜时段。
@@ -185,7 +185,7 @@ Computer History 接入规则：
 
 「人做了什么」在 render 内复用现有分类和 active，正式与 `--no-classify` 回顾都生成；无额外模型调用，计时规则不变，分类 JSON 增加项目归属及来源字段。沿用 `project`、`category`、`summary`、`learned`、`produced`、`active_seconds`，没有新增模块或同义核心类型。
 
-渲染 fixture 新增项目概览排序、8 项及其他合并、分类/未分类分钟、学到/产出去重、Ear 与附属项目、空活动、推送开头及小节/全文裁剪保护；原有 fixture 覆盖合并边界、零碎排序与 6 项上限、系统程序过滤及事件归属、对话与计算机段重叠展示、单条 topic 建议、agent/git 独立分节、45/60 段规模下的裁剪顺序和字符上限及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
+渲染 fixture 新增项目概览排序、8 项及其他合并、分类/未分类分钟、学到/产出去重、Ear 与附属项目、空活动、推送开头及项目概览限长及全文不截断；原有 fixture 覆盖合并边界、零碎排序与 6 项上限、系统程序过滤及事件归属、对话与计算机段重叠展示、单条 topic 建议、agent/git 独立分节、45/60 段规模下全文超过 4000 字符仍保留时间线和各节及旧 reason 回退。真实数据冒烟可运行 `pulse/bin/pulse day 2026-11-12 --no-classify --classification-file pulse/state/days/2026-11-12.json`，输出 `.timing.md/.json`，不覆盖原报告、不提交 state。
 
 测试/隔离覆盖：`PULSE_CONFIG`、`PULSE_STATE` 指向配置和状态；`PULSE_RUN`、`PULSE_ASK` 分别替换 interaction/run 与 reporter/ask 可执行文件。子进程 stdin 全部关闭。
 
@@ -230,7 +230,9 @@ pulse/bin/pulse ear ack --before 2026-11-13T02:06:00+09:00  # 按起点清掉此
 - `ear ack --before ISO` 在 inbox 锁内将录音起点严格早于该时间的所有 inbox capture 记为已交出；等于边界的保留。只改 handed.json，不删除证据、不发通知、不打印，重复执行幂等。不自动执行此命令清理真实数据，由总控选择截止时间。
 - 调试覆盖：`PULSE_CONFIG`、`PULSE_STATE`、`PULSE_EAR_DB`、`PULSE_EAR_COMMAND`（替换新来源命令，shell 风格参数但不执行 shell，无需真实 token）、`PULSE_RUN`、`PULSE_NOTIFY`；测试全部使用合成 SQLite 和替身程序，子进程 stdin 为 DEVNULL。
 
-同步不新增定时器：`reporter/bin/remind` 在 `pulse check` 前运行一次 `pulse ear sync`，日志在 reporter 的 `state/out/remind.log`；`reporter/bin/recap` 在 `pulse day` 前运行一次 `pulse ear sync --no-notify`，日志在 `state/out/recap.log`。失败只记日志，继续提醒/日报。沿用 remind 当前排程（0 点和 9–23 点每小时第 7 分钟），非全天每小时；recap 为 23:40。旧独立 Ear 定时模板已删除。
+同步不新增定时器：`reporter/bin/remind` 全天每小时 :07 运行 `pulse ear sync --no-notify`，然后判断日报是否到期，再检查问题。单独手动 `recap` 会先同步。新 Ear 同步将所有非空转写（含低于分诊字数阈值的短句）的最新句子终点和读取状态保存到 `ear/activity.json`，`pulse recap-status` 结合 Computer History 活跃分钟与 Claude/Codex 用户消息、ChatGPT 会话访问返回空闲证据，不调用分类模型。`[recap].idle_minutes=90`；逻辑日仍为 05:00–次日 05:00，开始满 18 小时后可按空闲结束，跨过日界无条件兜底。Ear 失败或未知时不证明静默。ChatGPT 目前是浏览历史代理，非逐条消息；旧 Ear 仅走兜底。旧 23:40 recap 定时模板删除，已安装任务的卸载、remind 重装命令见 reporter/README.md，本次不安装或卸载。
+
+`pulse day DATE --dry` 只读同日已保存分类和当前 Ear 缓存，重新渲染到 stdout，不同步、不写文件、不调用模型；缺少同日 JSON 则失败。正常 `pulse day` 仍分类并保存完整 `.md/.json`。
 
 验证：`python3 -m unittest discover -s pulse/tests`（含新来源 JSONL 替身和旧 SQLite fixture）；模块回归见 interaction 与 reporter README。
 

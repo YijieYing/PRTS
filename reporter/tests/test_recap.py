@@ -10,7 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 MD = '# 11-13 回顾\n输入 1 分 · 输出 2 分\n\n## 时间线\n\n' + '\n'.join(
-    f'**{h:02d}:00–{h:02d}:30 · 输入 · P** 第 {h} 段 <x>\n  - 学到：东西 {h}' for h in range(9, 21))
+    f'**{h:02d}:00–{h:02d}:30 · 输入 · P** 第 {h} 段 <x>\n  - 学到：东西 {h}' for h in range(9, 21)) + '\n' + '完整内容' * 1500
 
 
 class Recap(unittest.TestCase):
@@ -26,7 +26,7 @@ class Recap(unittest.TestCase):
         (module / 'bin/notify').write_text(
             f'#!/bin/sh\nprintf "%s\\037" "$@" >> {calls}\nprintf "\\036" >> {calls}\n'
             f'[ "$1" = note ] && exit {note_rc}\nexit 0\n')
-        r = subprocess.run([str(module / 'bin/recap')], stdin=subprocess.DEVNULL, capture_output=True,
+        r = subprocess.run([str(module / 'bin/recap'), '2026-11-16'], stdin=subprocess.DEVNULL, capture_output=True,
                            text=True, timeout=20, env=dict(os.environ, TZ='Asia/Tokyo'))
         self.assertEqual(r.returncode, 0, r.stderr)
         return [call.split('\x1f')[:-1] for call in calls.read_text().split('\x1e')[:-1]]

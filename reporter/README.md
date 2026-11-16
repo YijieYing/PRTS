@@ -94,19 +94,33 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 - 通过 osascript 操作。这台 Mac 已经允许访问提醒事项，不需要再授权。
 
 ## 送达（2026-11-12）
-- **每小时提醒：`bin/remind`，由 launchd 运行**（`config/launchd/com.prts.reporter-remind.plist`，每天 0 点和 9–23 点的第 7 分钟）。
-  - 依次运行 `pulse check`、`ask expire`、`ask due --channel bark`。
+- **每小时提醒：`bin/remind`，由 launchd 运行**（`config/launchd/com.prts.reporter-remind.plist`，全天每小时第 7 分钟）。
+  - 依次运行 `pulse ear sync --no-notify`、`recap --auto --synced`、`pulse check`、`ask expire`，非 quiet 时再运行 `ask due --channel bark`。
   - 有待推送的问题，才用 `notify alert` 推到手机（Bark）和电脑（macOS 通知）；没有就什么都不发。
   - 推送标题直接用第一条问题本身，多条时注明「共 N 条」（11-13 用户反馈：「PRTS 提醒」这种标题让人不想点开）。
-  - 先运行一次 `pulse ear sync`，再执行 `pulse check`；Ear 同步失败只记日志，不中断提醒。
+  - Ear 每轮只同步一次；同步失败只记日志，不中断提醒。quiet 时段暂停所有问题推送（包括 blocking），但日报照常写备忘录、照常推送。
   - 日志写在 `state/out/remind.log`。
   - 用户在任意 Claude session 里回复「Q12 …」，通常是 PRTS 总控（手机 Claude app 里也能回），由那个 session 运行 `ask reply` 记录。
   - 为什么不用 Claude 定时任务：每次运行都会开一个 session，即使没东西要问，跑完 app 也会弹「完成」通知（11-12 用户反馈）。原来的 `prts-reminders` 任务已暂停，prompt 留在 `config/claude-tasks/prts-reminders.md` 备查。
   - 安装：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind.plist`。plist 要先从 config 复制过去。这一步由用户执行，agent 的权限检查不允许自动装开机常驻任务。
-- **每日回顾（11-13 起改为 launchd）**：`bin/recap` 先运行 `pulse ear sync --no-notify`，再运行 `pulse day <今天>`，全文用 `notify note` 写进 Apple 备忘录文件夹「PRTS 日报」（标题「YYYY-MM-DD 回顾」，重跑时替换同名备忘录的正文，Mac 和 iPhone 经 iCloud 同步）；再用 `notify alert --url mobilenotes://` 推送时间线前 8 行和「全文见备忘录」，标题是总计那一行。备忘录写入失败时，推送里写明全文在 `pulse/state/days/日期.md`（用户 11-14：Bark 和 Mac 通知都会截断，要有地方看全文）。plist 在 `config/launchd/com.prts.reporter-recap.plist`，每天 23:40 运行，日志写到 `state/out/recap.log`。Ear 同步失败只记日志，日报继续生成并按同步状态注明「Ear 数据缺失」。复用已有定时器，不安装独立 Ear 定时器。11-13 已安装，下面的 Claude 任务已暂停。
-- **每日回顾（旧）**：Claude 定时任务 `prts-daily-recap`（`config/claude-tasks/prts-daily-recap.md`），每晚 23:40 运行 `pulse day`，把回顾推给用户。它每天只跑一次、本来就要推送，并且用户可以在那个 session 里纠正分类，所以保留为 Claude 任务。
+- **每日回顾**：`bin/recap [YYYY-MM-DD]` 先同步 Ear，再生成指定逻辑日（省略日期为当前逻辑日）的回顾。同名「YYYY-MM-DD 回顾」备忘录正文会替换，全文落在 `pulse/state/days/YYYY-MM-DD.md`。全文不受 4000 字符限制；`notify alert --url mobilenotes://` 仍只取去掉空行、小节标题后的前 8 行，标题仍是总计行。
+  - 每小时 remind 调用 `recap --auto --synced`：最近一个已完成逻辑日未发则兜底发送；当前逻辑日开始满 18 小时且连续空闲达到 `[recap].idle_minutes`（pulse 配置，默认 90）后可提前结束。默认日界 05:00，所以提前判断从 23:00 开始，凌晨 03:07 生成的日期仍属于前一日；05:07 无论活动是否停止，都补发前一日。不会遍历补发更早历史。
+  - 空闲依据 `pulse recap-status`：Computer History 没有活跃分钟，Claude/Codex 没有用户消息，ChatGPT 没有会话访问（现有来源只有浏览历史，作为用户交互的保守代理，不能核实实际发言），Ear 没有最近转写句子。后台 agent 输出不算活动；短句和未分诊句子也会阻止结束。Ear 同步失败、证据读取异常时不提前判定，05:00 兜底仍发送，并沿用 Ear 数据缺失说明。旧 Ear 来源不能提供逐句静默证明，仅走兜底。
+  - `state/recap-sent.json`（支持 `PRTS_REPORTER_STATE`）在文件锁内记录各日期的 note/alert/sent。自动发送跳过已完成日期；部分失败只重试未成功的渠道，手动重跑明确允许重新写入和推送。通知服务没有事务确认，外部送达成功至本地登记前崩溃仍可能重发；Bark/macOS 部分成功亦无法精确去重。
+  - `bin/recap --dry [YYYY-MM-DD]` 是严格只读预览：使用现存同日分类 JSON 与 Ear 缓存重新渲染到 stdout，不同步、不调用模型、不写 state、不写备忘录、不推送；无同日 JSON 时报错。用于检查完整时间线，不能证明最新远端录音已同步。
+  - 自动运行日志在 `state/out/remind.log`。旧的 23:40 recap 模板已删除；旧 Claude 任务 `prts-daily-recap` 也应继续暂停，`config/claude-tasks/` 仅为历史备查。
 
-2026-11-12 已按用户批准创建，保存为 Auto 模式，可以在 app 侧边栏的 Scheduled 里修改。Claude app 开着时才会运行；app 关着的话，在下次打开时补跑。
+用户需要卸载已装的 `com.prts.reporter-recap`，并重新安装 remind 模板才会采用全天排程。以下命令由用户执行，本次代码变更不操作已安装任务：
+
+```sh
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-recap.plist
+rm -f ~/Library/LaunchAgents/com.prts.reporter-recap.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind.plist
+cp ~/PRTS/reporter/config/launchd/com.prts.reporter-remind.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind.plist
+```
+
+未加载的任务执行 bootout 可能提示找不到服务；仍可继续复制和 bootstrap。
 
 ### 手机渠道：Bark（2026-11-12）
 - `notify phone` 用 Bark 推到 iPhone；`notify alert` = Bark + macOS 通知（之前是微信 + macOS 通知）。`notify wechat` 仍然保留。

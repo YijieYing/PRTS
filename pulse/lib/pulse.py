@@ -470,7 +470,7 @@ def display_intervals(s, c):
 
 
 def render(data, date, c):
-    """Build a bounded reading view; keep full evidence and timing in JSON."""
+    """Build the full daily reading view; push limits belong to reporter."""
     canonicalize(data['segments'], c)
     for s in data['segments']:
         s['project_source'] = project_source(s)
@@ -491,7 +491,7 @@ def render(data, date, c):
     totals = [f"{label} {minutes(sum(s['active_seconds'] for s in segs if s.get('category')==cat))} 分"
               for cat, label in CATEGORIES.items()
               if cat != 'unclassified' or any(s.get('category')==cat for s in segs)]
-    header = [f"# {date[5:]} 回顾", ' · '.join(totals) +
+    header = [f"# {date} 回顾", ' · '.join(totals) +
               f"（held 另计 {minutes(sum(s['held_seconds'] for s in segs))} 分）", '', '## 时间线', '']
     fragments = defaultdict(float)
     # Short activities cannot host recordings or simultaneous activities.
@@ -681,11 +681,9 @@ def render(data, date, c):
             rows.append(('fragments', '**零碎** '+ '、'.join(f'{brief(k,40)} {minutes(v)} 分' for k,v in items)))
     rows.append(('agent', '\n## agent 做了什么\n'))
     projects = defaultdict(list)
-    compact_projects = {}
     for o in sorted(outputs,key=lambda o:o['time'],reverse=True):
         label = 'git 提交，已核实存在' if o['source']=='git' else 'agent 自述，未核实'
         projects[o['project']].append(brief(o['text'],80)+'（'+label+'）')
-        compact_projects.setdefault(o['project'],brief(o['text'],30)+'（'+label+'）')
     for project, items in list(projects.items())[:8]:
         rows.append(('agent', '- '+brief(project,60)+'：'+'；'.join(items[:2])))
     if not projects: rows.append(('agent', '暂无记录。'))
@@ -703,22 +701,6 @@ def render(data, date, c):
 
     if data.get('focus'): footer += [data['focus']]
     def compose(): return '\n'.join(header+[v for _,v in rows]+footer)+'\n'
-    if len(compose()) > 4000:
-        rows = [(k,v) for k,v in rows if k!='agent']
-        rows.append(('agent', '\n## agent 做了什么\n'))
-        for project, items in list(projects.items())[:8]:
-            rows.append(('agent', '- '+brief(project,30)+'：'+compact_projects[project]))
-        if not projects: rows.append(('agent', '暂无记录。'))
-    if len(compose()) > 4000:
-        rows = [(k,v) for k,v in rows if k!='fragments']
-    # Preserve whole lines, the totals and the data-gap section even on huge days.
-    if len(compose()) > 4000:
-        footer.insert(0, '\n（篇幅受限，部分时间线省略；完整记录见同日 JSON。）')
-        while len(compose()) > 4000:
-            index = next((i for i in range(len(rows)-1,-1,-1) if rows[i][0]!='agent'), None)
-            if index is None: break
-            rows.pop(index)
-        # Header and bounded footer fit independently; never cut a data-gap line.
     return compose()
 
 
@@ -810,10 +792,46 @@ def now(c):
 
 
 
+def recap_status(c, state, current=None):
+    """Expose activity evidence through bin/pulse, without classifying or notifying."""
+    current = current or datetime.now(ZoneInfo(c['timezone']))
+    current = current.astimezone(ZoneInfo(c['timezone']))
+    minutes = c.get('recap', {}).get('idle_minutes', 90)
+    if minutes <= 0: raise ValueError('recap.idle_minutes must be positive')
+    end = current.timestamp(); start = end - minutes * 60 + 1e-6
+    warnings = set()
+    computer, _ = computer_history.load(c['sources'], start, end, state, warnings)
+    events = sources.claude(c['sources'], start, end, c['mapping'], warnings)
+    events += sources.chrome(c['sources'], start, end, warnings)
+    sources.codex(c['sources'], start, end, c['mapping'], warnings, users=events)
+    activity = ear.read(state/'ear/activity.json', {})
+    # A failed/stale sync cannot establish silence. The 05:00 fallback still applies.
+    ear_ok = activity.get('ok', False) and 0 <= end-activity.get('checked', 0) <= 600
+    latest = activity.get('latest_sentence')
+    ear_active = latest is not None and latest > start
+    computer_active = any(m['active'] for m in computer)
+    messages = any(e['role']=='user' for e in events)
+    # Empty CH windows are expected during sleep; actual read/parse errors block early sending.
+    errors = [w for w in warnings if '本时段为空' not in w]
+    computer_root = c['sources'].get('computer_events')
+    if computer_root and not Path(computer_root).expanduser().exists():
+        errors.append('Computer History 数据目录不存在')
+    logical = (current - timedelta(hours=c['day_start_hour'])).date()
+    began, _ = day_window(logical.isoformat(), c)
+    clock = current.strftime('%H:%M')
+    qs, qe = c['user']['quiet_start'], c['user']['quiet_end']
+    quiet = qs <= clock < qe if qs <= qe else clock >= qs or clock < qe
+    return dict(day=logical.isoformat(), previous=(logical-timedelta(days=1)).isoformat(),
+                eligible=end-began >= 18*3600, quiet=quiet, idle_minutes=minutes,
+                idle=ear_ok and not (computer_active or messages or ear_active or errors),
+                computer_active=computer_active, messages=messages, ear_active=ear_active,
+                ear_ok=ear_ok, warnings=sorted(warnings), at=current.isoformat())
+
+
 def main():
     p=argparse.ArgumentParser(); sub=p.add_subparsers(dest='command',required=True)
     d=sub.add_parser('day'); d.add_argument('date',nargs='?')
-    d.add_argument('--no-classify',action='store_true'); d.add_argument('--classification-file',type=Path)
+    d.add_argument('--dry',action='store_true'); d.add_argument('--no-classify',action='store_true'); d.add_argument('--classification-file',type=Path)
     ch=sub.add_parser('check'); ch.add_argument('--window'); ch.add_argument('--at'); ch.add_argument('--dry',action='store_true')
     ch.add_argument('--no-classify',action='store_true'); ch.add_argument('--classification-file',type=Path)
     e=sub.add_parser('ear'); es=e.add_subparsers(dest='ear_command',required=True)
@@ -822,11 +840,22 @@ def main():
     es.add_parser('ack').add_argument('--before',required=True)
     es.add_parser('wait').add_argument('--poll',type=float,default=30)
     focus.parser(sub)
+    sub.add_parser('recap-status')
     sub.add_parser('now'); a=p.parse_args()
     try:
         c=config()
         if a.command=='now': print(json.dumps(now(c),ensure_ascii=False)); return 0
-        state=Path(os.environ.get('PULSE_STATE',MODULE/'state')).resolve(); state.mkdir(parents=True,exist_ok=True,mode=0o700)
+        state=Path(os.environ.get('PULSE_STATE',MODULE/'state')).resolve()
+        if a.command=='recap-status':
+            print(json.dumps(recap_status(c,state),ensure_ascii=False)); return 0
+        if a.command=='day' and a.dry:
+            date=a.date or (datetime.now(ZoneInfo(c['timezone']))-timedelta(hours=c['day_start_hour'])).date().isoformat()
+            start,end=day_window(date,c)
+            data=json.loads((state/'days'/(date+'.json')).read_text())
+            data['segments']=[s for s in data['segments'] if s['source']!='ear'] + ear.day(state,start,end)
+            data.setdefault('warnings',[]).append('只读预览：使用已保存分类与 Ear 缓存，未同步或核实最新转写。')
+            print(render(data,date,c),end=''); return 0
+        state.mkdir(parents=True,exist_ok=True,mode=0o700)
         if a.command=='focus': return focus.command(a,c,state)
         if a.command=='ear':
             if a.ear_command=='sync': ear.sync(c,state,a.no_notify,a.retriage,a.since)

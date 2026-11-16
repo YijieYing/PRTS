@@ -1,23 +1,4 @@
 #!/bin/bash
-# Nightly recap, run by launchd (com.prts.reporter-recap, 23:40). Pure code, no Claude session:
-# pulse ear sync --no-notify → pulse day <today> → full timeline into Apple Notes「PRTS 日报」, head of it via Bark + macOS. Corrections: tell any Claude
-# session (normally PRTS 总控), which appends them to pulse/state/corrections.md.
-set -u
-M=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd); P=$(dirname "$M")
-day=$(date +%F); echo "== $(date '+%F %T') recap $day"
-"$P/pulse/bin/pulse" ear sync --no-notify </dev/null || echo "warning: pulse ear sync failed (rc=$?)" >&2
-md=$("$P/pulse/bin/pulse" day "$day") || { "$M/bin/notify" alert --title "PRTS 每日回顾失败" --text "pulse day $day 失败，见 reporter/state/out/recap.log"; exit 1; }
-title=$(printf '%s\n' "$md" | sed -n 2p)   # the totals line: 输入 X 分 · 输出 Y 分 · …
-name="$day 回顾"   # note title; year included so notes never collide across years
-# Full text → Apple Notes (folder「PRTS 日报」, synced to Mac and iPhone); pushes carry only the head,
-# because Bark and the macOS banner both truncate (user 11-14).
-if "$M/bin/notify" note --folder "PRTS 日报" --title "$name" --text "$md" >/dev/null; then
-  where="全文见备忘录 · PRTS 日报 · $name"
-else
-  echo "notes failed; full text stays in pulse/state/days/$day.md" >&2
-  where="备忘录写入失败，全文在 ~/PRTS/pulse/state/days/$day.md"
-fi
-head=$(printf '%s\n' "$md" | sed -n '3,$p' | grep -v '^ *$' | grep -v '^## ' | head -8)
-exec "$M/bin/notify" alert --title "${title:-PRTS 每日回顾}" --url "mobilenotes://" --text "$head
-…
-$where"
+# Manual or hourly activity-based daily recap; --dry is a read-only cached preview.
+M=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+exec python3 "$M/lib/recap.py" "$@" </dev/null

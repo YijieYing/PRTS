@@ -6,6 +6,9 @@ cap_minutes = 20
 chatgpt_cap_minutes = 45
 held_cap_minutes = 60
 
+[recap]
+idle_minutes = 90
+
 [timing]
 writing_chars_per_minute = 40
 paste_chars_per_minute = 400

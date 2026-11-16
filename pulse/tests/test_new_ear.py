@@ -39,6 +39,14 @@ for row in json.loads(Path(os.environ['ROWS']).read_text()): print(json.dumps(ro
         with redirect_stdout(io.StringIO()): ear.sync(self.c, self.state, no_notify=True)
         return list((self.state/'ear/results').glob('*.json'))
 
+    def test_sentence_activity_includes_short_unclassified_speech(self):
+        self.c['ear']['min_chars'] = 1000
+        self.sync([self.row(119)])
+        activity = ear.read(self.state/'ear/activity.json', {})
+        self.assertTrue(activity['ok'])
+        self.assertEqual(activity['latest_sentence'], self.base+119*60+30)
+        self.assertEqual(self.fixture.calls().count('run'), 0)
+
     def test_alignment_gap_devices_and_scope(self):
         paths = self.sync([self.row(0), self.row(9,scope='two'), self.row(25), self.row(30), self.row(31,'other')])
         self.assertEqual(len(paths),3)
