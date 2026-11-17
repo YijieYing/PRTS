@@ -13,6 +13,7 @@ import sys
 I = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(I.parent))
 from interaction.lib.projects import match as project_match
+from interaction.lib.roadmap import observe, project as roadmap_project
 
 REPO_PROJECTS = {}
 registry = runpy.run_path(str(I / 'lib/registry'))
@@ -121,19 +122,34 @@ def poll(repo: str, state_dir: Path) -> list[dict]:
                 user_path.write_text(json.dumps({'login': login}))
             path = state_dir / 'github_poll.jsonl'
             latest = read_cursors(path)
-            prs = json.loads(run(['gh', 'pr', 'list', '--repo', repo, '--state', 'open',
-                                 '--json', 'number,updatedAt', '--limit', str(PR_LIMIT)]))
+            roadmap_name = REPO_PROJECTS.get(repo)
+            if roadmap_name:
+                try: roadmap_project(roadmap_name)
+                except ValueError: roadmap_name = None
+            prs = json.loads(run(['gh', 'pr', 'list', '--repo', repo, '--state', 'all' if roadmap_name else 'open',
+                                 '--json', 'number,updatedAt,state,title,body,headRefName,url' if roadmap_name else 'number,updatedAt', '--limit', str(PR_LIMIT)]))
             if not isinstance(prs, list) or len(prs) >= PR_LIMIT:
-                raise ValueError('invalid or truncated open PR list')
+                raise ValueError('invalid or truncated PR list')
             numbers = {pr['number'] for pr in prs}
             if any(type(n) is not int or n <= 0 for n in numbers):
                 raise ValueError('invalid PR number')
             now = dt.datetime.now(dt.timezone.utc).isoformat()
+            listed = {pr['number']: pr for pr in prs}
+            closed_numbers = set()
             for number in sorted(numbers):
                 key = f'{repo}#{number}'
                 try:
+                    if roadmap_name and listed[number].get('state') in ('CLOSED', 'MERGED'):
+                        observe(roadmap_name, listed[number])
+                        closed_numbers.add(number)
+                        continue
                     detail = json.loads(run(['gh', 'pr', 'view', str(number), '--repo', repo,
-                                             '--json', 'comments,reviews,statusCheckRollup,updatedAt']))
+                                             '--json', 'comments,reviews,statusCheckRollup,updatedAt,title,body,headRefName,state,url']))
+                    if roadmap_name:
+                        observe(roadmap_name, detail)
+                    if detail.get('state') in ('CLOSED', 'MERGED'):
+                        closed_numbers.add(number)
+                        continue
                     if not isinstance(detail['comments'], list) or not isinstance(detail['updatedAt'], str):
                         raise ValueError('invalid PR details')
                     inline_pages = json.loads(run(['gh', 'api', '--paginate', '--slurp',
@@ -171,8 +187,8 @@ def poll(repo: str, state_dir: Path) -> list[dict]:
                     latest[key] = row
                 except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as exc:
                     error(key, exc)
-            # Closed PRs are no longer viewed. Tombstones keep replay correct until compaction.
-            active = {f'{repo}#{n}' for n in numbers}
+            # Tombstones remove feedback cursors for PRs no longer in the query.
+            active = {f'{repo}#{n}' for n in numbers - closed_numbers}
             for key in list(latest):
                 if key.startswith(repo + '#') and key not in active:
                     append(path, dict(key=key, deleted=True, t=now))

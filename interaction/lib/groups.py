@@ -19,43 +19,7 @@ def line(value):
     return ' '.join(value.split()) or None
 
 
-def roadmap(project):
-    path = project.get('roadmap')
-    result = dict(path=str(Path(path).expanduser()) if path else None, open=[], error=None)
-    if not path:
-        return result
-    try:
-        content = Path(result['path']).read_text()
-    except (OSError, UnicodeError) as exc:
-        result['error'] = str(exc)
-        return result
-    recognized = False
-    fence = None
-    prefix = project.get('roadmap_prefix', '')
-    for raw in content.splitlines():
-        stripped = raw.lstrip()
-        if stripped.startswith(('```', '~~~')):
-            marker = stripped[:3]
-            if fence is None: fence = marker
-            elif marker == fence: fence = None
-            continue
-        if fence: continue
-        item = None
-        task = re.match(r'^\s*[-*+]\s+\[([ xX])\]\s+(.+)', raw)
-        cells = [c.strip() for c in re.split(r'(?<!\\)\|', raw.strip().strip('|'))]
-        if task:
-            recognized = True
-            if task[1] == ' ' and not prefix:
-                item = dict(id=None, title=line(task[2]), status=None)
-        elif raw.lstrip().startswith('|') and len(cells) >= 3 and re.fullmatch(r'[A-Za-z]+\d+', cells[0]):
-            recognized = True
-            if '✅' not in cells[1] and cells[0].startswith(prefix):
-                item = dict(id=cells[0], title=line(cells[2].replace('**', '')), status=cells[1] or None)
-        if item and len(result['open']) < 5:
-            result['open'].append(item)
-    if not recognized:
-        result['error'] = 'No supported roadmap table rows or Markdown checklist items found'
-    return result
+from .roadmap import read as roadmap, meetings
 
 
 def activity(rows, items):
@@ -99,7 +63,7 @@ def groups(threads, subscriptions, rows, generated_at):
     for item in items:
         project = projects.setdefault(item['name'], dict(item, paths=[]))
         if item['path'] not in project['paths']: project['paths'].append(item['path'])
-        for key in ('group', 'roadmap', 'roadmap_prefix'):
+        for key in ('group', 'roadmap', 'roadmap_prefix', 'meetings'):
             if not project.get(key) and item.get(key): project[key] = item[key]
         if item.get('group'): grouped.setdefault(item['group'], [])
     teams = activity(rows, items)
@@ -155,10 +119,10 @@ def groups(threads, subscriptions, rows, generated_at):
         order = lambda m: (-(timestamp(m['last_active']) or minimum).timestamp(), m['id'])
         team = sorted(subscribers.values(), key=order) + sorted(recent, key=order)[:10]
         tasks = thread.get('tasks', [])
-        view = dict(name=name, thread=key, paths=project['paths'], roadmap=roadmap(project), team=team,
+        view = dict(name=name, thread=key, paths=project['paths'], roadmap=roadmap(project), meetings=meetings(project), team=team,
                     tasks_running=sum(t['status'] == 'running' for t in tasks),
                     tasks_unreviewed=sum(t['status'] != 'running' and not t['reviewed'] for t in tasks),
                     last_event_at=thread.get('last_event_at'))
         grouped.setdefault(project.get('group') or '未分组', []).append(view)
     names = [n for n in grouped if n != '未分组'] + (['未分组'] if '未分组' in grouped else [])
-    return [dict(name=n, projects=grouped[n]) for n in names]
+    return [dict(name=n, projects=grouped[n], next_ddl=min((p['roadmap']['next_ddl'] for p in grouped[n] if p['roadmap']['next_ddl']), default=None)) for n in names]

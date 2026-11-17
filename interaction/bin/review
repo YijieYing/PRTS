@@ -8,4 +8,12 @@ a = p.parse_args()
 registry = runpy.run_path(str(Path(__file__).resolve().parents[1]/'lib/registry'))
 if not any(r.get('name') == a.task and r.get('event') == 'start' for r in registry['rows']()):
     p.error('unknown task')
+if not a.undo:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from interaction.lib.roadmap import mark
+    start = next(r for r in reversed(registry['rows']()) if r.get('name') == a.task and r.get('event') == 'start')
+    if start.get('roadmap'):
+        name, ident = start['roadmap'].rsplit(':', 1)
+        mark(name, ident, '✅', a.task, auto='accepted')
 registry['append'](dict(name=a.task, event='reviewed', reviewed=not a.undo))

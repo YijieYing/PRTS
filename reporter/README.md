@@ -95,7 +95,7 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 
 ## 送达（2026-11-12）
 - **每小时提醒：`bin/remind`，由 launchd 运行**（`config/launchd/com.prts.reporter-remind.plist`，全天每小时第 7 分钟）。
-  - 依次运行 `pulse ear sync --no-notify`、`recap --auto --synced`、`pulse check`、`ask expire`，非 quiet 时再运行 `ask due --channel bark`。
+  - 依次运行 `pulse ear sync --no-notify`、`recap --auto --synced`、`pulse check`、`ask expire`，随后检查 DDL/组会提醒，非 quiet 时再运行 `ask due --channel bark`。
   - 有待推送的问题，才用 `notify alert` 推到手机（Bark）和电脑（macOS 通知）；没有就什么都不发。
   - 推送标题直接用第一条问题本身，多条时注明「共 N 条」（11-13 用户反馈：「PRTS 提醒」这种标题让人不想点开）。
   - Ear 每轮只同步一次；同步失败只记日志，不中断提醒。quiet 时段暂停所有问题推送（包括 blocking），但日报照常写备忘录、照常推送。
@@ -127,3 +127,20 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind
 - Bark 正文按 UTF-8 字节截到约 2.6 KB（APNs 整个负载上限 4 KB），在行边界截断并注明「已截断，全文见 Mac 通知」（Mac 通知同样截断；日报全文见备忘录「PRTS 日报」）。11-13 每日回顾约 7 KB，未截断时 Bark 返回 413。
 - 设备 key 在 `config/secrets.toml`，权限 600，已加入 `.gitignore`，不进 git。
 - 为什么不用 Claude app 推送：定时任务的 session 不连 Remote Control，也不能为它打开，PushNotification 到不了手机（11-12 实测）。
+
+
+## DDL 与组会提醒（M11）
+
+每小时 `bin/remind` 在问题推送前，通过 `interaction/bin/status threads --json` 读取 roadmap，
+使用现有 `notify phone` 推送。quiet 时只登记待发，不调用 notify；quiet 结束后的首次 remind
+补发，包括跨午夜的待发项。运行记录为 `state/ddl-sent.json`（支持 `PRTS_REPORTER_STATE`），
+另有 ddl.lock 串行锁，都不提交。通知成功才记 sent，失败保留重试；渠道成功与本地登记之间崩溃
+仍存在外部通知系统通常具有的重复送达窗口。
+
+- 未结束条目在 DDL 前 7 天、前 2 天、当天、过期后首次检查各发一次。
+  去重键包含工程、编号、DDL、阶段；已结束的条目及其待发提醒都跳过。
+- 组会由 projects.toml 的 meetings 登记，当天 12:00 后首次检查发一次，按工程、日期、时段去重。
+  正文三行：时间、最近 7 天完成条目、待验收条目；不超过 8 行。
+  完成时间来自 Git 中转为 ✅ 的提交历史及 accepted/merged 自动记录；当前必须仍为 ✅。
+  待验收包含 🔍 和未结束的 pr_open。没有完成日期证据时不臆测完成时间。
+- 验证：`python3 -m unittest discover -s reporter/tests -v`，通知使用替身，无真实推送。

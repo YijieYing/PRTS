@@ -41,6 +41,7 @@
 | 事件 | event | 需要总控验收或需要你知道的事，按 L0/L1/L2 分级，进入事件队列 |
 | 验收 | review | 用户/总控验收任务；bin/review 追加 reviewed=true，--undo 撤销，新运行重置 |
 | 大项目 | group | projects.toml 中的工程分组；status threads --json 的 groups 按登记顺序输出 |
+| 路线图条目 | roadmap item | 工程计划中的稳定编号、状态、日期与完成证据；roadmap 命令管理，next_ddl 为最早未结束期限 |
 | 工作团队 | team | 工程 thread 的订阅者、近期 registry 派发参与会话及 cwd 匹配工程的本机会话；通过 kind:id 对应 AgentConsole 会话 |
 | 事件主线 | thread | 同一外部对象或项目的连续事件，thread_key 标识；区别于 Codex 会话 UUID |
 | 订阅 | subscription | 项目或 thread 到 codex/claude 目标的显式登记；可暂停、恢复、删除 |

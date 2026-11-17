@@ -93,6 +93,7 @@ def main():
     p.add_argument('mode', choices=['exec', 'resume', 'queue'])
     for arg in ('cwd', 'prompt', 'log', 'name'): p.add_argument('--' + arg, required=True)
     p.add_argument('--start', action='store_true')
+    p.add_argument('--roadmap')
     p.add_argument('--worktree', help=argparse.SUPPRESS)
     p.add_argument('--thread'); p.add_argument('--target'); p.add_argument('--output'); p.add_argument('--wake-id')
     p.add_argument('--binary', default='codex'); p.add_argument('--dry', action='store_true')
@@ -138,6 +139,11 @@ def main():
     if a.start:
         start = dict(name=a.name, event='start', pid=os.getpid(), cwd=a.cwd, prompt=a.prompt,
                      sandbox=a.sandbox or 'workspace-write', approved_by=a.approved_by)
+        if a.roadmap:
+            start['roadmap'] = a.roadmap
+        elif a.mode != 'exec':
+            previous = next((r for r in reversed(registry['rows']()) if r.get('name') == a.name and r.get('event') == 'start'), {})
+            if previous.get('roadmap'): start['roadmap'] = previous['roadmap']
         if a.worktree: start['worktree'] = json.loads(a.worktree)
         for env, kind in (('CLAUDE_CODE_SESSION_ID', 'claude'), ('CODEX_THREAD_ID', 'codex')):
             if os.environ.get(env):

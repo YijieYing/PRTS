@@ -10,3 +10,10 @@ maintenance/backups/
 /interaction/state/github_poll.*
 /interaction/state/.github_poll.lock
 /interaction/**/__pycache__/
+
+/interaction/state/roadmap-status.jsonl
+/interaction/state/roadmap.lock
+/reporter/state/ddl-sent.json
+/reporter/state/ddl.lock
+/reporter/state/ddl-sent.tmp
+/reporter/**/__pycache__/

@@ -10,6 +10,7 @@
 ## 报告
 | 日期 | 报告 |
 |---|---|
+| 2026-11-17 | [M11：roadmap、自动完成与提醒](../interaction/state/tasks/m11-data/report.md) |
 | 2026-11-17 | [日报全文与活动结束判断](../interaction/state/tasks/recap-day-end/report.md) |
 | 2026-11-17 | [工程团队纳入桌面会话](../interaction/state/tasks/groups-team-desktop/report.md) |
 | 2026-11-16 | [大项目、工程与工作团队投影](../interaction/state/tasks/groups-status/report.md) |

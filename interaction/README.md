@@ -4,7 +4,8 @@
 
 | 命令 | 用法 |
 |---|---|
-| `bin/dispatch` | `<task> <workdir> [prompt文件] [--worktree 分支 [--base ref]] [--sandbox network或full --approved-by "用户原话或出处"] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）复制 prompt、记录命令（带 `--worktree` 时也准备工作树），不启动 Codex 或写 registry |
+| `bin/dispatch` | `<task> <workdir> [prompt文件] [--worktree 分支 [--base ref]] [--roadmap 工程:编号] [--sandbox network或full --approved-by "用户原话或出处"] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）复制 prompt、记录命令（带 `--worktree` 时也准备工作树），不启动 Codex 或写 registry |
+| `bin/roadmap` | `list [工程] [--json]`；`mark 工程 编号 状态 [--evidence 文本]`：解析或提交单条状态与证据 |
 | `bin/worktrees` | `list` 或 `clean [--dry] [--all]`：列出工作树；只清理干净且已合并的工作树 |
 | `bin/resume` | `<task> <session UUID> <cwd> <消息文件> [重试次数=6] [间隔秒=600] [--sandbox network或full --approved-by "用户原话或出处"] [--dry]`；同步执行 |
 | `bin/wake` | `add <带时区ISO时间或HH:MM> <UUID或精确会话名> <prompt文件> [--name NAME] [--mode resume或queue]`；`list`；`cancel <id>` |
@@ -76,7 +77,7 @@ CI failure 优先于 pending，再为 success；无检查 none，未识别 unkno
 {"key":"owner/repo#123","updated_at":"2026-11-14T00:00:00Z","comments":2,"ci":"pending","t":"2026-11-14T00:10:00+00:00"}
 ```
 
-读、比较、事件入队和追加共用稳定锁 `.github_poll.lock`；并发运行遇锁跳过，留到下次。未变化不追加。成功列出的 open 集合中已消失的 PR 不再 view，追加 `{"key":"owner/repo#123","deleted":true,"t":"…"}` 清除游标，不产生关闭事件；重新打开视为首次发现。日志超过 1 MiB 时在同一锁内原子压缩，只保留每个仍被跟踪 PR 的最新游标，不保留历史或关闭项；因此大小随被跟踪 PR 数量而非轮询次数增长。
+读、比较、事件入队和追加共用稳定锁 `.github_poll.lock`；并发运行遇锁跳过，留到下次。未变化不追加。未配置 roadmap 的仓库仅查询 open，已消失的 PR 不再 view；配置 roadmap 的仓库查询所有状态并检查合并（见下文 M11），关闭或合并的 PR 不保留反馈游标。追加 `{"key":"owner/repo#123","deleted":true,"t":"…"}` 清除游标，不产生关闭事件；重新打开视为首次发现。日志超过 1 MiB 时在同一锁内原子压缩，只保留每个仍被跟踪 PR 的最新游标，不保留历史或关闭项；因此大小随被跟踪 PR 数量而非轮询次数增长。
 
 外部命令 stdin 关闭，每次超时 30 秒。仓库或单个 PR 失败写 stderr，继续其他仓库/PR，失败观测不推进游标。事件成功后才记录游标，失败下轮重试；观测派生稳定事件 ID，入队后游标保存前中断，重送不会重复投递。列表上限显式设为 10000；触及上限时拒绝本仓库本轮结果并报错，避免把被截断的 PR 当作已关闭。
 
@@ -154,10 +155,10 @@ routed 为完全直通事件数，pending 为仍处 new 的事件数。
 
 新增 `groups` 是「大项目 → 工程 → 工作团队」投影，前端默认显示到工程，展开再显示团队：
 ```json
-{"name":"PRTS","projects":[{"name":"AgentConsole","thread":"project:AgentConsole","paths":["~/PRTS/AgentConsole"],"roadmap":{"path":"/Users/prts/PRTS/ROADMAP.md","open":[{"id":"M1","title":"检测 agent 在等人","status":"💤"}],"error":null},"team":[{"kind":"codex","id":"codex:<UUID>","title":"任务名","subscribed":false,"last_active":"ISO8601"}],"tasks_running":0,"tasks_unreviewed":0,"last_event_at":null}]}
+{"name":"PRTS","next_ddl":null,"projects":[{"name":"AgentConsole","thread":"project:AgentConsole","paths":["~/PRTS/AgentConsole"],"meetings":[],"roadmap":{"items":[{"id":"M1","title":"检测 agent 在等人","status":"💤","start":null,"ddl":null,"evidence":null,"done":false,"auto":null}],"next_ddl":null,"path":"/Users/prts/PRTS/ROADMAP.md","open":[{"id":"M1","title":"检测 agent 在等人","status":"💤"}],"error":null},"team":[{"kind":"codex","id":"codex:<UUID>","title":"任务名","subscribed":false,"last_active":"ISO8601"}],"tasks_running":0,"tasks_unreviewed":0,"last_event_at":null}]}
 ```
 上例为 groups 数组的一个元素。工程来自 `human/projects.toml`（测试可用 `PRTS_PROJECTS` 替换），
-同名项合并 paths、去重并保持登记顺序；group/roadmap/roadmap_prefix 取同名项第一个非空值。
+同名项合并 paths、去重并保持登记顺序；group/roadmap/roadmap_prefix/meetings 取同名项第一个非空值。
 组按 group 首次出现顺序排列，缺 group 的工程归最后的「未分组」。没有活动或 ROADMAP 也保留工程。
 paths 保留配置写法；roadmap.path 展开 `~`，未配置则为 null，open=[]、error=null。
 
@@ -167,6 +168,40 @@ open 按文件顺序最多 5 条；任务清单的 id/status 为 null。读文�
 open=[] 且 error 为原因，不中断 status；全部完成或前缀未命中属于正常空结果。
 可选 `roadmap_prefix` 只保留指定编号前缀的表格行（无编号清单不匹配前缀）。
 共享 PRTS ROADMAP 的「PRTS 总控台」配置 R，「AgentConsole」配置 M。
+
+M11 表格按表头列名识别，列顺序不限：`| 编号 | 状态 | 事项 | 开始 | DDL | 完成证据 |`。
+编号也支持 `#`（兼容旧 `ID`），事项也支持「标题」；编号为 `[A-Za-z]+\d+`。
+开始、DDL、完成证据可缺省，输出 null；日期为 YYYY-MM-DD。旧 `# / 状态 / 事项 / 要点`
+继续支持；代码围栏跳过，清单继续支持。各工程文件登记在 projects.toml 的 roadmap，通常为
+`human/roadmaps/<工程名>.md`；PRTS 总控台和 AgentConsole 继续共享 ROADMAP.md。
+`roadmap.items` 按文件顺序最多 60 条（含已结束），每项为
+`{id,title,status,start,ddl,evidence,done,auto}`。✅ 和 ❌ 的 done=true；其余未结束。
+`auto` 为 null 或 `{state: pr_open|merged|accepted, url, at: ISO8601}`。
+`open` 保留旧最多 5 条与旧状态判定（仅 ✅ 排除；❌ 仍在兼容视图中）。
+工程的 `roadmap.next_ddl` 取所有未结束条目的最早 DDL，过期仍算；无日期为 null。
+大项目的 `next_ddl` 取其下工程最早日期。工程的 `meetings` 来自可选配置
+`meetings = ["Thu 15:00-17:00"]`，输出 `[{weekday:4,start:"15:00",end:"17:00"}]`，周一为 1。
+
+### roadmap 命令与自动完成
+
+- `interaction/bin/roadmap list [工程名] [--json]`：按工程列出条目；JSON 为
+  `[{name,roadmap}]`。`--completed-since ISO8601` 额外给出 `completed`，从 Git 提交历史找
+  指定时间以来转为 ✅ 且当前仍为 ✅ 的条目，用于组会摘要（包括手工修改）。
+- `interaction/bin/roadmap mark <工程名> <编号> <状态> [--evidence 文本]`：状态只允许
+  💤、📝、🔨、🔍、✅、❌；未知工程/编号、重复编号和非法状态报错。
+  只替换目标行的状态、完成证据单元格；未指定 evidence 时保留证据；无证据列时追加到最后一列。
+  证据中的换行折叠、竖线转义。随后在文件所属仓库对该路径执行 `git commit --only`，
+  保留其他文件已暂存内容，不 push。该文件已有未提交内容也随该文件提交。
+- `dispatch <任务> <目录> [prompt] --roadmap <工程名>:<编号>`：启动前校验编号，
+  在该次 start registry 记录中登记 roadmap；同名任务续跑继承关联，新 dispatch 不继承旧关联。`review <任务>` 自动写 ✅，证据为任务名；
+  `review --undo` 只撤销审查标志，不反向修改 roadmap。
+- 复用 `github_poll`：按 PR 仓库路径匹配工程；标题、分支或正文中的独立编号须属于该工程。
+  登记了 roadmap 的仓库查询所有状态 PR，以发现轮询间直接合并的 PR；其他仓库保持仅查询打开 PR。
+  打开只追加 `pr_open` 供前端显示待验收，不改 Markdown；合并写 ✅，证据为 PR URL。
+  已经 ✅/❌ 或已有 accepted/merged 自动记录的条目不再写回；重复 pr_open 不重复登记。
+- 自动记录追加到 `interaction/state/roadmap-status.jsonl`，串行写锁为 roadmap.lock；均不提交。
+  `PRTS_INTERACTION_STATE` 支持隔离测试。排序与拖动由 AgentConsole 自行存储，PRTS 不维护 order.json。
+
 
 team 合并订阅、PRTS registry 和本机按目录归属的会话，不依赖 AgentConsole HTTP 服务：
 - 未暂停、未删除且订阅该 project thread 的目标全部保留，subscribed=true；PR/ear 等其他 thread 的订阅不扩展为工程订阅。

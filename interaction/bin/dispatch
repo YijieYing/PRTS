@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: dispatch <task> <workdir> [prompt-file] [--worktree BRANCH [--base REF]] [--sandbox network|full --approved-by TEXT] [--dry] [extra codex exec args...]
+# usage: dispatch <task> <workdir> [prompt-file] [--worktree BRANCH [--base REF]] [--roadmap PROJECT:ID] [--sandbox network|full --approved-by TEXT] [--dry] [extra codex exec args...]
 set -eu
 I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 S=${PRTS_INTERACTION_STATE:-$I/state}
@@ -9,10 +9,13 @@ wd=$(cd "$wd" && pwd)
 LOG=$S/tasks/$name
 prompt=$LOG/prompt.md
 if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then prompt=$1; shift; fi
-branch=""; base=""
+branch=""; base=""; roadmap=""
 options=(); extra=(); dry=${DISPATCH_DRY:-0}
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --roadmap)
+      [ "$#" -ge 2 ] || { echo "--roadmap requires a value" >&2; exit 2; }
+      roadmap=$2; "$I/bin/roadmap" validate "$roadmap" </dev/null; shift 2 ;;
     --worktree|--base)
       [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
       [ -n "$2" ] || { echo "$1 requires a nonempty value" >&2; exit 2; }
@@ -30,6 +33,7 @@ done
 mkdir -p "$LOG"
 [ "$(cd "$(dirname "$prompt")" && pwd)/$(basename "$prompt")" = "$(cd "$LOG" && pwd)/prompt.md" ] || cp "$prompt" "$LOG/prompt.md"
 args=(--cwd "$wd" --prompt "$LOG/prompt.md" --name "$name" --log "$LOG/run.log" --output "$LOG/last.md")
+[ -z "$roadmap" ] || args+=(--roadmap "$roadmap")
 # Bash 3.2 with nounset needs the + expansion for empty arrays.
 args+=(${options[@]+"${options[@]}"})
 # Validate permissions before creating a worktree.

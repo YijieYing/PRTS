@@ -74,10 +74,10 @@ group="Outreach"
         self.assertEqual(projects['Tasks']['roadmap']['open'], [dict(id=None, status=None, title=t) for t in ('first','second')])
         self.assertTrue(projects['Missing']['roadmap']['error'])
         self.assertEqual(projects['Missing']['roadmap']['open'], [])
-        self.assertEqual(projects['Outreach']['roadmap'], dict(path=None, open=[], error=None))
+        self.assertEqual(projects['Outreach']['roadmap'], dict(path=None, open=[], error=None, items=[], next_ddl=None))
         self.assertEqual(projects['Outreach']['team'], [])
         for p in projects.values():
-            self.assertEqual(set(p), {'name','thread','paths','roadmap','team','tasks_running','tasks_unreviewed','last_event_at'})
+            self.assertEqual(set(p), {'name','thread','paths','roadmap','meetings','team','tasks_running','tasks_unreviewed','last_event_at'})
         checklist.write_text('ordinary prose')
         self.assertTrue(roadmap(dict(roadmap=str(checklist)))['error'])
         checklist.write_text('- [X] all done')
