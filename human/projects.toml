@@ -153,3 +153,9 @@ name = "aquant 交易 bot / BigQuant"
 path = "~/Projects/aquant"
 category = "工程"
 group = "工具与赚钱"
+
+[[project]]
+name = "SpeakerLocality"   # 11-17 新开：Ear 说话人归属的时间局部性调查
+path = "~/research/SpeakerLocality"
+category = "学术"
+group = "PRTS"
