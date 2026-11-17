@@ -20,6 +20,7 @@ name = "PRTS 研究"   # 研究层（E1–E5 实验），和总控台分开；�
 path = "~/research/PRTS"
 category = "学术"
 group = "PRTS"
+roadmap = "~/PRTS/human/roadmaps/PRTS研究.md"
 
 [[project]]
 name = "PRTS 总控台"   # legacy 家目录登记；pulse / status 的 cwd 匹配忽略家目录项
@@ -63,6 +64,8 @@ name = "果蝇脑 DigitalFly"
 path = "~/research/DigitalFly"   # 10-25 从 ~/Projects 移来
 category = "学术"
 group = "具身与果蝇脑"
+roadmap = "~/PRTS/human/roadmaps/果蝇脑DigitalFly.md"
+meetings = ["Thu 15:00-17:00"]
 
 [[project]]
 name = "SwarmBot 多机器人"
@@ -75,12 +78,14 @@ name = "NatureCalls（软工课 Unity）"
 path = "~/Projects/NatureCalls"
 category = "课程"
 group = "课程"
+roadmap = "~/PRTS/human/roadmaps/NatureCalls软工课Unity.md"
 
 [[project]]
 name = "XinDong 小车"
 path = "~/Projects/XinDong"
 category = "课程"
 group = "机器人硬件"
+roadmap = "~/PRTS/human/roadmaps/XinDong小车.md"
 
 [[project]]
 name = "课程作业"
@@ -94,6 +99,7 @@ path = "lain:/home/yijieying/Undergrad_3_Autumn"
 category = "课程"
 aliases = ["Infra"]   # 11-14 用户同意合并：~/research/Infra 目前只放 OS 课；以后开始做 PRTS 硬件层探索，就给那个子目录单独登记
 group = "课程"
+roadmap = "~/PRTS/human/roadmaps/OS课.md"
 
 [[project]]
 name = "OS 课（rCore）"   # 本机的 OS 课工作区（补课计划、大作业方案）
@@ -119,14 +125,15 @@ path = "~/research/EchoAsRecord"
 category = "工程"
 aliases = ["EchoAsRecord"]
 group = "PRTS"
-roadmap = "~/research/EchoAsRecord/ai-docs/plans/mvp-implementation.md"
-
+roadmap = "~/PRTS/human/roadmaps/EarEchoAsRecord.md"
+meetings = ["Thu 17:00-19:00"]
 
 [[project]]
 name = "SomaNet"
 path = "~/research/SomaNet"
 category = "学术"
 group = "具身与果蝇脑"
+roadmap = "~/PRTS/human/roadmaps/SomaNet.md"
 
 [[project]]
 name = "DsHarness"   # DeepSeek super-agent 设计文档导读
@@ -147,6 +154,7 @@ name = "Outreach"   # 申请（学术、实习）；用户 11-16：重要、要�
 path = "~/outreach"
 category = "其他"
 group = "Outreach"
+roadmap = "~/PRTS/human/roadmaps/Outreach.md"
 
 [[project]]
 name = "aquant 交易 bot / BigQuant"
