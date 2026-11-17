@@ -22,6 +22,12 @@ class DDL(unittest.TestCase):
         for date in ('12','17','19','20','21'):
             self.tick(f'2026-11-{date}T13:00:00+09:00');self.tick(f'2026-11-{date}T14:00:00+09:00')
         self.assertEqual(len(self.calls),4)
+    def test_many_due_batched(self):
+        self.project['roadmap']['items']=[dict(self.item,id=f'X{i}',ddl='2026-10-1%d'%i) for i in range(1,6)]+[self.item]
+        self.tick('2026-11-17T13:00:00+09:00')
+        self.assertEqual(len(self.calls),1);self.assertEqual(self.calls[0][0],'DDL 提醒 6 条')
+        self.assertEqual(len(self.calls[0][1].splitlines()),6)
+        self.tick('2026-11-17T14:00:00+09:00');self.assertEqual(len(self.calls),1)
     def test_quiet_delayed_and_completed(self):
         self.tick('2026-11-17T23:00:00+09:00',True);self.assertEqual(self.calls,[])
         self.tick('2026-11-18T01:00:00+09:00');self.assertEqual(len(self.calls),1)

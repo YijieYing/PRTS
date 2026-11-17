@@ -139,6 +139,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.prts.reporter-remind
 
 - 未结束条目在 DDL 前 7 天、前 2 天、当天、过期后首次检查各发一次。
   去重键包含工程、编号、DDL、阶段；已结束的条目及其待发提醒都跳过。
+  同一次检查里到期的 DDL 条目合并成一条推送（标题「DDL 提醒 N 条」，最多列 12 行）；只有一条时照常单发。组会提醒仍单独发。
 - 组会由 projects.toml 的 meetings 登记，当天 12:00 后首次检查发一次，按工程、日期、时段去重。
   正文三行：时间、最近 7 天完成条目、待验收条目；不超过 8 行。
   完成时间来自 Git 中转为 ✅ 的提交历史及 accepted/merged 自动记录；当前必须仍为 ✅。

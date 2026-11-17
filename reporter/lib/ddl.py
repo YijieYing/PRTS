@@ -51,14 +51,25 @@ def remind(groups, now, quiet, state_dir, notify):
         data=json.loads(path.read_text()) if path.exists() else dict(sent={},pending={})
         data['pending'].update({k:v for k,v in due(groups,now).items() if k not in data['sent']})
         active={(p['name'],i['id'],i['ddl']) for g in groups for p in g['projects'] for i in p['roadmap']['items'] if not i['done']}
+        ddl_batch=[]
         for key,value in list(data['pending'].items()):
             if value['kind']=='ddl' and (value['project'],value['id'],value['ddl']) not in active:
                 del data['pending'][key]; continue
-            if not quiet:
-                notify(value['title'],value['text'])
-                data['sent'][key]=now.isoformat()
-                del data['pending'][key]
-                temp=path.with_suffix('.tmp');temp.write_text(json.dumps(data,ensure_ascii=False));temp.replace(path)
+            if quiet: continue
+            if value['kind']=='ddl':
+                ddl_batch.append((key,value)); continue
+            notify(value['title'],value['text'])
+            data['sent'][key]=now.isoformat()
+            del data['pending'][key]
+            temp=path.with_suffix('.tmp');temp.write_text(json.dumps(data,ensure_ascii=False));temp.replace(path)
+        # Several DDL items due in one run go out as one push (e.g. a stale imported roadmap with many overdue rows).
+        if len(ddl_batch)==1:
+            notify(ddl_batch[0][1]['title'],ddl_batch[0][1]['text'])
+        elif ddl_batch:
+            lines=[f"{v['title']}：{v['text'].splitlines()[0]}" for _,v in ddl_batch]
+            notify(f'DDL 提醒 {len(ddl_batch)} 条','\n'.join(lines[:12]+([f'……另 {len(lines)-12} 条'] if len(lines)>12 else [])))
+        for key,_ in ddl_batch:
+            data['sent'][key]=now.isoformat(); del data['pending'][key]
         temp=path.with_suffix('.tmp');temp.write_text(json.dumps(data,ensure_ascii=False));temp.replace(path)
 
 def main(quiet=False):
