@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""归档不会再用的 Codex 会话（可用 `codex unarchive <id>` 恢复）。
+
+规则（总控 11-18 定，用户同意定时清理左边栏）：
+- 只看本机、未归档、没有进程占用（dormant）的 Codex 会话；
+- 空闲 ≥ 7 天 → 归档；
+- 是派发任务的执行者、任务已审查、空闲 ≥ 2 天 → 归档。
+数据来自 AgentConsole 的 /api/state 和 `interaction/bin/status links`、`status threads --json`。
+默认只列出；加 --apply 才归档。Claude app 会话由每周的「清理左边栏」定时任务处理。
+"""
+import argparse, json, subprocess, sys, time, urllib.request
+from pathlib import Path
+
+BIN = Path(__file__).resolve().parent
+p = argparse.ArgumentParser()
+p.add_argument('--apply', action='store_true')
+p.add_argument('--idle-days', type=float, default=7)
+p.add_argument('--reviewed-days', type=float, default=2)
+p.add_argument('--api', default='http://127.0.0.1:7788/api/state')
+a = p.parse_args()
+
+def cmd(*args):
+    return subprocess.run(args, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60).stdout
+
+try:
+    state = json.load(urllib.request.urlopen(a.api, timeout=30))
+except Exception as e:
+    sys.exit(f'AgentConsole 不可用：{e}')
+child_task = {}
+for line in cmd(str(BIN / 'status'), 'links').splitlines():
+    try: r = json.loads(line); child_task[r['child']] = r.get('task')
+    except Exception: pass
+reviewed = set()
+try:
+    for t in json.loads(cmd(str(BIN / 'status'), 'threads', '--json'))['threads']:
+        reviewed |= {k['name'] for k in t['tasks'] if k.get('reviewed')}
+except Exception: pass
+
+now = time.time() * 1000
+host = state['hosts'][0]  # 本机
+picked = []
+for ag in host['agents']:
+    if ag.get('kind') != 'codex' or ag.get('archived') or ag.get('state') != 'dormant': continue
+    idle = (now - (ag.get('updated_ms') or now)) / 86400000
+    task = child_task.get(ag['id'])
+    why = f'空闲 {idle:.0f} 天' if idle >= a.idle_days else \
+          f'任务 {task} 已审查，空闲 {idle:.0f} 天' if task in reviewed and idle >= a.reviewed_days else None
+    if why: picked.append((ag['id'], (ag.get('title') or '')[:40], why))
+
+for i, title, why in picked:
+    if a.apply:
+        r = subprocess.run(['codex', 'archive', i], capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
+        print(('已归档' if r.returncode == 0 else f'失败 {r.stderr.strip()[:80]}'), i, title, why, sep='\t')
+    else:
+        print('候选', i, title, why, sep='\t')
+print(f'{"归档" if a.apply else "候选"} {len(picked)} 个 Codex 会话', file=sys.stderr)

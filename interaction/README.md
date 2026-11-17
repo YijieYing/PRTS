@@ -107,6 +107,10 @@ clean 使用本地 `origin/<默认分支>` 引用判断提交包含关系（不�
 
 回归：`python3 interaction/tests/test_worktrees.py`，真实临时仓库和裸远程、Codex/gh 替身，子进程关闭 stdin；不清理真实工作树。
 
+## 清理不再用的会话（tidy-sessions）
+`interaction/bin/tidy-sessions [--apply]`：归档本机不会再用的 Codex 会话，可用 `codex unarchive <id>` 恢复。只看 AgentConsole `/api/state` 里 dormant（没有进程占用）的会话；空闲 ≥7 天，或者是派发任务的执行者、任务已审查且空闲 ≥2 天，就归档。不加 `--apply` 只列出候选。
+Claude app 左边栏的会话只能用 app 自己的 archive_session 工具归档，所以由每周日 10:00 的 Claude 定时任务「清理左边栏」（`~/.claude/scheduled-tasks/prts-tidy-sessions/`）处理：先跑上面的命令，再按同一套空闲规则归档 Claude 会话；每个目录最近的顶层会话保留到空闲 30 天；运行中、置顶、开着 Remote Control 的会话和总控不动。用户 11-18 同意定期清理。
+
 ## thread 与订阅
 
 事件可带 `--thread <key> --project <name> --kind <kind>`。规范字段是
