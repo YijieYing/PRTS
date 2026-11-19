@@ -144,8 +144,8 @@ class PulseTests(unittest.TestCase):
         self.assertEqual(len(data['warnings']),1); self.assertIn('编造的项目',data['warnings'][0])
         md=pulse.render(data,'2026-11-11',self.c)
         self.assertTrue(all(s['active_seconds']==300 for s in data['segments']))
-        self.assertIn('**Infra** 10.0 分',md)
-        self.assertIn('**不属于项目** 10.0 分',md)
+        self.assertIn('**不属于项目** 25.0 分',md)
+        self.assertIn('**不属于项目** 25.0 分',md)
         self.assertIn('可能的新项目：机械设计课（2 段，10.0 分）',md)
         self.assertEqual(pulse.schema()['properties']['segments']['items']['properties']['project']['type'],['string','null'])
 
@@ -221,7 +221,7 @@ class PulseTests(unittest.TestCase):
         md=pulse.render(data,'2026-11-11',self.c)
         self.assertIn('查资料主线',md); self.assertIn('走神：',md); self.assertIn('穿插：',md)
         self.assertIn('编辑预申请表',md); self.assertIn('讨论录音排障',md)
-        self.assertIn('走神 2.0 分（1 次）',md)
+        self.assertIn('走神约 2.0 分（1 次）',md)
         self.assertEqual(before,[s['active_seconds'] for s in rows])
 
     def test_episode_cache_failure_and_legacy_render(self):
@@ -246,6 +246,43 @@ class PulseTests(unittest.TestCase):
         fresh=dict(zero,project=None,project_source='none',intervals=[[self.start,self.start+60]],end=self.start+60)
         pulse.reuse(dict(segments=[fresh]),cached,self.c)
         self.assertIsNone(fresh['project'])
+
+    def test_unregistered_project_names_are_cleared(self):
+        rows=[]
+        for i,name in enumerate(('source','.codex','invented')):
+            start=self.start+i*300
+            rows.append(dict(source='computer',session=str(i),start=start,end=start+60,
+                             intervals=[[start,start+60]],messages=[],project=name,
+                             project_source='model',category='input',reason='读资料',
+                             topic='',suggestion='',learned=[],produced=[]))
+        old=self.state/'unregistered.json'
+        old.write_text(json.dumps({'segments':[dict(s,project_source='model') for s in rows]}))
+        data={'segments':copy.deepcopy(rows),'warnings':[]}
+        pulse.reuse(data,old,self.c)
+        self.assertEqual([s['project'] for s in data['segments']],[None,None,None])
+
+    def test_episode_cluster_and_side_project_rules(self):
+        def row(sid, minute, duration, project='日语'):
+            a=self.start+minute*60; b=a+duration*60
+            return dict(id=sid,source='computer',session=sid,start=a,end=b,
+                        intervals=[[a,b]],held_candidates=[],messages=[],project=project,
+                        project_source='rule',category='input',summary=sid,reason=sid,
+                        learned=[],produced=[],topic='',suggestion='')
+        rows=[row('near-a',0,3),row('near-b',4,3),row('far',40,5),
+              row('other-project',5,2,'AIInfra 中转站'),row('short',7,0.5)]
+        answer={'episodes':[{'title':'连续主线','project':'日语','category':'input',
+                             'main':['near-a','near-b','far'],
+                             'side':[{'id':'other-project','role':'distraction'},
+                                     {'id':'short','role':'interlude'}], 'learned':[]}]}
+        pulse.allocate(rows); data={'segments':rows,'warnings':[]}
+        with patch.object(pulse,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(answer),'')):
+            pulse.merge_episodes(data,self.state,self.c)
+        self.assertEqual(data['episodes'][0]['main'],['near-a','near-b'])
+        self.assertNotIn('other-project',[x['id'] for x in data['episodes'][0]['side']])
+        self.assertIn('short',[x['id'] for x in data['episodes'][0]['side']])
+        md=pulse.render(data,'2026-11-11',self.c)
+        self.assertIn('短切换 1 次',md)
+        self.assertNotIn('other-project 0.0 分',md)
 
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
