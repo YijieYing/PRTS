@@ -34,6 +34,29 @@ for row in json.loads(Path(os.environ['ROWS']).read_text()): print(json.dumps(ro
         return dict(start=ear.utc(self.base+minute*60), end=ear.utc(self.base+minute*60+30),
                     text='设计一个学习工具', speaker='speaker0', speaker_scope=scope, device=device)
 
+    def row_ingested(self, minute, ingested, **kwargs):
+        row = self.row(minute, **kwargs)
+        row['ingested_at'] = ear.utc(self.base + ingested)
+        return row
+
+    def test_ingested_watermark_finds_late_recording_and_is_idempotent(self):
+        self.sync([self.row_ingested(0, 100)])
+        self.sync([self.row_ingested(0, 100), self.row_ingested(20, 300)])
+        self.assertEqual(len(list((self.state/'ear/results').glob('*.json'))), 2)
+        self.assertEqual(self.fixture.calls().count('run'), 2)
+        self.sync([self.row_ingested(0, 100), self.row_ingested(20, 300)])
+        self.assertEqual(self.fixture.calls().count('run'), 2)
+        self.assertEqual(ear.read(self.state/'ear/new-cursor.json', {})['ingested_until'], self.base+300)
+
+    def test_late_high_is_recorded_without_phone_push(self):
+        self.c['ear']['late_push_hours'] = 6
+        with patch.object(ear.time, 'time', return_value=self.base + 8*3600):
+            self.sync([self.row_ingested(1, 8*3600)])
+        record = next(iter((self.state/'ear/results').glob('*.json')))
+        self.assertTrue(json.loads(record.read_text())['late'])
+        self.assertNotIn('notify', self.fixture.calls())
+        self.assertEqual(len(ear.inbox(self.state/'ear')), 1)
+
     def sync(self, rows):
         self.rows.write_text(json.dumps(rows))
         with redirect_stdout(io.StringIO()): ear.sync(self.c, self.state, no_notify=True)

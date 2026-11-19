@@ -1115,7 +1115,7 @@ def main():
     ch.add_argument('--no-classify',action='store_true'); ch.add_argument('--classification-file',type=Path)
     e=sub.add_parser('ear'); es=e.add_subparsers(dest='ear_command',required=True)
     sync=es.add_parser('sync'); sync.add_argument('--no-notify',action='store_true')
-    sync.add_argument('--retriage',action='store_true'); sync.add_argument('--since')
+    sync.add_argument('--retriage',action='store_true'); sync.add_argument('--since'); sync.add_argument('--until')
     es.add_parser('ack').add_argument('--before',required=True)
     es.add_parser('wait').add_argument('--poll',type=float,default=30)
     focus.parser(sub)
@@ -1138,7 +1138,10 @@ def main():
         state.mkdir(parents=True,exist_ok=True,mode=0o700)
         if a.command=='focus': return focus.command(a,c,state)
         if a.command=='ear':
-            if a.ear_command=='sync': ear.sync(c,state,a.no_notify,a.retriage,a.since)
+            if a.ear_command=='sync':
+                # CLI convenience: an omitted --until means the sync start time.
+                until = a.until or (datetime.now(ZoneInfo(c['timezone'])).isoformat() if a.since else None)
+                ear.sync(c,state,a.no_notify,a.retriage,a.since,until)
             elif a.ear_command=='ack': ear.ack(state,a.before)
             else: ear.wait(state,a.poll,c.get('ear',{}).get('wait_gap_minutes',40))
             return 0

@@ -154,6 +154,7 @@ def triage(markdown, previous, state):
               '用户在听、在学的对话、会议、课为 normal，仍进每日回顾，category 按 §一通常为 input；别人的闲聊和背景对话为 low。'
               '反例一：别人介绍职业教育方案，用户主要倾听、偶尔提问，即使内容以后有用也只能 normal/input，不是 high。'
               '反例二：从 Scala 课程聊到 C++，用户听别人讲解、学习语言区别，没有主导形成新设计或决定，应为 normal/input，不是 high。'
+              '反例三：老师或演讲者在课上演示（例如用 MCP 连 Blender/Godot 做小游戏），用户在听，即使内容提到用户感兴趣的工具，也是 normal/input，不是 high。'
               'title 写成值得点开的一句话，不写“录音摘要”；summary 为 3–6 行数组。todos 只列用户本人要做的事，agent_work 是可以交给 agent 的工程活。'
               'learned/produced/category 严格按下列定义，不把计划当已完成的产出。corrections 列有依据的纠错，不确定不强行改。'
               'continues：只有本段确实是前一段同一件事的继续才为 true；不能仅因为提到相同项目就连续。前段为空则 false。\n'
@@ -213,7 +214,8 @@ def publish(state, record, no_notify, max_push=4):
     if group in notices: return
     today = local(time.time()).date().isoformat()
     count = sum(n['status']=='sent' and n['day']==today for n in notices.values())
-    status = 'suppressed' if no_notify else 'limited' if count >= max_push else 'sent'
+    late = bool(record.get('late'))
+    status = 'late' if late else 'suppressed' if no_notify else 'limited' if count >= max_push else 'sent'
     if status == 'sent':
         result = subprocess.run([os.environ.get('PULSE_NOTIFY',str(ROOT/'reporter/bin/notify')), 'phone',
                                  '--title',record['title'],'--text','\n'.join(record['summary'][:2])+'…（总控在处理）'],
@@ -252,7 +254,9 @@ def new_transcripts(cfg, start, end):
             if b < a: raise ValueError('invalid transcript interval')
             text = row['text']
             if not isinstance(text, str): raise ValueError('invalid transcript text')
-            item = (a, b, text, str(row['speaker_scope']), str(row['speaker']))
+            ingested = row.get('ingested_at')
+            if ingested is not None: ingested = stamp(ingested)
+            item = (a, b, text, str(row['speaker_scope']), str(row['speaker']), ingested)
             unique[item] = item
         output.extend((device, *item) for item in sorted(unique))
     return sorted(output)
@@ -264,11 +268,14 @@ def utc(t):
 
 def new_segments(items, width, gap):
     groups = []
-    for device, a, b, text, scope, speaker in items:
+    for item in items:
+        device, a, b, text, scope, speaker = item[:6]
+        ingested = item[6] if len(item) > 6 else None
         window = int(a // width) * width
         if not groups or groups[-1]['device'] != device or groups[-1]['window'] != window or a - groups[-1]['end'] > gap:
             groups.append(dict(device=device, window=window, start=a, end=b, speech=[]))
         g = groups[-1]; g['end'] = max(g['end'], b)
+        if ingested is not None: g['ingested_at'] = max(g.get('ingested_at', ingested), ingested)
         g['speech'].append((a, b, text, scope, speaker))
     rows, evidence_by_id = [], {}
     for g in groups:
@@ -280,14 +287,20 @@ def new_segments(items, width, gap):
             lines.append(f'[{local(a):%H:%M:%S}] {labels[key]}（作用域 {scope}）: {text}')
         md = '\n'.join(lines)+'\n'
         rows.append(dict(capture_id=cid, started_at=utc(g['start']), ended_at=utc(g['end']), ready=True,
+                         ingested_at=utc(g['ingested_at']) if g.get('ingested_at') is not None else None,
                          device=g['device'], window=g['window'], fingerprint=hashlib.sha256(json.dumps(g['speech'], ensure_ascii=False).encode()).hexdigest()))
         evidence_by_id[cid] = (md, sum(len(re.sub(r'\s', '', x[2])) for x in g['speech']))
     return rows, evidence_by_id
 
 
-def sync(c, root, no_notify=False, retriage=False, since=None):
-    if retriage != (since is not None): raise ValueError('--retriage 和 --since 必须一起使用')
+def sync(c, root, no_notify=False, retriage=False, since=None, until=None):
+    if retriage and since is None: raise ValueError('--retriage 必须和 --since 一起使用')
+    if since is not None and not retriage and until is None:
+        raise ValueError('--since 补扫必须和 --until 一起使用')
     cutoff = stamp(since) if since is not None else None
+    manual = since is not None
+    finish = stamp(until) if until is not None else time.time()
+    if cutoff is not None and finish <= cutoff: raise ValueError('--until 必须晚于 --since')
     state = root/'ear'; state.mkdir(parents=True,exist_ok=True,mode=0o700)
     cfg = c.get('ear',{})
     threshold = cfg.get('min_chars',300)
@@ -304,10 +317,17 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
             lookback = cfg.get('lookback_hours', 24) * 3600
             if width <= 0 or gap < 0 or lookback < 0: raise ValueError('invalid Ear window/gap/lookback')
             cursor = read(state/'new-cursor.json', dict(until=None, segments={}))
-            end = time.time()
+            end = finish
             lower = stamp(cfg.get('start_from', '2026-11-12T12:00:00+09:00'))
-            start = max(lower, (cursor['until'] or lower) - lookback)
-            if retriage: start = max(lower, cutoff)
+            # Recording-time bounds remain the compatibility fallback when an
+            # adapter does not expose ingested_at. Once present, the watermark
+            # below makes late recordings eligible regardless of this window.
+            start = max(lower, (cursor.get('until') or lower) - lookback)
+            if cursor.get('ingested_until') is not None:
+                # Query time is recording time; an old recording can acquire a
+                # new ingested_at, so the source scan must reach start_from.
+                start = lower
+            if manual: start = max(lower, cutoff)
             start = int(start // width) * width
             query_start, query_end = start, end
             try:
@@ -320,18 +340,22 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
                 save(state/'activity.json', dict(ok=False, checked=end))
                 print('warning: Ear 数据缺失：'+str(error), file=sys.stderr)
                 return
-            rows = [r for r in rows if stamp(r['started_at']) >= lower]
+            rows = [r for r in rows if stamp(r['started_at']) >= lower and stamp(r['started_at']) < end]
+            source_rows = rows
+            watermark = cursor.get('ingested_until')
+            if watermark is not None and not manual:
+                rows = [r for r in rows if r.get('ingested_at') is None or stamp(r['ingested_at']) > watermark]
             done = cursor['segments']
             pending = [(r, evidence_by_id[r['capture_id']]) for r in rows
-                       if r['capture_id'] in done and stamp(r['started_at']) >= cutoff] if retriage else [
-                           (r, evidence_by_id[r['capture_id']]) for r in rows if done.get(r['capture_id']) != r['fingerprint']]
+                       if (retriage and r['capture_id'] in done) or (not retriage and done.get(r['capture_id']) != r['fingerprint'])]
         else:
             save(state/'activity.json', dict(ok=False, checked=time.time()))
             with database(os.environ.get('PULSE_EAR_DB',cfg.get('database',DEFAULT_DB))) as db:
                 rows = captures(db,cfg.get('start_from','2026-11-12T12:00:00+09:00'))
                 done = read(state/'cursor.json',[])
                 pending = [(r, evidence(db,r)) for r in rows if r['ready'] and
-                           ((r['capture_id'] in done and stamp(r['started_at']) >= cutoff) if retriage else r['capture_id'] not in done)]
+                           (not manual or stamp(r['started_at']) >= cutoff) and stamp(r['started_at']) < finish and
+                           ((r['capture_id'] in done) if retriage else r['capture_id'] not in done)]
         results = state/'results'; results.mkdir(exist_ok=True)
         directory = state/'captures'; directory.mkdir(exist_ok=True)
         previous_ids = {r['capture_id']: rows[i-1]['capture_id'] if i else None for i,r in enumerate(rows)}
@@ -368,6 +392,9 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
                 with locked(state/'inbox.lock'):
                     save(results/(cid+'.json'),record)
             if not retriage:
+                late_hours = cfg.get('late_push_hours')
+                record['late'] = bool(late_hours is not None and start < time.time() - late_hours*3600)
+                save(results/(cid+'.json'),record)
                 if record['value']=='high': publish(state,record,no_notify,max_push)
                 if fresh:
                     done[cid] = capture['fingerprint']
@@ -380,7 +407,9 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
             if not retriage:
                 # Backfill can bridge a gap or move a segment's start. Retire obsolete
                 # results only after all replacement segments have succeeded.
-                ids = {r['capture_id'] for r in rows}
+                # The source scan includes older rows that the watermark
+                # filtered from processing; they are still live results.
+                ids = {r['capture_id'] for r in source_rows}
                 stale = set()
                 for path in results.glob('*.json'):
                     r = read(path, {})
@@ -391,6 +420,8 @@ def sync(c, root, no_notify=False, retriage=False, since=None):
                 with locked(state/'inbox.lock'):
                     write(state/'inbox.jsonl', ''.join(json.dumps(r, ensure_ascii=False)+'\n' for r in inbox(state) if r['capture'] not in stale))
                 cursor['until'] = query_end
+                ingested = [stamp(r['ingested_at']) for r in rows if r.get('ingested_at')]
+                if ingested: cursor['ingested_until'] = max(ingested)
                 save(state/'new-cursor.json', cursor)
             save(state/'availability.json', dict(ok=True, checked=query_end))
 
