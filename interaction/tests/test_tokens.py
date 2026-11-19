@@ -45,7 +45,7 @@ class Tokens(unittest.TestCase):
                 Path(d).mkdir(parents=True,exist_ok=True)
                 Path(d,'ledger.jsonl').write_text('\n'.join(json.dumps({'time':'2026-11-19T00:00:00+00:00','agent':'codex','model':'g','session':'s','project':'P','task':'T','tags':{'arm':'a'},'input':4,'cache_write':1,'cache_read':2,'output':3,'reasoning':2}) for _ in range(2))+'\n')
                 a=argparse.Namespace(since='2026-11-18',until='2026-11-20',by=['agent','tag:arm'],tag=None,logical_day=False,no_sync=True)
-                row=tokens.summary(a)[0]; self.assertEqual(row['total'],20); self.assertEqual(row['without_cache_read'],16); self.assertEqual(row['runs'],2); self.assertEqual(row['mean']['total'],10)
+                row=tokens.summary(a)[0]; self.assertEqual(row['total'],20); self.assertEqual(row['without_cache_read'],16); self.assertEqual(row['calls'],2); self.assertEqual(row['sessions'],1); self.assertEqual(row['mean']['total'],20)
 
     def test_codex_reset_uses_last_and_project_task(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as h, tempfile.TemporaryDirectory() as state:

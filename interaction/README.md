@@ -63,7 +63,7 @@ interaction/bin/resume example SESSION_UUID /path/to/repo message.md 6 600 --san
 
 `bin/tokens sync` 增量读取本机 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`，账本写入 `state/tokens/`（不进 git），只保存时间、模型、会话、cwd、项目和数字用量。`input` 是非缓存输入；`cache_read` 是缓存输入；`cache_write` 是缓存写入；`output` 已包含 reasoning；`reasoning` 只是 output 的明细，不能再次相加。因此合计为 `input + cache_read + cache_write + output`，不含缓存读为 `input + cache_write + output`。Claude 的 input 不含缓存，按消息 id 跨文件去重；Codex 用 `total_token_usage` 累计值的差值，重复累计事件和复制历史不重复计数，异常重置才采用 `last_token_usage`。文件偏移、inode 和 mtime 让未变化运行无需重读。
 
-`tokens summary [--since DATE] [--until DATE] [--by day|project|agent|model|session|task|tag:KEY] [--tag key=value] [--json]` 默认东京最近七天、逻辑日可用 `--logical-day`；多个 `--by` 组成多维分组，输出 runs、session 数和每次调用均值；查询自动 sync，`--no-sync` 跳过。`tokens top` 查看会话消耗和标题，`tokens tag SESSION key=value` 追加或覆盖实验标签；dispatch/resume 的 `--tag key=value` 会随 registry 记录。格式变更后用 `tokens sync --rebuild` 清空账本、索引和去重状态再重扫。
+`tokens summary [--since DATE] [--until DATE] [--by day|project|agent|model|session|task|tag:KEY] [--tag key=value] [--json]` 默认东京最近七天、逻辑日可用 `--logical-day`；多个 `--by` 组成多维分组，输出 session 数（一个 session 或线程算一次 run，实验对比按它算）、调用次数 calls 和每个 session 的均值；查询自动 sync，`--no-sync` 跳过。`tokens top` 查看会话消耗和标题，`tokens tag SESSION key=value` 追加或覆盖实验标签；dispatch/resume 的 `--tag key=value` 会随 registry 记录。格式变更后用 `tokens sync --rebuild` 清空账本、索引和去重状态再重扫。
 
 实验例：`for arm in raw formatted; do for i in 1 2 3; do interaction/bin/dispatch token-$arm-$i "$PWD" prompt.md --tag exp=ear-read --tag arm=$arm; done; done`，完成后运行 `interaction/bin/tokens summary --by tag:arm --since 2026-11-19 --json` 比较两组。统计不包含 ChatGPT 网页会话或其他机器上的 claude.ai。
 

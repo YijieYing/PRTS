@@ -168,15 +168,16 @@ def summary(a):
     out=[]
     for key,g in sorted(groups.items(),key=lambda x:tuple('' if v is None else str(v) for v in x[0])):
         total=g['input']+g['cache_write']+g['cache_read']+g['output']; item={'group':key[0] if len(key)==1 else key,**{k:g[k] for k in FIELDS},'total':total,'without_cache_read':g['input']+g['cache_write']+g['output'],'sessions':len(g['sessions']),'runs':g['runs']}
-        item['mean']={k:(item[k]/g['runs'] if g['runs'] else 0) for k in FIELDS}; item['mean']['total']=total/g['runs'] if g['runs'] else 0; out.append(item)
+        # A run is one session/thread (an experiment repetition), so means are per session; calls = API calls.
+        n=len(g['sessions']); item['calls']=g['runs']; item['mean']={k:(item[k]/n if n else 0) for k in FIELDS}; item['mean']['total']=total/n if n else 0; out.append(item)
     return out
 def _fmt(n):
     n=float(n)
     return f'{n/1_000_000:.2f}M' if abs(n)>=1_000_000 else f'{n/1_000:.1f}K' if abs(n)>=1_000 else f'{int(n):,}'
 def _table(items):
-    heads=['group','input','cache_write','cache_read','output','reasoning','total','without_cache_read','runs','mean_total']; vals=[]
+    heads=['group','input','cache_write','cache_read','output','reasoning','total','without_cache_read','sessions','calls','mean_total']; vals=[]
     for x in items:
-        g='|'.join(map(str,x['group'])) if isinstance(x['group'],tuple) else str(x['group']); vals.append([g]+[_fmt(x[k]) for k in heads[1:8]]+[str(x['runs']),_fmt(x['mean']['total'])])
+        g='|'.join(map(str,x['group'])) if isinstance(x['group'],tuple) else str(x['group']); vals.append([g]+[_fmt(x[k]) for k in heads[1:8]]+[str(x['sessions']),str(x['calls']),_fmt(x['mean']['total'])])
     widths=[max([len(h)]+[len(v[i]) for v in vals]) for i,h in enumerate(heads)]; lines=['  '.join(h.ljust(widths[i]) for i,h in enumerate(heads)),'  '.join('-'*w for w in widths)]
     lines += ['  '.join(v[i].ljust(widths[i]) if i==0 else v[i].rjust(widths[i]) for i in range(len(heads))) for v in vals]; return '\n'.join(lines)
 def main(argv=None):
