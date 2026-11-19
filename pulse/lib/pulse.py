@@ -953,9 +953,9 @@ def render(data, date, c, _skip_episode_baseline=False):
     if not chores: footer.append('暂无。')
     # Token accounting is optional: a missing/failed ledger must never break the daily report.
     try:
-        token_bin = ROOT / 'interaction/bin/tokens'
+        token_bin = os.environ.get('PULSE_TOKENS', str(ROOT / 'interaction/bin/tokens'))
         result = run([str(token_bin), 'summary', '--since', date, '--until', date,
-                      '--by', 'agent', '--json', '--logical-day'], timeout=5)
+                      '--by', 'agent', '--json', '--logical-day', '--no-sync'], timeout=5)
         if result.returncode == 0:
             agent_rows = json.loads(result.stdout)
             if agent_rows:
@@ -965,7 +965,7 @@ def render(data, date, c, _skip_episode_baseline=False):
                     labels.append(f"{row['agent'] if 'agent' in row else row['group']} {row['total']/1_000_000:.1f}M（缓存读 {row['cache_read']/1_000_000:.1f}M）")
                 footer.append(' · '.join(labels))
                 topres = run([str(token_bin), 'summary', '--since', date, '--until', date,
-                              '--by', 'session', '--json', '--logical-day'], timeout=5)
+                              '--by', 'session', '--json', '--logical-day', '--no-sync'], timeout=5)
                 if topres.returncode == 0:
                     top = sorted(json.loads(topres.stdout), key=lambda x:x['total'], reverse=True)[:3]
                     footer.append('前 3：' + '；'.join(f"{x['group']} {x['total']:,}" for x in top))
