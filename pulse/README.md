@@ -83,6 +83,8 @@ reporter 推送前调用 `pulse now`。question queue（ROADMAP R1）按它决�
 
 ## 五、每日回顾的格式
 
+日报在「附：数据缺口」之前可插入 `## token`：读取 `interaction/bin/tokens summary` 的逻辑日账本，显示 Claude/Codex 当日总量（含缓存读）和前三个会话。账本不可用时整节省略，不影响日报生成；token 原始日志和账本均只读，详见 interaction README。
+
 回顾先按项目概览用户当天做了什么，再从早到晚按时间线阅读，可直接推到手机；完整证据保存在同日 JSON。
 
 ```text

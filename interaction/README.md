@@ -59,6 +59,14 @@ interaction/bin/resume example SESSION_UUID /path/to/repo message.md 6 600 --san
 
 共享原语：`lib/schema.py` 提供 `object_schema()` / `validate(value, spec)`；`lib/run_model.py` 的 `classify_with_model(prompt, schema, state_dir, *, run_bin=None, timeout=600)` 复用 `bin/run`，在调用方已创建的数据目录下暂存并清理 prompt/schema，校验 stdout JSON，失败抛异常。`run_bin` 优先，其次 `PRTS_RUN_MODEL`，默认本模块 `bin/run`；Ear 保留 `PULSE_RUN` 覆盖并自行定义 prompt/schema。此共享库是跨模块 Python 复用的显式例外。测试：`python3 interaction/tests/test_filter.py` 和 `python3 pulse/tests/test_ear.py`。
 
+## token 统计
+
+`bin/tokens sync` 增量读取本机 `~/.claude/projects/**/*.jsonl` 与 `~/.codex/sessions/**/*.jsonl`，账本写入 `state/tokens/`（不进 git），只保存时间、模型、会话、cwd、项目和数字用量。Claude 按消息 id 跨文件去重；Codex 只采用 `last_token_usage`，不把累计值重复相加。文件偏移和 mtime 让未变化运行无需重读。
+
+`tokens summary [--since DATE] [--until DATE] [--by day|project|agent|model|session|task|tag:KEY] [--json]` 默认东京最近七天、逻辑日可用 `--logical-day`；查询自动 sync，`--no-sync` 跳过。`tokens top` 查看会话消耗，`tokens tag SESSION key=value` 追加实验标签；dispatch/resume 的 `--tag key=value` 会随 registry 记录。
+
+实验例：`for arm in raw formatted; do for i in 1 2 3; do interaction/bin/dispatch token-$arm-$i "$PWD" prompt.md --tag exp=ear-read --tag arm=$arm; done; done`，完成后运行 `interaction/bin/tokens summary --by tag:arm --since 2026-11-19 --json` 比较两组。统计不包含 ChatGPT 网页会话或其他机器上的 claude.ai。
+
 ## GitHub PR 轮询（R18 B0）
 
 运行 `interaction/bin/github_poll` 扫描一次。通过 `lib/registry` 读取所有历史 cwd，查询各目录的 origin，识别 github.com 的 HTTPS、SSH（含 scp 写法）和 git URL，按 owner/repo 去重；目录失效、没有 origin 或非 GitHub 地址静默跳过。不另设仓库配置表。运行环境须有已认证且能读目标仓库的 `gh`、`git`、Python 3。

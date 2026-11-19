@@ -951,6 +951,26 @@ def render(data, date, c, _skip_episode_baseline=False):
     for s in chores:
         footer.append(f"- {local(s['start'],c)} · {brief(s['project'],60)}：{brief(s['suggestion'])}")
     if not chores: footer.append('暂无。')
+    # Token accounting is optional: a missing/failed ledger must never break the daily report.
+    try:
+        token_bin = ROOT / 'interaction/bin/tokens'
+        result = run([str(token_bin), 'summary', '--since', date, '--until', date,
+                      '--by', 'agent', '--json', '--logical-day'], timeout=5)
+        if result.returncode == 0:
+            agent_rows = json.loads(result.stdout)
+            if agent_rows:
+                footer += ['', '## token', '']
+                labels=[]
+                for row in agent_rows:
+                    labels.append(f"{row['agent'] if 'agent' in row else row['group']} {row['total']/1_000_000:.1f}M（缓存读 {row['cache_read']/1_000_000:.1f}M）")
+                footer.append(' · '.join(labels))
+                topres = run([str(token_bin), 'summary', '--since', date, '--until', date,
+                              '--by', 'session', '--json', '--logical-day'], timeout=5)
+                if topres.returncode == 0:
+                    top = sorted(json.loads(topres.stdout), key=lambda x:x['total'], reverse=True)[:3]
+                    footer.append('前 3：' + '；'.join(f"{x['group']} {x['total']:,}" for x in top))
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError, json.JSONDecodeError):
+        pass
     warnings = list(data.get('warnings', []))
     if data.get('classification_status') in ('partial','failed'):
         warnings.append('部分活动未分类；完整证据见同日 JSON。')

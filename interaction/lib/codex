@@ -100,6 +100,7 @@ def main():
     p.add_argument('--check', action='store_true', help=argparse.SUPPRESS)
     p.add_argument('--sandbox', choices=['network', 'full'])
     p.add_argument('--approved-by')
+    p.add_argument('--tag', action='append', default=[])
     p.add_argument('--tries', type=int, default=int(os.environ.get('CODEX_TRIES', '6')))
     p.add_argument('--gap', type=float, default=float(os.environ.get('CODEX_GAP', '600')))
     p.add_argument('extra', nargs=argparse.REMAINDER)
@@ -139,6 +140,8 @@ def main():
     if a.start:
         start = dict(name=a.name, event='start', pid=os.getpid(), cwd=a.cwd, prompt=a.prompt,
                      sandbox=a.sandbox or 'workspace-write', approved_by=a.approved_by)
+        if a.tag:
+            start['tags'] = dict(x.split('=', 1) for x in a.tag if '=' in x)
         if a.roadmap:
             start['roadmap'] = a.roadmap
         elif a.mode != 'exec':

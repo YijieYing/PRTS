@@ -10,7 +10,7 @@ LOG=$S/tasks/$name
 prompt=$LOG/prompt.md
 if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then prompt=$1; shift; fi
 branch=""; base=""; roadmap=""
-options=(); extra=(); dry=${DISPATCH_DRY:-0}
+options=(); extra=(); tags=(); dry=${DISPATCH_DRY:-0}
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --roadmap)
@@ -23,6 +23,9 @@ while [ "$#" -gt 0 ]; do
     --sandbox|--approved-by)
       [ "$#" -ge 2 ] || { echo "$1 requires a value" >&2; exit 2; }
       options+=("$1" "$2"); shift 2 ;;
+    --tag)
+      [ "$#" -ge 2 ] || { echo "--tag requires a value" >&2; exit 2; }
+      tags+=("$2"); shift 2 ;;
     --dry) dry=1; shift ;;
     --sandbox=*|--approved-by=*) options+=("$1"); shift ;;
     --) shift; extra+=("$@"); break ;;
@@ -33,6 +36,7 @@ done
 mkdir -p "$LOG"
 [ "$(cd "$(dirname "$prompt")" && pwd)/$(basename "$prompt")" = "$(cd "$LOG" && pwd)/prompt.md" ] || cp "$prompt" "$LOG/prompt.md"
 args=(--cwd "$wd" --prompt "$LOG/prompt.md" --name "$name" --log "$LOG/run.log" --output "$LOG/last.md")
+for tag in ${tags[@]+"${tags[@]}"}; do args+=(--tag "$tag"); done
 [ -z "$roadmap" ] || args+=(--roadmap "$roadmap")
 # Bash 3.2 with nounset needs the + expansion for empty arrays.
 args+=(${options[@]+"${options[@]}"})
