@@ -17,3 +17,6 @@ maintenance/backups/
 /reporter/state/ddl.lock
 /reporter/state/ddl-sent.tmp
 /reporter/**/__pycache__/
+
+# 派发登记是运行中持续追加的日志；放进 git 会被 restore/checkout 回滚（11-19 token-meter 事故）。
+/interaction/state/registry.jsonl

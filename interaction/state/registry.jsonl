@@ -574,3 +574,26 @@
 {"t":"2026-11-17T17:30:46.120064+00:00","name":"worm-a3-graph","event":"reviewed","reviewed":true}
 {"t":"2026-11-17T17:30:46.153832+00:00","name":"worm-exp1nl","event":"reviewed","reviewed":true}
 {"t":"2026-11-17T17:30:46.187413+00:00","name":"worm-exp3b","event":"reviewed","reviewed":true}
+{"t":"2026-11-19T13:44:46.159396+00:00","name":"token-meter","event":"exit","rc":0,"via":"exec","try":1}
+{"t": "2026-11-19T13:32:48.650232+00:00", "name": "ear-extract-1119", "event": "start", "pid": null, "cwd": null, "prompt": "/Users/prts/PRTS/interaction/state/tasks/ear-extract-1119/prompt.md", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T13:32:48.802085+00:00", "name": "ear-extract-1119", "event": "exit", "rc": 1, "via": "exec", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T13:33:01.935474+00:00", "name": "ear-extract-1119b", "event": "start", "pid": null, "cwd": "/Users/prts/PRTS/pulse/state/ear/extract-1119", "prompt": "/Users/prts/PRTS/interaction/state/tasks/ear-extract-1119b/prompt.md", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T13:33:01.935474+00:00", "name": "ear-extract-1119b", "event": "thread", "thread": "01a1f402-bb0b-75e3-9b7e-8859eab01e43", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T13:36:43.678970+00:00", "name": "ear-extract-1119b", "event": "exit", "rc": 0, "via": "exec", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T04:57:50.206366+00:00", "name": "ios-call-end-recovery", "event": "start", "pid": null, "cwd": "/Users/prts/.worktrees/EchoAsRecord/clients-ios-recorder", "prompt": "/Users/prts/PRTS/interaction/state/tasks/ios-call-end-recovery/prompt.md", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T04:57:50.206366+00:00", "name": "ios-call-end-recovery", "event": "thread", "thread": "01a1f22b-0f06-7352-a0fa-c790d15c94b8", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T05:05:25.031234+00:00", "name": "ios-call-end-recovery", "event": "exit", "rc": 0, "via": "exec", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T08:10:15.782996+00:00", "name": "ios-interrupt-baseline", "event": "start", "pid": null, "cwd": "/Users/prts/.worktrees/EchoAsRecord/clients-ios-recorder", "prompt": "/Users/prts/PRTS/interaction/state/tasks/ios-interrupt-baseline/prompt.md", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T08:10:15.782996+00:00", "name": "ios-interrupt-baseline", "event": "thread", "thread": "01a1edb4-fe10-7c23-9744-f50072743e6e", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T08:14:49.275237+00:00", "name": "ios-interrupt-baseline", "event": "exit", "rc": 0, "via": "exec", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T07:37:26.943156+00:00", "name": "manage-worker-idle", "event": "start", "pid": null, "cwd": "/Users/prts/.worktrees/EchoAsRecord/storage-manage-worker-idle", "prompt": "/Users/prts/PRTS/interaction/state/tasks/manage-worker-idle/prompt.md", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T07:37:26.943156+00:00", "name": "manage-worker-idle", "event": "thread", "thread": "01a1ed96-dc9a-7341-940b-17b8ea130471", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T07:43:07.096099+00:00", "name": "manage-worker-idle", "event": "exit", "rc": 0, "via": "exec", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T08:29:12.336838+00:00", "name": "pulse-episodes", "event": "start", "pid": null, "cwd": "/Users/prts/PRTS", "prompt": "/Users/prts/PRTS/interaction/state/tasks/pulse-episodes/prompt.md", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T08:29:12.336838+00:00", "name": "pulse-episodes", "event": "thread", "thread": "01a1f32c-f352-7881-8e25-aa63d18a3c7e", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T12:14:04.674711+00:00", "name": "pulse-episodes", "event": "exit", "rc": 0, "via": "exec", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T10:16:46.289337+00:00", "name": "win-tailscale", "event": "start", "pid": null, "cwd": "/Users/prts/Projects/AIInfra", "prompt": null, "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T10:16:46.289337+00:00", "name": "win-tailscale", "event": "thread", "thread": "01a1e8ce-fe4d-7203-9e4b-30331ee81c77", "backfill": "registry-restore-1119"}
+{"t": "2026-11-18T10:16:46.289167+00:00", "name": "win-tailscale", "event": "exit", "rc": 0, "via": "exec", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T13:32:27.029359+00:00", "name": "token-meter", "event": "start", "pid": null, "cwd": "/Users/prts/PRTS", "prompt": "/Users/prts/PRTS/interaction/state/tasks/token-meter/prompt.md", "backfill": "registry-restore-1119"}
+{"t": "2026-11-19T13:32:27.029359+00:00", "name": "token-meter", "event": "thread", "thread": "01a1f402-38bd-7023-a048-15801075524b", "backfill": "registry-restore-1119"}
