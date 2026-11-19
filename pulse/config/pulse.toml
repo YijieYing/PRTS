@@ -57,6 +57,7 @@ min_chars = 300
 continuation_gap_minutes = 30
 max_push_per_day = 4
 late_push_hours = 6
+late_scan_days = 7      # 有入库水位时回扫多少天的录音；更早的迟到录音用 ear sync --since/--until 手动补
 wait_gap_minutes = 40
 
 [focus]

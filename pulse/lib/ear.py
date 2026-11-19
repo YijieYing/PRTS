@@ -325,8 +325,10 @@ def sync(c, root, no_notify=False, retriage=False, since=None, until=None):
             start = max(lower, (cursor.get('until') or lower) - lookback)
             if cursor.get('ingested_until') is not None:
                 # Query time is recording time; an old recording can acquire a
-                # new ingested_at, so the source scan must reach start_from.
-                start = lower
+                # new ingested_at, so scan back far enough to catch outages.
+                # Bounded by late_scan_days: a full rescan from start_from took
+                # 73 s after one week of data and grows linearly (11-20).
+                start = max(lower, min(start, end - cfg.get('late_scan_days', 7) * 86400))
             if manual: start = max(lower, cutoff)
             start = int(start // width) * width
             query_start, query_end = start, end
