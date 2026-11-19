@@ -177,11 +177,75 @@ class PulseTests(unittest.TestCase):
         fresh['project']='其他'
         data['segments']=[copy.deepcopy(fresh)]
         pulse.reuse(data,path)
-        self.assertEqual(data['segments'][0]['project'],'Infra')
-        self.assertEqual(data['segments'][0]['project_source'],'model')
+        self.assertIsNone(data['segments'][0]['project'])
+        self.assertEqual(data['segments'][0]['project_source'],'none')
         fresh['project']='Octopus'; data['segments']=[fresh]
         pulse.reuse(data,path)
         self.assertEqual(fresh['project'],'Octopus')
+
+    def test_episode_validation_and_rendering(self):
+        def seg(sid, minute, duration, source='computer', project='日语', category='input', summary='查资料'):
+            start=self.start+minute*60; end=start+duration*60
+            return dict(id=sid, source=source, session=sid, start=start, end=end,
+                        intervals=[[start,end]], held_candidates=[], messages=[],
+                        project=project, project_source='rule', category=category,
+                        summary=summary, reason=summary, learned=[], produced=[],
+                        suggestion='', topic='')
+        rows=[seg('main-a', 658, 12), seg('main-b', 670, 8, project='不属于项目'),
+              seg('distract', 678, 2, project='不属于项目', summary='看 Agent 设计视频'),
+              seg('interlude', 682, 1, project='不属于项目', summary='查看代理设置'),
+              seg('ugvr', 684, 1, project='UGVR', summary='编辑预申请表'),
+              seg('ear-chat', 686, 3, source='claude', project='Ear', category='chore', summary='讨论录音排障'),
+              seg('long-side', 690, 10, project='不属于项目', summary='长段不能做走神'),
+              seg('far-side', 720, 1, project='不属于项目', summary='越界窗口')]
+        data=dict(segments=rows, warnings=[])
+        answer={'episodes':[{'title':'查资料主线','project':None,'category':'input',
+                             'main':['main-a','main-b','main-a','unknown'],
+                             'side':[{'id':'distract','role':'distraction'},
+                                     {'id':'interlude','role':'interlude'},
+                                     {'id':'ugvr','role':'notable'},
+                                     {'id':'long-side','role':'distraction'},
+                                     {'id':'far-side','role':'distraction'},
+                                     {'id':'ear-chat','role':'distraction'}],
+                             'learned':['二叶亭四迷《浮云》开启言文一致体']}]}
+        with patch.object(pulse,'run',return_value=subprocess.CompletedProcess([],0,json.dumps(answer),'')):
+            pulse.allocate(rows); pulse.merge_episodes(data,self.state,self.c)
+        episode=data['episodes'][0]
+        self.assertEqual(episode['main'],['main-a','main-b'])
+        self.assertEqual({(x['id'],x['role']) for x in episode['side']},
+                         {('distract','distraction'),('interlude','interlude'),('ugvr','notable')})
+        self.assertEqual(episode['project'],'日语')
+        self.assertEqual(data['segments'][2]['episode_role'],'distraction')
+        self.assertEqual(data['segments'][4]['episode_role'],'notable')
+        before=[s['active_seconds'] for s in rows]
+        md=pulse.render(data,'2026-11-11',self.c)
+        self.assertIn('查资料主线',md); self.assertIn('走神：',md); self.assertIn('穿插：',md)
+        self.assertIn('编辑预申请表',md); self.assertIn('讨论录音排障',md)
+        self.assertIn('走神 2.0 分（1 次）',md)
+        self.assertEqual(before,[s['active_seconds'] for s in rows])
+
+    def test_episode_cache_failure_and_legacy_render(self):
+        start=self.start; s=dict(id='x',source='computer',session='x',start=start,end=start+60,
+                                 intervals=[[start,start+60]],project='P',category='input',summary='阅读',
+                                 messages=[],held_candidates=[])
+        data=dict(segments=[s],episodes=[{'main':['missing']}],warnings=[])
+        self.assertFalse(pulse.merge_episodes(data,self.state,self.c,use_model=False))
+        self.assertEqual(data['episodes'],[])
+        with patch.object(pulse,'run',side_effect=RuntimeError('容量')):
+            with self.assertRaises(RuntimeError): pulse.merge_episodes(dict(segments=[s],warnings=[]),self.state,self.c)
+        md=pulse.render(dict(segments=[s],warnings=[]),'2026-11-11',self.c)
+        self.assertIn('**零碎** P 1.0 分',md)
+
+    def test_zero_interval_and_source_regressions(self):
+        zero=dict(id='z',source='computer',session='z',start=self.start,end=self.start,
+                  intervals=[],project='P',category='chore',summary='空',messages=[])
+        md=pulse.render(dict(segments=[zero],warnings=[]),'2026-11-11',self.c)
+        self.assertNotIn('** ·',md)
+        cached=self.state/'cached-source.json'
+        cached.write_text(json.dumps({'segments':[dict(zero,category='input',project='source',project_source='rule')]}))
+        fresh=dict(zero,project=None,project_source='none',intervals=[[self.start,self.start+60]],end=self.start+60)
+        pulse.reuse(dict(segments=[fresh]),cached,self.c)
+        self.assertIsNone(fresh['project'])
 
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)

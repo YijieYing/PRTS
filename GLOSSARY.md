@@ -29,6 +29,14 @@
 | `GLOSSARY.md` | glossary | 本文件 | 总控 |
 | `ROADMAP.md` | roadmap | PRTS 的计划表；其他工程的计划路径在 human/projects.toml 的 roadmap 字段登记 | 总控 |
 
+### pulse 时间线 / pulse timeline
+| 名字 | English | 含义 |
+|---|---|---|
+| 主线 | episode | 日报里把同一件连续活动合并后的时间线单元；由 `main` 段组成，附带经校验的 side 段 |
+| 走神 | distraction | 主线进行中与主线无关的短暂活动；只作为主线下的一行，不改变计时 |
+| 穿插 | interlude | 为主线或系统做的短暂维护性切换，例如代理设置、登录或找文件；只作为主线下的一行 |
+| 短事件 | notable | 时间短但有意义的另一件事；不被主线吞掉，在时间线上单独显示 |
+
 ## interaction/（与 agent 交互 / agent interaction）
 ### 对象 / Objects
 | 名字 | English | 含义 |
