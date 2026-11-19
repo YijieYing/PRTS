@@ -897,7 +897,9 @@ def render(data, date, c, _skip_episode_baseline=False):
     for item in render_items:
         if rows: rows.append(('body', ''))
         if item['kind']=='episode':
-            e=item; ranges='、'.join(f'{local(a,c)}–{local(b,c)}' for a,b in e['intervals'])
+            # Main segments are already one cluster with gaps of at most 15 minutes, so
+            # the episode reads as one continuous span (15:58–16:47), not fragments.
+            e=item; ranges=f"{local(min(a for a,b in e['intervals']),c)}–{local(max(b for a,b in e['intervals']),c)}"
             total=sum(s.get('active_seconds',0) for s in e['members'])
             rows.append(('body',f"**{ranges} · {CATEGORIES[e['category']]} · {brief(e['project'],60)}** {e['title']}（{minutes(total)} 分）"))
             for value in e['learned']:
