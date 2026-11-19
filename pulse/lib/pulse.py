@@ -968,7 +968,7 @@ def render(data, date, c, _skip_episode_baseline=False):
                               '--by', 'session', '--json', '--logical-day', '--no-sync'], timeout=5)
                 if topres.returncode == 0:
                     top = sorted(json.loads(topres.stdout), key=lambda x:x['total'], reverse=True)[:3]
-                    footer.append('前 3：' + '；'.join(f"{x['group']} {x['total']:,}" for x in top))
+                    footer.append('前 3：' + '；'.join(f"{brief(x.get('title') or x['group'],30)} {x['total']/1_000_000:.1f}M" for x in top))
     except (OSError, ValueError, TypeError, subprocess.SubprocessError, json.JSONDecodeError):
         pass
     warnings = list(data.get('warnings', []))

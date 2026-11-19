@@ -102,10 +102,10 @@ def sync(rebuild=False):
                         content=pl.get('content')
                         if isinstance(content,str): text=content
                         elif isinstance(content,list): text=' '.join(x.get('text','') for x in content if isinstance(x,dict))
-                    if text: title=text.strip().replace('\n',' ')[:40]
+                    if text and not _injected(text): title=text.strip().replace('\n',' ')[:40]
                 if agent=='claude':
                     msg=rec.get('message') or {}; usage=msg.get('usage')
-                    if not title and rec.get('type')=='user' and isinstance(msg.get('content'),str): title=msg['content'].strip().replace('\n',' ')[:40]
+                    if not title and rec.get('type')=='user' and isinstance(msg.get('content'),str) and not _injected(msg['content']): title=msg['content'].strip().replace('\n',' ')[:40]
                     if not isinstance(usage,dict): continue
                     ident=msg.get('id') or rec.get('uuid') or hashlib.sha1(raw).hexdigest(); uid='claude:'+ident
                     if uid in seen: continue
@@ -159,15 +159,19 @@ def _dim(r,d,logical):
         t=dt.datetime.fromisoformat(r['time'].replace('Z','+00:00')).astimezone(TZ); return (t-dt.timedelta(hours=5)).date().isoformat() if logical else t.date().isoformat()
     if d.startswith('tag:'): return r.get('tags',{}).get(d[4:])
     return r.get('session') if d=='session' else r.get(d)
+def _injected(text):
+    """Harness-injected context (<environment_context>, AGENTS.md, plugin lists) is not the user's first message."""
+    s=text.lstrip(); return s.startswith('<') or s.startswith('# AGENTS.md')
+
 def summary(a):
     groups={}
     for r in _filtered(a):
         key=tuple(_dim(r,d,a.logical_day) for d in (a.by or ['day'])); g=groups.setdefault(key,{k:0 for k in FIELDS}|{'runs':0,'sessions':set()})
         for k in FIELDS: g[k]+=_num(r.get(k))
-        g['runs']+=1; g['sessions'].add(r.get('session'))
+        g['runs']+=1; g['sessions'].add(r.get('session')); g.setdefault('title', r.get('title') or r.get('task'))
     out=[]
     for key,g in sorted(groups.items(),key=lambda x:tuple('' if v is None else str(v) for v in x[0])):
-        total=g['input']+g['cache_write']+g['cache_read']+g['output']; item={'group':key[0] if len(key)==1 else key,**{k:g[k] for k in FIELDS},'total':total,'without_cache_read':g['input']+g['cache_write']+g['output'],'sessions':len(g['sessions']),'runs':g['runs']}
+        total=g['input']+g['cache_write']+g['cache_read']+g['output']; item={'group':key[0] if len(key)==1 else key,**{k:g[k] for k in FIELDS},'total':total,'without_cache_read':g['input']+g['cache_write']+g['output'],'sessions':len(g['sessions']),'runs':g['runs'],'title':g.get('title')}
         # A run is one session/thread (an experiment repetition), so means are per session; calls = API calls.
         n=len(g['sessions']); item['calls']=g['runs']; item['mean']={k:(item[k]/n if n else 0) for k in FIELDS}; item['mean']['total']=total/n if n else 0; out.append(item)
     return out
