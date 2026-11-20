@@ -65,3 +65,4 @@ window_minutes = 20
 off_minutes = 12
 streak_minutes = 10
 cooldown_minutes = 20
+dnd_hours = 3

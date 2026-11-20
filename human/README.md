@@ -10,6 +10,7 @@
 ## 报告
 | 日期 | 报告 |
 |---|---|
+| 2026-11-20 | [勿扰联动与每周功能使用盘点](reports/2026-11-20-focus-dnd-usage-audit.md) |
 | 2026-11-17 | [M11：roadmap、自动完成与提醒](../interaction/state/tasks/m11-data/report.md) |
 | 2026-11-17 | [各工程 roadmap 提炼（总控已改写成白话）](../interaction/state/tasks/m11-roadmaps/report.md) |
 | 2026-11-17 | [说话人归属的时间局部性调查](~/research/SpeakerLocality/survey.md) |

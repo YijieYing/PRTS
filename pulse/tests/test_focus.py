@@ -117,4 +117,22 @@ class FocusTests(unittest.TestCase):
         users=[]; sources.codex({'codex':str(self.state/'codex')},0,9999999999,[],set(),users)
         self.assertEqual(users[0]['title'],'修录音'); self.assertEqual(users[0]['cwd'],'/work/Ear')
 
+    def test_start_dnd_creates_source_and_stop_reason(self):
+        rows=[dict(time=self.t-60,last=self.t-1,title='unregistered',app='Editor',bundle='Editor',domain='',active=True,counts={'typing':1})]
+        with patch.object(focus.computer_history,'load',return_value=(rows,[])):
+            with redirect_stdout(io.StringIO()):
+                focus.command(argparse.Namespace(focus_command='start-dnd',dry=False),self.c,self.state)
+        current=focus.read(self.state/'focus/current.json',None)
+        self.assertEqual(current['source'],'dnd'); self.assertEqual(current['goal'],'专注（勿扰模式）')
+        with redirect_stdout(io.StringIO()) as out:
+            focus.command(argparse.Namespace(focus_command='stop',reason='dnd-off'),self.c,self.state)
+        self.assertEqual(json.loads((self.state/'focus/log.jsonl').read_text())['end_reason'],'dnd-off')
+
+    def test_start_dnd_does_not_replace_manual(self):
+        focus.write(self.state/'focus/current.json',self.current)
+        with redirect_stdout(io.StringIO()):
+            focus.command(argparse.Namespace(focus_command='start-dnd',dry=False),self.c,self.state)
+        self.assertEqual(focus.read(self.state/'focus/current.json',None)['goal'],'学 agent')
+        self.assertEqual(len((self.state/'focus/dnd.log').read_text().splitlines()),1)
+
 if __name__=='__main__': unittest.main()

@@ -44,7 +44,9 @@ def parser(sub):
     s.add_argument('--goal', required=True); s.add_argument('--until', required=True)
     s.add_argument('--on', action='append', default=[]); s.add_argument('--off', action='append', default=[])
     s.add_argument('--note', default='')
-    p.add_parser('status'); p.add_parser('stop')
+    p.add_parser('status')
+    s = p.add_parser('stop'); s.add_argument('--reason', default='stopped')
+    s = p.add_parser('start-dnd'); s.add_argument('--dry', action='store_true')
     s = p.add_parser('check'); s.add_argument('--at'); s.add_argument('--dry', action='store_true')
 
 
@@ -99,6 +101,30 @@ def counts(rows):
 def destinations(rows):
     n=Counter(r['label'] for r in rows if r['category']=='off')
     return [{'label':k,'minutes':v} for k,v in n.most_common(3)]
+
+
+def infer_dnd(c, state, at):
+    """Infer a cheap local goal from the preceding 20 minutes of Computer History."""
+    warnings=set(); start=at-20*60
+    minutes,_=computer_history.load(c['sources'], start, at, state, warnings)
+    active=[r for r in minutes if r.get('active') and not computer_history.system_app(r,c['sources'])]
+    if not active:
+        return '专注（勿扰模式）', [], sorted(warnings)
+    scores=Counter(); labels={}
+    for row in active:
+        project=computer_history.project(row,c.get('mapping',[]))
+        # An unregistered/other window is evidence of possible deviation, not an on target.
+        if project in ('其他','未归属','不属于项目'): continue
+        scores[project] += 1
+        labels[project] = row.get('title') or project
+    if not scores:
+        return '专注（勿扰模式）', [], sorted(warnings)
+    project=scores.most_common(1)[0][0]
+    # Keep the category vocabulary used by daily review; no model call is made here.
+    category='输入'
+    text=labels.get(project) or project
+    goal=f'专注：{text}（{category}）'
+    return goal, [project], sorted(warnings)
 
 
 def evaluate(current, at, c, state):
@@ -168,7 +194,8 @@ def check(current, at, c, state, dry=False):
     eligible=(counts(recent)['off']>=cfg['off_minutes'] or streak>=cfg['streak_minutes']) and not recovered
     would=eligible and (last is None or at-last>=cfg['cooldown_minutes']*60) and at<current['until']
     top=destinations(recent); off=counts(recent)['off']
-    title=f"走神 {off} 分钟：{top[0]['label'][:70]}" if top else ''
+    prefix='勿扰中偏离：' if current.get('source')=='dnd' else '走神 '
+    title=f"{prefix}{off} 分钟：{top[0]['label'][:70]}" if top else ''
     body='目标：'+current['goal']+'\n最近 '+str(cfg['window_minutes'])+' 分钟：'+ '；'.join(f"{r['label'][:100]} {r['minutes']} 分钟" for r in top)+'\n回到：'+current['goal']
     sent=False; attempted=False
     if would and not dry:
@@ -198,7 +225,24 @@ def command(args,c,state):
         if args.focus_command=='check' and current is None: return 0
         at=timestamp(args.at,c) if getattr(args,'at',None) else datetime.now().timestamp()
         action=args.focus_command
-        if action=='set':
+        if action=='start-dnd':
+            if current and at >= current.get('until', at):
+                finish(directory,current,at,'expired')
+                current=None
+            if current and current.get('source') != 'dnd':
+                if getattr(args,'dry',False):
+                    print(json.dumps({'source':'dnd','ignored':True,'reason':'manual_focus_active'},ensure_ascii=False))
+                    return 0
+                append(directory/'dnd.log',dict(event='ignored',time=at,reason='manual_focus_active'))
+                return 0
+            if current and current.get('source') == 'dnd': return 0
+            goal,on,warnings=infer_dnd(c,state,at)
+            hours=float(c.get('focus',{}).get('dnd_hours',3))
+            planned=dict(goal=goal,on=on,off=[],note='勿扰模式自动开启',source='dnd',start=at,until=at+hours*3600,rows=[],counts=counts([]),reminders=[],warnings=warnings)
+            if getattr(args,'dry',False):
+                print(json.dumps(planned,ensure_ascii=False)); return 0
+            write(directory/'current.json',planned)
+        elif action=='set':
             if not args.goal.strip() or any(not k.strip() for k in args.on+args.off): raise ValueError('目标和关键词不能为空')
             try:
                 hour,minute=map(int,args.until.split(':'))
@@ -217,8 +261,12 @@ def command(args,c,state):
         elif action=='stop':
             if current:
                 check(current,at,c,state,True)
-                if (directory/'current.json').exists(): finish(directory,current,at,'stopped')
-                print(json.dumps({'goal':current['goal'],'counts':current['counts']},ensure_ascii=False))
+                if (directory/'current.json').exists(): finish(directory,current,at,getattr(args,'reason','stopped'))
+                top=destinations(current.get('rows',[]))
+                minutes=max(0,(current.get('ended',at)-current['start'])/60)
+                print(json.dumps({'goal':current['goal'],'source':current.get('source'),'minutes':round(minutes,1),
+                                  'counts':current['counts'],'off_minutes':current['counts'].get('off',0),
+                                  'main_deviation':top[0] if top else None},ensure_ascii=False))
         elif action=='status':
             if not current: print('没有进行中的专注时段')
             else:

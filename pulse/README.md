@@ -270,6 +270,11 @@ pulse/bin/pulse focus stop
 - 使用 `reporter/bin/notify alert`，标题直说偏离时长及去向，正文给目标和前三个 off 去向。部分渠道失败也计入尝试冷却，避免重复轰炸，送达标为未核实。`--dry` 记录判断但绝不通知，也不消耗提醒冷却；status/stop 刷新统计同样不通知。无进行中时段的 check 静默退出 0。
 - `state/focus/current.json` 保存当前时段及分钟账本，`log.jsonl` 保存结束总结，`checks.jsonl` 保存每次有效 check 的累计/窗口分类和提醒结果，`cache.json` 保存模型分类。全目录不提交 git。`pulse day` 在有时段时添加「专注」，按日界裁剪分钟和提醒；进行中时段仅统计上次检查已观测数据。
 
+勿扰模式联动不读取 macOS `~/Library/DoNotDisturb`（该文件需要完全磁盘访问权限）。请在「快捷指令」中依次操作：快捷指令 → 自动化 → 新建个人自动化 → 专注模式 → 勿扰模式 → 打开时 → 运行 Shell 脚本，把
+`~/PRTS/pulse/bin/pulse focus start-dnd`
+粘贴进去，并关闭「运行前询问」；再建一个相同自动化，选择「关闭时」，脚本为
+`~/PRTS/pulse/bin/pulse focus stop --reason dnd-off`，同样关闭「运行前询问」。`start-dnd` 不需要 goal/until，默认 3 小时（`[focus].dnd_hours`），只读前 20 分钟本地 Computer History 推断目标，不发送开始通知。已有手动时段不会被覆盖；没有可登记项目时使用「专注（勿扰模式）」并不设 on。到点由现有 `focus check` 自动结束；`stop` 会写时长、偏离分钟和主要偏离去向，当前没有时段时安静退出 0。勿扰时段的偏离提醒标题以「勿扰中偏离：」开头。
+
 launchd 配置仅提供文件 `config/launchd/com.prts.pulse-focus.plist`，每 300 秒调用 check，PATH 包含 `~/.local/bin`、`/opt/homebrew/bin`，日志为 `state/focus/check.log`。本次未安装；用户自行安装：
 
 ```sh
