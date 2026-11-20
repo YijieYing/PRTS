@@ -13,7 +13,7 @@
 | `bin/event` | `add <L0或L1或L2> <source> <text> [--thread KEY] [--project NAME] [--kind KIND] [--id ID]`；`from-agentconsole` 从 stdin 读一个 JSON；`list [--new]`；`ack <id>` |
 | `bin/wait` | `<task> [轮询秒=30]`，等待当前运行结束，打印 last.md；退出码为运行结果（75 为重试耗尽）。此命令由总控同步维护 |
 | `bin/status` | `[task]`，输出 registry JSONL；`links` 输出显式派发关系 JSONL；`threads [--json]` 输出主线投影；供其他模块只读查询，不访问内部文件 |
-| `bin/usage-audit` | `[--weeks N] [--json]`，只读盘点用户功能每周使用次数和连续未用周数；连续至少两周未用标为候选，不删除或停用功能 |
+| `bin/usage-audit` | `[--weeks N] [--json]`，只读盘点用户功能每周使用次数和连续未用周数；连续至少两周未用标为候选，不删除或停用功能。只有发送记录、没有「用户用了」信号的功能（日报、DDL 提醒、todo、AgentConsole、tokens）标「测不到，不判」，不当候选。每周日由 Claude 定时任务「清理左边栏与功能盘点」运行，有候选就用 `ask add` 入队一个 soon 问题 |
 
 `wake` 的 HH:MM 按日本时间解释，过去的时分预约到明天；按分钟向上取整。resume 完成表示本轮退出，queue 完成只表示入队。`WAKE_DRY=1` 跳过 Codex，**仍会注册 launchd**。取消仅限未运行任务。
 

@@ -28,15 +28,17 @@ def _weeks(n, now=None):
 def _count(times, windows):
     return [sum(a.timestamp() <= t < b.timestamp() for t in times if t is not None) for a,b in windows]
 
-def _feature(name, signal, reason, times, windows, no_signal=None):
+def _feature(name, signal, reason, times, windows, no_signal=None, measurable=True):
     counts=_count(times,windows)
     unused=0
     for x in reversed(counts):
         if x: break
         unused += 1
     return dict(name=name, signal=signal, reason=reason, weekly=counts,
-                consecutive_unused_weeks=unused, candidate=unused>=2,
-                no_signal=no_signal)
+                consecutive_unused_weeks=unused,
+                # Zero counts from a feature we cannot observe are not evidence of disuse.
+                candidate=measurable and unused>=2,
+                no_signal=no_signal, measurable=measurable)
 
 def audit(weeks=4, now=None):
     windows=_weeks(weeks,now); start=windows[0][0]; end=windows[-1][1]
@@ -89,13 +91,15 @@ def audit(weeks=4, now=None):
     recap=[_time(k+'T12:00:00+09:00') for k,v in receipts.items() if v.get('note') is True and v.get('sent') is True and in_window(k+'T12:00:00+09:00')]
     out.append(_feature('每日回顾','reporter/recap-sent.json: note=true and sent=true',
                         '备忘录写入成功才计；日报生成或 alert 单独成功不算',recap,windows,
-                        '没有 recap receipt 或没有纠正记录信号' if not receipts else None))
+                        '只有系统写入备忘录的记录，没有你是否读了日报的信号',
+                        measurable=False))
     ddl=[]; data={}
     try: data=json.loads((reporter/'ddl-sent.json').read_text()); ddl=[_time(v) for v in data.get('sent',{}).values() if in_window(v)]
     except (OSError,ValueError): pass
     out.append(_feature('DDL / 组会提醒','reporter/ddl-sent.json sent',
                         '发送是可观测使用；roadmap 状态变化只作为后续核对，不能伪造用户确认',ddl,windows,
-                        '没有 DDL receipt' if not data else None))
+                        '只有系统发送记录，没有你是否看了或照做的信号',
+                        measurable=False))
     todo=[]
     try:
         cmd=[str(ROOT.parent/'reporter/bin/todo'),'list','--all']; r=subprocess.run(cmd,stdin=subprocess.DEVNULL,capture_output=True,text=True,timeout=5)
@@ -106,15 +110,18 @@ def audit(weeks=4, now=None):
     except (OSError,subprocess.TimeoutExpired): pass
     out.append(_feature('todo（Apple 提醒事项 PRTS）','reporter/bin/todo list --all',
                         '当前接口只返回快照，没有每条新增/完成时间；仅报告当前可见信号',todo,windows,
-                        'todo 输出没有时间戳，无法计算每周新增/完成，需最小埋点建议：保存只读快照差分'))
+                        'todo 输出没有时间戳，无法计算每周新增/完成，需最小埋点建议：保存只读快照差分',
+                        measurable=False))
     order_path=Path(os.environ.get('AGENT_CONSOLE_HOME',str(Path.home()/'.agentconsole')))/'order.json'
     order_times=[order_path.stat().st_mtime] if order_path.exists() and start.timestamp()<=order_path.stat().st_mtime<end.timestamp() else []
     out.append(_feature('AgentConsole','order.json mtime（手动排序）；server access log/状态动作未持久化',
                         '排序写入可证实用户动作；浏览器 GET 和状态操作没有稳定本地审计日志',order_times,windows,
-                        '缺少 server access log，无法统计浏览请求与改状态动作'))
+                        '缺少 server access log，无法统计浏览请求与改状态动作',
+                        measurable=False))
     out.append(_feature('token 统计','无可区分“用户调用 tokens”与日报调用的现有日志',
                         'tokens ledger 只记录被统计的 agent 用量，不能反推用户是否主动运行命令',[],windows,
-                        '没有区分人工调用/日报调用的信号；最小埋点建议：tokens 命令写调用来源和时间'))
+                        '没有区分人工调用/日报调用的信号；最小埋点建议：tokens 命令写调用来源和时间',
+                        measurable=False))
     return dict(weeks=weeks, generated_at=dt.datetime.now(TZ).isoformat(), features=out)
 
 def main(argv=None):
@@ -124,7 +131,7 @@ def main(argv=None):
     if a.json: print(json.dumps(data,ensure_ascii=False,indent=2)); return 0
     print(f'PRTS 功能使用盘点（最近 {a.weeks} 周）')
     for f in data['features']:
-        mark='候选' if f['candidate'] else ''
+        mark='候选' if f['candidate'] else ('（测不到，不判）' if not f.get('measurable',True) else '')
         suffix=('；无信号：'+f['no_signal']) if f.get('no_signal') else ''
         print(f"{f['name']}："+' / '.join(map(str,f['weekly']))+f"；连续未用 {f['consecutive_unused_weeks']} 周 {mark}"+suffix)
     return 0

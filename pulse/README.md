@@ -273,7 +273,7 @@ pulse/bin/pulse focus stop
 勿扰模式联动不读取 macOS `~/Library/DoNotDisturb`（该文件需要完全磁盘访问权限）。请在「快捷指令」中依次操作：快捷指令 → 自动化 → 新建个人自动化 → 专注模式 → 勿扰模式 → 打开时 → 运行 Shell 脚本，把
 `~/PRTS/pulse/bin/pulse focus start-dnd`
 粘贴进去，并关闭「运行前询问」；再建一个相同自动化，选择「关闭时」，脚本为
-`~/PRTS/pulse/bin/pulse focus stop --reason dnd-off`，同样关闭「运行前询问」。`start-dnd` 不需要 goal/until，默认 3 小时（`[focus].dnd_hours`），只读前 20 分钟本地 Computer History 推断目标，不发送开始通知。已有手动时段不会被覆盖；没有可登记项目时使用「专注（勿扰模式）」并不设 on。到点由现有 `focus check` 自动结束；`stop` 会写时长、偏离分钟和主要偏离去向，当前没有时段时安静退出 0。勿扰时段的偏离提醒标题以「勿扰中偏离：」开头。
+`~/PRTS/pulse/bin/pulse focus stop --reason dnd-off`，同样关闭「运行前询问」。`start-dnd` 不需要 goal/until，默认 3 小时（`[focus].dnd_hours`），只读前 20 分钟本地 Computer History 推断目标，不发送开始通知。已有手动时段不会被覆盖；没有可登记项目时使用「专注（勿扰模式）」并不设 on。到点由现有 `focus check` 自动结束；`stop` 会写时长、偏离分钟和主要偏离去向，当前没有时段时安静退出 0。勿扰时段的偏离提醒标题以「勿扰中偏离：」开头。快捷指令和裸 launchd 的 PATH 只有 /usr/bin:/bin，`python3` 是系统 3.9（没有 tomllib）；`pulse/bin/pulse` 在 Python 低于 3.11 时自动改用 /opt/homebrew/bin/python3 重新执行，所以命令可以原样粘贴。
 
 launchd 配置仅提供文件 `config/launchd/com.prts.pulse-focus.plist`，每 300 秒调用 check，PATH 包含 `~/.local/bin`、`/opt/homebrew/bin`，日志为 `state/focus/check.log`。本次未安装；用户自行安装：
 
