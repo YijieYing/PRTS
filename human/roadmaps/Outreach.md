@@ -1,6 +1,8 @@
 来源：`~/outreach/internship/README.md` 及其 01–04 子目录 README；README 指向的 `~/outreach/申请时间线.md`。原始文档仍是细节依据。
 
-# Outreach
+# Outreach（已由 S 表取代）
+
+**2026-11-22 起，Outreach 的 roadmap 是 `~/outreach/岗位总表.md` 第零节（S01–S31）**，改日期只改那张表；下面的 A 系列不再显示和提醒，留作旧记录。对应关系：A1 → S01、S27；A2、A3、A7 → S 系列各条；A6 → S23；A8 → S31；A4、A5（UTRIP）那张表写「不投」，等你确认后再改成 ❌。
 
 编号前缀：`A`。
 

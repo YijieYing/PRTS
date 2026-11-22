@@ -69,6 +69,14 @@ class Roadmap(unittest.TestCase):
         self.assertIn('other',self.cmd('git','diff','--cached','--name-only').stdout)
         for ident,status in [('X99','✅'),('X1','bad')]:
             self.assertNotEqual(self.cmd(ROOT/'interaction/bin/roadmap','mark','Test',ident,status,ok=False).returncode,0)
+    def test_plain_folder_and_kind(self):
+        with tempfile.TemporaryDirectory() as d:
+            f=Path(d)/'table.md'
+            f.write_text('| 编号 | 状态 | DDL | 类型 | 事项 | 完成证据 |\n|---|---|---|---|---|---|\n| S01 | 💤 | 2030-01-01 | 检查 | look | |\n')
+            self.config.write_text(f'[[project]]\nname="Test"\npath="{d}"\nroadmap="{f}"\nroadmap_prefix="S"\n')
+            self.assertEqual(r.read(r.project('Test'))['items'][0]['kind'],'检查')
+            r.mark('Test','S01','✅','done')
+            self.assertIn('| S01 | ✅ |',f.read_text())
     def test_legacy_evidence_and_done_guard(self):
         self.file.write_text('| # | 状态 | 事项 | 要点 |\n|---|---|---|---|\n| X1 | 💤 | one | notes |\n')
         r.mark('Test','X1','✅','proof')

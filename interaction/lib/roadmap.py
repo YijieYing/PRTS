@@ -26,7 +26,7 @@ def records():
         return []
 
 def rows(content):
-    header = None
+    header, header_cells = None, []
     fence = None
     for n, raw in enumerate(content.splitlines(keepends=True)):
         stripped = raw.lstrip()
@@ -48,7 +48,7 @@ def rows(content):
         aliases = {'#':'id', '编号':'id', 'ID':'id', '状态':'status', '事项':'title', '标题':'title', '开始':'start', 'DDL':'ddl', '完成证据':'evidence'}
         candidate = {aliases[c]:i for i,c in enumerate(cells) if c in aliases}
         if all(k in candidate for k in ('id','status','title')):
-            header = candidate
+            header, header_cells = candidate, cells
             continue
         if not header or max(header.values()) >= len(cells): continue
         get = lambda k: cells[header[k]] or None if k in header else None
@@ -61,6 +61,7 @@ def rows(content):
                 if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', item[k] or ''): raise ValueError()
                 dt.date.fromisoformat(item[k])
             except ValueError: item[k] = None
+        if '类型' in header_cells: item['kind'] = cells[header_cells.index('类型')] or None   # optional column
         item.update(done=any(s in (item['status'] or '') for s in ('✅','❌')), auto=None)
         yield n, header, parts, item
 
@@ -133,12 +134,13 @@ def mark(name, ident, status, evidence=None, auto=None, url=None):
             lines = content.splitlines(keepends=True)
             lines[n] = '|'.join(parts)
             updated = ''.join(lines)
-            repo = Path(git(path.parent,'rev-parse','--show-toplevel'))
-            relative = str(path.relative_to(repo))
+            try: repo = Path(git(path.parent,'rev-parse','--show-toplevel'))
+            except subprocess.CalledProcessError: repo = None   # e.g. ~/outreach: plain files, nothing to commit
+            relative = repo and str(path.relative_to(repo))
             if updated != content:
                 path.write_bytes(updated.encode('utf-8'))
             # Also retry a prior failed commit before recording completion.
-            if git(repo,'status','--porcelain','--',relative):
+            if repo and git(repo,'status','--porcelain','--',relative):
                 try:
                     git(repo,'commit','--only','-m',f'roadmap: {p["name"]} {ident} {status}','--',relative)
                 except subprocess.CalledProcessError:

@@ -154,7 +154,8 @@ name = "Outreach"   # 申请（学术、实习）；用户 11-16：重要、要�
 path = "~/outreach"
 category = "其他"
 group = "Outreach"
-roadmap = "~/PRTS/human/roadmaps/Outreach.md"
+roadmap = "~/outreach/岗位总表.md"   # 11-22 起 DDL 以这张表第零节（S 编号）为准，改日期只改那张表
+roadmap_prefix = "S"
 
 [[project]]
 name = "aquant 交易 bot / BigQuant"
@@ -167,3 +168,15 @@ name = "SpeakerLocality"   # 11-17 新开：Ear 说话人归属的时间局部�
 path = "~/research/SpeakerLocality"
 category = "学术"
 group = "PRTS"
+
+[[project]]
+name = "论文阅读"   # 11-22 新开：每天 21:00 纸质论文（pulse study reading）
+path = "~/research/Reading"
+category = "学术"
+
+[[project]]
+name = "语言学习"   # 11-22 新开：一三五法语、二四六日语（pulse study french / japanese）
+path = "~/research/Languages"
+category = "课程"
+group = "课程"
+aliases = ["法语", "日语", "法语课", "日语课"]

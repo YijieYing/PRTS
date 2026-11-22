@@ -20,7 +20,7 @@ def due(groups, now):
             name = project['name']
             items = project['roadmap']['items']
             for item in items:
-                if item['done'] or not item['ddl']: continue
+                if item['done'] or not item['ddl'] or item.get('kind')=='检查': continue   # 检查: an agent looks, not the user
                 days = (dt.date.fromisoformat(item['ddl'])-today).days
                 phase = str(days) if days in (7,2,0) else ('overdue' if days < 0 else None)
                 if phase is not None:

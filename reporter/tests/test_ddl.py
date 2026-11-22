@@ -22,6 +22,9 @@ class DDL(unittest.TestCase):
         for date in ('12','17','19','20','21'):
             self.tick(f'2026-11-{date}T13:00:00+09:00');self.tick(f'2026-11-{date}T14:00:00+09:00')
         self.assertEqual(len(self.calls),4)
+    def test_agent_checks_not_pushed(self):
+        self.item['kind']='检查'
+        self.tick('2026-11-19T13:00:00+09:00');self.assertEqual(self.calls,[])
     def test_many_due_batched(self):
         self.project['roadmap']['items']=[dict(self.item,id=f'X{i}',ddl='2026-10-1%d'%i) for i in range(1,6)]+[self.item]
         self.tick('2026-11-17T13:00:00+09:00')
