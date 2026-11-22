@@ -85,6 +85,17 @@ def audit(weeks=4, now=None):
     out.append(_feature('专注时段','pulse/state/focus/log.jsonl 的 start（含 source=dnd）',
                         '开启时段是用户动作；check/到期结束不重复计数',focus,windows,
                         'focus 日志不存在' if not (pulse/'focus/log.jsonl').exists() else None))
+    study_logs=[_time(r.get('date')+'T12:00:00+09:00') for r in _rows(pulse/'study/log.jsonl') if r.get('date') and in_window(r.get('date')+'T12:00:00+09:00')]
+    study_triggers=[]
+    for p in (pulse/'study'/'days').glob('*.json') if (pulse/'study'/'days').exists() else []:
+        try:
+            d=json.loads(p.read_text()); study_triggers += [_time(d.get('date')+'T12:00:00+09:00')]*len(d.get('items',{}))
+        except (OSError,ValueError): pass
+    triggers=_count(study_triggers,windows)
+    study_feature=_feature('固定学习时段','study/log.jsonl 条数；触发数为 study/days 时段数','按周计用户的 study log 条数',study_logs,windows,
+                           measurable=sum(n>0 for n in triggers)>=2)   # no verdict before it has run in two weeks
+    study_feature['trigger_weekly']=triggers
+    out.append(study_feature)
     receipts={}
     try: receipts=json.loads((reporter/'recap-sent.json').read_text())
     except (OSError,ValueError): pass

@@ -13,7 +13,7 @@
 | `bin/event` | `add <L0或L1或L2> <source> <text> [--thread KEY] [--project NAME] [--kind KIND] [--id ID]`；`from-agentconsole` 从 stdin 读一个 JSON；`list [--new]`；`ack <id>` |
 | `bin/wait` | `<task> [轮询秒=30]`，等待当前运行结束，打印 last.md；退出码为运行结果（75 为重试耗尽）。此命令由总控同步维护 |
 | `bin/status` | `[task]`，输出 registry JSONL；`links` 输出显式派发关系 JSONL；`threads [--json]` 输出主线投影；供其他模块只读查询，不访问内部文件 |
-| `bin/usage-audit` | `[--weeks N] [--json]`，只读盘点用户功能每周使用次数和连续未用周数；连续至少两周未用标为候选，不删除或停用功能。只有发送记录、没有「用户用了」信号的功能（日报、DDL 提醒、todo、AgentConsole、tokens）标「测不到，不判」，不当候选。每周日由 Claude 定时任务「清理左边栏与功能盘点」运行，有候选就用 `ask add` 入队一个 soon 问题 |
+| `bin/usage-audit` | `[--weeks N] [--json]`，只读盘点用户功能每周使用次数和连续未用周数；连续至少两周未用标为候选，不删除或停用功能。只有发送记录、没有「用户用了」信号的功能（日报、DDL 提醒、todo、AgentConsole、tokens）标「测不到，不判」，不当候选。每周日由 Claude 定时任务「清理左边栏与功能盘点」运行，有候选就用 `ask add` 入队一个 soon 问题；「固定学习时段」按周数 `study log` 条数，至少跑过两周才判断 |
 
 `wake` 的 HH:MM 按日本时间解释，过去的时分预约到明天；按分钟向上取整。resume 完成表示本轮退出，queue 完成只表示入队。`WAKE_DRY=1` 跳过 Codex，**仍会注册 launchd**。取消仅限未运行任务。
 
@@ -187,6 +187,7 @@ M11 表格按表头列名识别，列顺序不限：`| 编号 | 状态 | 事项 
 开始、DDL、完成证据可缺省，输出 null；日期为 YYYY-MM-DD。旧 `# / 状态 / 事项 / 要点`
 继续支持；代码围栏跳过，清单继续支持。各工程文件登记在 projects.toml 的 roadmap，通常为
 `human/roadmaps/<工程名>.md`；PRTS 总控台和 AgentConsole 继续共享 ROADMAP.md。
+表格有「类型」列时条目多一个 `kind`；`kind` 为「检查」的条目（由 agent 代查）不发 DDL 提醒。roadmap 文件不在 git 仓库里时（如 `~/outreach/岗位总表.md`），`mark` 只改文件、不提交。
 `roadmap.items` 按文件顺序最多 60 条（含已结束），每项为
 `{id,title,status,start,ddl,evidence,done,auto}`。✅ 和 ❌ 的 done=true；其余未结束。
 `auto` 为 null 或 `{state: pr_open|merged|accepted, url, at: ISO8601}`。

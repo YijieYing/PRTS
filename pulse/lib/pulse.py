@@ -16,6 +16,7 @@ import sources
 import computer_history
 import ear
 import focus
+import study
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE = ROOT / 'pulse'
@@ -979,6 +980,7 @@ def render(data, date, c, _skip_episode_baseline=False):
         if len(warnings)>6: footer.append('- 其余数据缺口见同日 JSON。')
 
     if data.get('focus'): footer += [data['focus']]
+    if data.get('study'): footer += [data['study']]
     def compose(): return '\n'.join(header+[v for _,v in rows]+footer)+'\n'
     return compose()
 
@@ -1119,6 +1121,11 @@ def main():
     es.add_parser('ack').add_argument('--before',required=True)
     es.add_parser('wait').add_argument('--poll',type=float,default=30)
     focus.parser(sub)
+    st=sub.add_parser('study').add_subparsers(dest='study_command',required=True)
+    q=st.add_parser('status'); q.add_argument('--date'); q.add_argument('--json',action='store_true')
+    q=st.add_parser('log'); q.add_argument('id'); q.add_argument('title'); q.add_argument('--note',default=''); q.add_argument('--minutes',type=int,default=0); q.add_argument('--date')
+    q=st.add_parser('skip'); q.add_argument('id'); q.add_argument('--date'); q.add_argument('--reason',required=True)
+    q=st.add_parser('tick'); q.add_argument('--at'); q.add_argument('--dry',action='store_true')
     sub.add_parser('recap-status')
     sub.add_parser('now'); a=p.parse_args()
     try:
@@ -1127,6 +1134,8 @@ def main():
         state=Path(os.environ.get('PULSE_STATE',MODULE/'state')).resolve()
         if a.command=='recap-status':
             print(json.dumps(recap_status(c,state),ensure_ascii=False)); return 0
+        if a.command=='study':
+            return study.command(a,c,state)
         if a.command=='day' and a.dry:
             date=a.date or (datetime.now(ZoneInfo(c['timezone']))-timedelta(hours=c['day_start_hour'])).date().isoformat()
             start,end=day_window(date,c)
@@ -1175,6 +1184,7 @@ def main():
             if not ear.read(state/'ear/availability.json', {'ok': True})['ok']:
                 data['warnings'].insert(0, 'Ear 数据缺失（同步不可用；已有缓存可能不完整）。')
             data['focus']=focus.day(state,start,end,c)
+            data['study']=study.day(state,start,end,c)
             md=render(data,date,c)
             atomic(days/(date+suffix+'.json'),json.dumps(data,ensure_ascii=False,indent=2)); atomic(days/(date+suffix+'.md'),md); print(md,end='')
         else:

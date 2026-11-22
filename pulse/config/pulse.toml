@@ -66,3 +66,38 @@ off_minutes = 12
 streak_minutes = 10
 cooldown_minutes = 20
 dnd_hours = 3
+
+[[study]]
+id = "reading"
+title = "读论文（纸质）"
+days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+start = "21:00"
+minutes = 45
+mode = "offline"
+dir = "~/research/Reading"
+
+[[study]]
+id = "french"
+title = "法语"
+days = ["Mon","Wed","Fri"]
+start = "22:00"
+minutes = 30
+mode = "any"
+on = ["法语", "French", "français", "Languages/french"]
+dir = "~/research/Languages/french"
+
+[[study]]
+id = "japanese"
+title = "日语"
+days = ["Tue","Thu","Sat"]
+start = "22:00"
+minutes = 30
+mode = "any"
+on = ["日语", "Japanese", "日本語", "N1", "Languages/japanese"]
+dir = "~/research/Languages/japanese"
+
+[study_settings]
+lead_minutes = 10
+nag_minutes = 5
+done_ratio = 0.6
+makeup_start = "23:30"

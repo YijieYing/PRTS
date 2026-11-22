@@ -270,10 +270,7 @@ pulse/bin/pulse focus stop
 - 使用 `reporter/bin/notify alert`，标题直说偏离时长及去向，正文给目标和前三个 off 去向。部分渠道失败也计入尝试冷却，避免重复轰炸，送达标为未核实。`--dry` 记录判断但绝不通知，也不消耗提醒冷却；status/stop 刷新统计同样不通知。无进行中时段的 check 静默退出 0。
 - `state/focus/current.json` 保存当前时段及分钟账本，`log.jsonl` 保存结束总结，`checks.jsonl` 保存每次有效 check 的累计/窗口分类和提醒结果，`cache.json` 保存模型分类。全目录不提交 git。`pulse day` 在有时段时添加「专注」，按日界裁剪分钟和提醒；进行中时段仅统计上次检查已观测数据。
 
-勿扰模式联动不读取 macOS `~/Library/DoNotDisturb`（该文件需要完全磁盘访问权限）。请在「快捷指令」中依次操作：快捷指令 → 自动化 → 新建个人自动化 → 专注模式 → 勿扰模式 → 打开时 → 运行 Shell 脚本，把
-`~/PRTS/pulse/bin/pulse focus start-dnd`
-粘贴进去，并关闭「运行前询问」；再建一个相同自动化，选择「关闭时」，脚本为
-`~/PRTS/pulse/bin/pulse focus stop --reason dnd-off`，同样关闭「运行前询问」。`start-dnd` 不需要 goal/until，默认 3 小时（`[focus].dnd_hours`），只读前 20 分钟本地 Computer History 推断目标，不发送开始通知。已有手动时段不会被覆盖；没有可登记项目时使用「专注（勿扰模式）」并不设 on。到点由现有 `focus check` 自动结束；`stop` 会写时长、偏离分钟和主要偏离去向，当前没有时段时安静退出 0。勿扰时段的偏离提醒标题以「勿扰中偏离：」开头。快捷指令和裸 launchd 的 PATH 只有 /usr/bin:/bin，`python3` 是系统 3.9（没有 tomllib）；`pulse/bin/pulse` 在 Python 低于 3.11 时自动改用 /opt/homebrew/bin/python3 重新执行，所以命令可以原样粘贴。
+勿扰模式联动不读取 macOS `~/Library/DoNotDisturb`（该文件需要完全磁盘访问权限）。请在「快捷指令」中依次操作：快捷指令 → 自动化 → 新建个人自动化 → 专注模式 → 勿扰模式 → 打开时 → 打开 App，选择 `~/Applications/PRTS 勿扰开始.app`；再建一个关闭时自动化，选择 `~/Applications/PRTS 勿扰结束.app`，并关闭「运行前询问」。`start-dnd` 不需要 goal/until，默认 3 小时（`[focus].dnd_hours`），只读前 20 分钟本地 Computer History 推断目标，不发送开始通知。已有手动时段不会被覆盖；没有可登记项目时使用「专注（勿扰模式）」并不设 on。到点由现有 `focus check` 自动结束；`stop` 会写时长、偏离分钟和主要偏离去向，当前没有时段时安静退出 0。勿扰时段的偏离提醒标题以「勿扰中偏离：」开头。快捷指令和裸 launchd 的 PATH 只有 /usr/bin:/bin，`python3` 是系统 3.9（没有 tomllib）；`pulse/bin/pulse` 在 Python 低于 3.11 时自动改用 /opt/homebrew/bin/python3 重新执行，所以命令可以原样粘贴。
 
 launchd 配置仅提供文件 `config/launchd/com.prts.pulse-focus.plist`，每 300 秒调用 check，PATH 包含 `~/.local/bin`、`/opt/homebrew/bin`，日志为 `state/focus/check.log`。本次未安装；用户自行安装：
 
@@ -292,3 +289,24 @@ capture（group），项目由共享 aliases 规范化。没有订阅默认 L1�
 check 产生杂务提醒时同时发 `chore_streak`（含项目）；dry 不投递。
 沿用提醒冷却窗口和最多三条的限制，提交失败不推进冷却记录。
 测试通过 `PULSE_EVENT` 替换事件命令，不访问真实队列。
+
+## 十二、study：每天的固定学习时段
+
+配置在 `pulse.toml` 的 `[[study]]` 和 `[study_settings]`，用户可以直接改时间。没有配置时什么都不做，不写状态。写错（未知 mode/星期、重复 id、同一天重叠）时只在 `focus/checks.jsonl` 记 warning，不影响 focus。
+
+```sh
+pulse/bin/pulse study status                 # 今天的时段，加最近 7 天和连续天数
+pulse/bin/pulse study log reading "论文标题" --note "一句话" [--minutes 45] [--date 2026-11-22]
+pulse/bin/pulse study skip reading --reason "出差" [--date …]
+pulse/bin/pulse study tick --at 2026-11-22T21:00:00+09:00 --dry
+```
+
+- 由 `focus check`（launchd 每 5 分钟）带动，没有新的定时任务。开始前 `lead_minutes` 提醒、开始时提醒、偏离时提醒（最近 10 分钟 ≥5 分钟偏离且此刻仍在偏离，冷却 `nag_minutes`）、结束时报告。每种提醒每个时段只发一次，失败也算已发；整段错过或结束超过 30 分钟不补发。
+- 分钟账每次从 Computer History 重算。`offline`（纸质）：没有电脑活动的分钟算「离屏」，用电脑算偏离；`any`（语言）：离屏、命中 `on` 关键词、窗口文字含 `dir` 路径算在学，其余用 focus 的模型分类。单独一分钟的切换记「不确定」，读不到 Computer History 也记「不确定」。**离屏不等于真的在学**，Mac 睡着、人在看手机也算离屏。
+- 状态：`done` 要有当天记录，且分钟（离屏/在学，或 log 的 `--minutes`）达到 `done_ratio`；只满足一样是 `partial`；都没有是 `missed`。时段结束后再补记录也会算。
+- 当天没完成的在 `makeup_start` 补一次，按配置顺序首尾相接，跨零点仍归原来的日期；`skip` 的不补；机器睡过补做时间 30 分钟以上不补。
+- 进行中占用 focus 时段（`source=study`）：勿扰会被它取代或忽略，手动 focus 不受影响。日报「学习」节单列，「专注」节不重复。
+- 状态在 `state/study/days/<日期>.json`，记录在 `state/study/log.jsonl`，并追加到学习目录的 `log.md`（目录须已存在）。
+- `usage-audit` 有「固定学习时段」一行，至少跑过两周才判断。
+
+勿扰 App 的源文件和构建脚本在 `pulse/config/apps/`（`build.sh`）。App 只运行 `pulse focus request start-dnd|stop-dnd`：往 `state/focus/requests.jsonl` 记一条并踢一下 `com.prts.pulse-focus`，由下一次 `focus check` 处理；30 分钟前的开始请求丢弃。`stop --reason dnd-off` 只停勿扰时段。

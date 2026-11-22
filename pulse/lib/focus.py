@@ -1,5 +1,6 @@
 """Goal-scoped focus accounting; all source parsing stays in existing adapters."""
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 import fcntl
 import hashlib
@@ -9,6 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 from zoneinfo import ZoneInfo
 import computer_history
 import sources
@@ -47,6 +49,8 @@ def parser(sub):
     p.add_parser('status')
     s = p.add_parser('stop'); s.add_argument('--reason', default='stopped')
     s = p.add_parser('start-dnd'); s.add_argument('--dry', action='store_true')
+    req = p.add_parser('request').add_subparsers(dest='request_command', required=True)
+    req.add_parser('start-dnd'); req.add_parser('stop-dnd')
     s = p.add_parser('check'); s.add_argument('--at'); s.add_argument('--dry', action='store_true')
 
 
@@ -174,6 +178,9 @@ def finish(directory, current, at, reason):
 
 def check(current, at, c, state, dry=False):
     directory=state/'focus'
+    if current.get('source')=='study':   # study keeps its own ledger and reminders
+        if at>=current['until']: finish(directory,current,at,'expired')
+        return dict(time=at,goal=current['goal'],source='study',counts=current['counts'])
     if at < current['start']: raise ValueError('--at 早于专注开始时间')
     if at < current.get('checked',current['start']): raise ValueError('--at 必须按时间顺序回放')
     rows,warnings=evaluate(current,at,c,state)
@@ -219,29 +226,18 @@ def check(current, at, c, state, dry=False):
 
 def command(args,c,state):
     directory=state/'focus'; directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+    if args.focus_command=='request':   # no history access and no waiting for a running check
+        with _requests(directory): append(directory/'requests.jsonl',dict(action=args.request_command,time=datetime.now().timestamp()))
+        _kickstart()
+        return 0
     with (directory/'.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX)
-        current=read(directory/'current.json',None)
-        if args.focus_command=='check' and current is None: return 0
         at=timestamp(args.at,c) if getattr(args,'at',None) else datetime.now().timestamp()
         action=args.focus_command
-        if action=='start-dnd':
-            if current and at >= current.get('until', at):
-                finish(directory,current,at,'expired')
-                current=None
-            if current and current.get('source') != 'dnd':
-                if getattr(args,'dry',False):
-                    print(json.dumps({'source':'dnd','ignored':True,'reason':'manual_focus_active'},ensure_ascii=False))
-                    return 0
-                append(directory/'dnd.log',dict(event='ignored',time=at,reason='manual_focus_active'))
-                return 0
-            if current and current.get('source') == 'dnd': return 0
-            goal,on,warnings=infer_dnd(c,state,at)
-            hours=float(c.get('focus',{}).get('dnd_hours',3))
-            planned=dict(goal=goal,on=on,off=[],note='勿扰模式自动开启',source='dnd',start=at,until=at+hours*3600,rows=[],counts=counts([]),reminders=[],warnings=warnings)
-            if getattr(args,'dry',False):
-                print(json.dumps(planned,ensure_ascii=False)); return 0
-            write(directory/'current.json',planned)
+        if action=='check' and not args.dry:
+            _consume_requests(directory,c,state,at)
+        current=read(directory/'current.json',None)
+        if action=='start-dnd': _start_dnd(c,state,at,args.dry)
         elif action=='set':
             if not args.goal.strip() or any(not k.strip() for k in args.on+args.off): raise ValueError('目标和关键词不能为空')
             try:
@@ -257,11 +253,26 @@ def command(args,c,state):
             write(directory/'current.json',current)
             print(json.dumps(current,ensure_ascii=False))
         elif action=='check':
-            if current: print(json.dumps(check(current,at,c,state,args.dry),ensure_ascii=False))
+            # study first: it closes its own slot before the generic expiry would.
+            result={}
+            if not args.dry and c.get('study'):
+                import study
+                try: result['study']=study.tick(c,state,at)
+                except Exception as error:
+                    result['study']={'warning':'study tick 失败：'+str(error)}
+                    append(directory/'checks.jsonl',{'time':at,'warning':result['study']['warning']})
+                current=read(directory/'current.json',None)
+            if current: result=check(current,at,c,state,args.dry)|result
+            if result: print(json.dumps(result,ensure_ascii=False))
         elif action=='stop':
             if current:
+                reason=getattr(args,'reason','stopped')
+                if reason in ('dnd-off','stop-dnd') and current.get('source')!='dnd':
+                    print(json.dumps({'ignored':True,'reason':'not_dnd'},ensure_ascii=False)); return 0
+                if reason in ('dnd-off','stop-dnd') and at < current.get('start',at):
+                    print(json.dumps({'ignored':True,'reason':'before_start'},ensure_ascii=False)); return 0
                 check(current,at,c,state,True)
-                if (directory/'current.json').exists(): finish(directory,current,at,getattr(args,'reason','stopped'))
+                if (directory/'current.json').exists(): finish(directory,current,at,reason)
                 top=destinations(current.get('rows',[]))
                 minutes=max(0,(current.get('ended',at)-current['start'])/60)
                 print(json.dumps({'goal':current['goal'],'source':current.get('source'),'minutes':round(minutes,1),
@@ -276,6 +287,65 @@ def command(args,c,state):
     return 0
 
 
+@contextmanager
+def _requests(directory):
+    with (directory/'.requests.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        yield
+
+
+def _consume_requests(directory,c,state,now=None):
+    path=directory/'requests.jsonl'
+    if not path.exists(): return
+    with _requests(directory):
+        lines=path.read_text().splitlines(); path.unlink()
+    rows=[]
+    for line in lines:
+        try:
+            row=json.loads(line); row['time']=float(row['time']); rows.append(row)
+        except (ValueError,TypeError,KeyError): append(directory/'dnd.log',{'event':'bad_request','line':line})
+    now=now or datetime.now().timestamp()
+    for r in sorted(rows,key=lambda x:x.get('time',0)):
+        t=r['time']; current=read(directory/'current.json',None)
+        if r.get('action')=='start-dnd':
+            if now-t>1800:
+                append(directory/'dnd.log',dict(event='expired_request',time=t,processed=now)); continue
+            _start_dnd(c,state,t)
+        elif r.get('action')=='stop-dnd' and current and current.get('source')=='dnd':
+            if t >= current['start']:
+                t=max(t,current.get('checked',t)); check(current,t,c,state,True)
+                if (directory/'current.json').exists(): finish(directory,current,t,'dnd-off')
+
+
+def _kickstart():
+    try:
+        prefix=os.environ.get('PULSE_COMMAND_PREFIX','launchctl').split()
+        result=subprocess.run(prefix+['kickstart',f'gui/{os.getuid()}/com.prts.pulse-focus'],
+                              stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                              stderr=subprocess.PIPE,timeout=10)
+        if result.returncode:
+            print(f'warning: launchctl kickstart 退出码 {result.returncode}',file=sys.stderr)
+    except (OSError,subprocess.TimeoutExpired) as error:
+        print('warning: 无法 kickstart pulse-focus: '+str(error),file=sys.stderr)
+
+
+def _start_dnd(c,state,at,dry=False):
+    directory=state/'focus'; current=read(directory/'current.json',None)
+    if current and at>=current['until']:
+        if not dry: finish(directory,current,at,'expired')
+        current=None
+    if current:
+        if current.get('source')=='dnd': return
+        reason='study_active' if current.get('source')=='study' else 'manual_focus_active'
+        if dry: print(json.dumps({'source':'dnd','ignored':True,'reason':reason},ensure_ascii=False))
+        else: append(directory/'dnd.log',dict(event='ignored',time=at,reason=reason))
+        return
+    goal,on,warnings=infer_dnd(c,state,at); hours=float(c.get('focus',{}).get('dnd_hours',3))
+    planned=dict(goal=goal,on=on,off=[],note='勿扰模式自动开启',source='dnd',start=at,until=at+hours*3600,rows=[],counts=counts([]),reminders=[],warnings=warnings)
+    if dry: print(json.dumps(planned,ensure_ascii=False))
+    else: write(directory/'current.json',planned)
+
+
 def day(state,start,end,c):
     directory=state/'focus'; records=[]
     if (directory/'log.jsonl').exists(): records=[json.loads(s) for s in (directory/'log.jsonl').read_text().splitlines()]
@@ -283,6 +353,8 @@ def day(state,start,end,c):
     if current: records.append(current)
     lines=[]
     for r in records:
+        if r.get('source') == 'study':
+            continue
         finish=r.get('ended',r['until'])
         if r['start']>=end or finish<=start: continue
         rows=[x for x in r['rows'] if start<=x['time']<end]; n=counts(rows)
