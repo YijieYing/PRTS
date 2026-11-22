@@ -19,7 +19,7 @@ class FocusTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.state=Path(self.tmp.name)
         (self.state/'focus').mkdir()
-        self.c=pulse.config(); self.t=1800000000
+        self.c=pulse.config(); self.c.pop('study',None); self.t=1800000000
         self.current=dict(goal='学 agent',note='',on=['study'],off=['Ear'],start=self.t,until=self.t+7200,rows=[],reminders=[])
         self.rows=[]; self.users=[]
         self.patches=[patch.object(focus.computer_history,'archive'),patch.object(focus.computer_history,'load',side_effect=lambda *a:(self.rows,[])),patch.object(focus,'sessions',side_effect=lambda *a:self.users)]

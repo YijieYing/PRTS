@@ -263,7 +263,7 @@ def command(args,c,state):
                     append(directory/'checks.jsonl',{'time':at,'warning':result['study']['warning']})
                 current=read(directory/'current.json',None)
             if current: result=check(current,at,c,state,args.dry)|result
-            if result: print(json.dumps(result,ensure_ascii=False))
+            if current or 'warning' in result.get('study',{}): print(json.dumps(result,ensure_ascii=False))
         elif action=='stop':
             if current:
                 reason=getattr(args,'reason','stopped')

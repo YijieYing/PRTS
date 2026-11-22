@@ -286,7 +286,7 @@ class PulseTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
-        self.c=pulse.config(); self.start,self.end=pulse.day_window('2026-11-11',self.c)
+        self.c=pulse.config(); self.c.pop('study',None); self.start,self.end=pulse.day_window('2026-11-11',self.c)
         self.c['mapping']=[{'name':'Octopus','path':'/work/Octopus'}]
         for key in ('claude','titles','codex','computer_events','computer_summaries'):
             path=self.root/key; path.mkdir(); self.c['sources'][key]=str(path)

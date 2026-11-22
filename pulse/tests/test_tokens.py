@@ -6,7 +6,7 @@ spec=importlib.util.spec_from_file_location('pulse_impl',Path(__file__).resolve(
 
 class PulseTokenSection(unittest.TestCase):
     def setUp(self):
-        self.c=pulse.config(); self.segment={'start':0,'end':60,'intervals':[[0,60]],'held_candidates':[],'source':'computer','session':'s','project':None,'category':'input','summary':'x','reason':'x','learned':[],'produced':[],'messages':[],'active_seconds':60,'held_seconds':0}
+        self.c=pulse.config(); self.c.pop('study',None); self.segment={'start':0,'end':60,'intervals':[[0,60]],'held_candidates':[],'source':'computer','session':'s','project':None,'category':'input','summary':'x','reason':'x','learned':[],'produced':[],'messages':[],'active_seconds':60,'held_seconds':0}
     def _result(self,text,rc=0):
         return subprocess.CompletedProcess([],rc,stdout=text,stderr='')
     def test_data(self):
