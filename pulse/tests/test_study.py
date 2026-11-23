@@ -203,7 +203,7 @@ class Study(unittest.TestCase):
         self.assertEqual(self.titles(), [
             '10 分钟后：读论文', '现在：读论文', '该读论文了，你还在：B站', '该读论文了，你还在：B站',
             '该读论文了，你还在：B站', '读论文：完成一半', '10 分钟后：法语', '现在：法语', '法语：完成一半',
-            '5 分钟后：法语', '现在：法语（补）', '法语：完成一半'])
+            '5 分钟后：法语（补）', '现在：法语（补）', '法语：完成一半'])
         self.assertEqual(self.status('01:00', on='2026-11-24'), 'done')
 
     def test_makeup_skipped_when_asleep(self):
@@ -253,6 +253,29 @@ class Study(unittest.TestCase):
             self.log(minutes=45, date=date)
             self.tick('22:00', date)
         self.assertEqual(study.status(self.config, self.state, '2026-11-22', self.at('23:00', '2026-11-22'))['streak'], 1)
+
+    def test_queue_pitch_and_pace(self):
+        q = self.dir / 'queue.md'
+        q.write_text('# q\n## P1 · 甲\n- 状态：读完\n- 晚数：1\n## P2 · 乙\n- 状态：待读\n- 晚数：2\n- 为什么读：因为有趣。\n## P3 · 丙\n- 晚数：1\n')
+        self.config['study'][0]['queue'] = str(q)
+        self.tick('20:50', '2026-11-22')
+        self.assertEqual(self.sent[0][0], '10 分钟后读：P2 乙')
+        self.assertIn('第 1 晚，预计 2 晚', self.sent[0][1])
+        self.assertIn('为什么读：因为有趣。', self.sent[0][1])
+        self.assertIn('比计划提前 1 篇', self.sent[0][1])      # nothing read yet in the plan, P1 already done
+        self.tick('21:00', '2026-11-22')
+        self.assertEqual(self.sent[1][0], '现在读：P2 乙')
+        self.assertNotIn('为什么读', self.sent[1][1])           # the pitch came with the lead
+        self.log(date='2026-11-22')
+        study._log(self.config['study'][0], '2026-11-22', Namespace(title='P2 乙 前半', note='', minutes=0), self.state)
+        self.tick('22:00', '2026-11-22')
+        self.sent.clear()
+        self.tick('21:00')                                      # slept through the lead: pitch comes with the start
+        self.assertIn('第 2 晚，预计 2 晚', self.sent[0][1])
+        self.assertIn('为什么读', self.sent[0][1])
+        self.assertIn('按计划正好', self.sent[0][1])
+        q.write_text(q.read_text().replace('- 状态：待读', '- 状态：读完').replace('## P3 · 丙', '## P3 · 丙\n- 状态：读完'))
+        self.assertIsNone(study._paper(self.config['study'][0], self.state, DATE, self.config))
 
     def test_requests(self):
         directory = self.state / 'focus'

@@ -75,6 +75,7 @@ start = "21:00"
 minutes = 45
 mode = "offline"
 dir = "~/research/Reading"
+queue = "~/research/Reading/queue.md"   # 有它时提醒会带上当前这篇、推荐理由和进度
 
 [[study]]
 id = "french"

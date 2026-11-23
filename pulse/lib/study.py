@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import fcntl
 import json
 import math
+import re
 import os
 import subprocess
 from datetime import datetime, timedelta
@@ -278,13 +279,13 @@ def _tick_slot(entry, slot, item, date, at, config, state):
     if not ended:
         lead = int(settings.get('lead_minutes', 10)) * 60
         if at >= slot['start']:
-            _once(slot, 'start', *_invite(item, slot, config))
+            _once(slot, 'start', *_invite(item, slot, config, state, pitch='lead' not in slot['sent']))
             _mark_focus(item, slot, state, at)
             if entry['status'] != 'done':
                 _nag(slot, item, rows, at, int(settings.get('nag_minutes', 5)) * 60)
         elif at >= slot['start'] - lead:
-            _once(slot, 'lead', f"{int((slot['start'] - at) // 60)} 分钟后：{item['title']}",
-                  _invite(item, slot, config)[1])
+            title, text = _invite(item, slot, config, state, pitch=True)
+            _once(slot, 'lead', f"{int((slot['start'] - at) // 60)} 分钟后" + title.removeprefix('现在'), text)
         return
     slot['closed'] = True
     _unmark_focus(item, slot, rows, state)
@@ -298,11 +299,70 @@ def _once(slot, kind, title, text):
         _notify(title, text)
 
 
-def _invite(item, slot, config):
+def _invite(item, slot, config, state=None, pitch=False):
     clock = datetime.fromtimestamp(slot['start'], ZoneInfo(config['timezone'])).strftime('%H:%M')
     what = '合上电脑，拿出纸质材料。' if item['mode'] == 'offline' else '打开学习材料。'
     again = '（补）' if slot['kind'] == 'makeup' else ''
-    return f"现在：{item['title']}{again}", f"{clock} 起 {int(item['minutes'])} 分钟。{what}"
+    title, text = f"现在：{item['title']}{again}", f"{clock} 起 {int(item['minutes'])} 分钟。{what}"
+    paper = _paper(item, state, _date(slot['start'], config), config) if state else None
+    if paper:
+        title = f"现在读：{paper['id']} {paper['name']}{again}"
+        text = f"{paper['night']}。{text}" + (f"\n\n为什么读：{paper['why']}\n\n{paper['pace']}" if pitch else '')
+    return title, text
+
+
+def _queue(path):
+    """Papers from a queue.md: `## P1 · name` headings with 状态/晚数/为什么读 lines."""
+    papers = []
+    for line in Path(path).expanduser().read_text().splitlines():
+        heading = re.match(r'^## (\w+) · (.+)$', line)
+        field = re.match(r'^- (状态|晚数|为什么读)：(.+)$', line)
+        if heading:
+            papers.append({'id': heading[1], 'name': heading[2].strip(), 'status': '待读', 'nights': 1, 'why': ''})
+        elif field and papers:
+            key = {'状态': 'status', '晚数': 'nights', '为什么读': 'why'}[field[1]]
+            papers[-1][key] = int(re.sub(r'\D', '', field[2]) or 1) if key == 'nights' else field[2].strip()
+    return papers
+
+
+def _paper(item, state, date, config):
+    """Tonight's paper and how the reader stands against the plan; None without a queue."""
+    if not item.get('queue'):
+        return None
+    try:
+        papers = _queue(item['queue'])
+    except OSError:
+        return None
+    left = [index for index, paper in enumerate(papers) if paper['status'] != '读完']
+    if not left:
+        return None
+    index = left[0]
+    paper = papers[index]
+    spent = len({row['date'] for row in _all_logs(state, item['id']) if row['title'].startswith(paper['id'])})
+    evenings = sum(1 for path in (state / 'study' / 'days').glob('*.json')
+                   if path.stem < date and _read(path, {}).get('items', {}).get(item['id'], {}).get('status') not in (None, 'skip'))
+    planned, total = 0, 0
+    for planned, other in enumerate(papers):
+        total += other['nights']
+        if total > evenings:
+            break
+    gap = index - planned
+    pace = '进度：按计划正好。' if gap == 0 else f"进度：比计划{'提前' if gap > 0 else '落后'} {abs(gap)} 篇（计划今晚读 {papers[planned]['id']}）。"
+    night = f"第 {spent + 1} 晚，预计 {paper['nights']} 晚" if spent < paper['nights'] else f"第 {spent + 1} 晚（预计 {paper['nights']} 晚，可以慢慢来）"
+    return dict(paper, night=night, pace=pace)
+
+
+def _all_logs(state, ident):
+    path = state / 'study' / 'log.jsonl'
+    rows = []
+    for line in path.read_text().splitlines() if path.exists() else []:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get('id') == ident:
+            rows.append(row)
+    return rows
 
 
 def _nag(slot, item, rows, at, cooldown):
