@@ -177,8 +177,9 @@ def sync_locked(rules,dry,daily,day,dayfile):
             marks.append((ident,"✅")); messages.append(f"写回 ✅ {ident}")
         if rec and status in ("✅","❌") and rem and not rem["completed"]: writes.append((DONE,(rec["reminder"],),f"勾完 {ident}")); continue
         if item.get("kind") in rule.get("skip_kinds",[]): continue
-        if status in ("✅","❌") or not ddl or rule.get("conditional","") in title: continue
+        if status in ("✅","❌") or not ddl: continue
         due=ddl+"T"+rule.get("time","14:00"); desired=f"[{ident}] {title}"
+        if not rec and rule.get("conditional") and rule["conditional"] in title: continue   # conditional: never created, kept if it exists
         if not rec: writes.append((ADD,(LIST,desired,"",due),f"新建 {ident}")); continue
         if rem and (rem.get("title")!=desired or (rem.get("due") or "")[:16]!=due):
             labels=[]

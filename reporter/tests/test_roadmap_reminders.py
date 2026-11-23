@@ -41,4 +41,40 @@ class RoadmapReminders(unittest.TestCase):
             self.assertEqual(todo.sync_locked(self.rule(), False, False, "2026-11-23", Path(d)/"day"), 1)
             self.assertFalse((Path(d)/"outreach-reminders.jsonl").exists())
 
+    def run_sync(self, items, reminders, mapping):
+        calls, marks = [], []
+        def fake_osa(script, *args):
+            calls.append((script, args))
+            if script is todo.GET_ITEMS:
+                return "".join(f"{r['id']}\t{r['title']}\t{r['due']}\t{str(r['done']).lower()}\n" for r in reminders)
+            return "new-id"
+        with tempfile.TemporaryDirectory() as d, patch.object(todo, "STATE", Path(d)), \
+             patch.object(todo, "osa", side_effect=fake_osa), \
+             patch.object(todo, "roadmap_items", return_value=items), \
+             patch.object(todo, "roadmap_mark", side_effect=lambda p, i, s: marks.append((i, s))), \
+             patch.object(todo.subprocess, "run", return_value=type("R", (), {"returncode": 0})()):
+            (Path(d)/"outreach-reminders.jsonl").write_text("".join(json.dumps(m)+"\n" for m in mapping))
+            todo.sync_locked(self.rule(), False, False, "2026-11-23", Path(d)/"day")
+            saved = [json.loads(x) for x in (Path(d)/"outreach-reminders.jsonl").read_text().splitlines()]
+        return [(c[0], c[1]) for c in calls if c[0] is not todo.GET_ITEMS], marks, saved
+
+    def test_existing_reminders_follow_the_table(self):
+        items = [{"id":"S01","title":"新文字","status":"💤","ddl":"2026-12-05","kind":"提交"},
+                 {"id":"S02","title":"发邮件（仅当 S32 没有课题）","status":"💤","ddl":"2026-12-01","kind":"提交"},
+                 {"id":"S03","title":"做完了","status":"✅","ddl":"2026-12-01","kind":"提交"},
+                 {"id":"S04","title":"手机勾了","status":"💤","ddl":"2026-12-01","kind":"提交"},
+                 {"id":"S05","title":"被删了","status":"💤","ddl":"2026-12-01","kind":"提交"}]
+        reminders = [dict(id="r1", title="[S01] 旧文字", due="2026-12-01T14:00:00", done=False),
+                     dict(id="r2", title="[S02] 发邮件", due="2026-12-01T14:00:00", done=False),
+                     dict(id="r3", title="[S03] 做完了", due="2026-12-01T14:00:00", done=False),
+                     dict(id="r4", title="[S04] 手机勾了", due="2026-12-01T14:00:00", done=True)]
+        mapping = [dict(id=f"S0{i}", reminder=f"r{i}") for i in range(1, 6)]
+        writes, marks, saved = self.run_sync(items, reminders, mapping)
+        self.assertIn((todo.UPDATE, ("r1", "[S01] 新文字", "2026-12-05T14:00")), writes)
+        self.assertIn((todo.UPDATE, ("r2", "[S02] 发邮件（仅当 S32 没有课题）", "2026-12-01T14:00")), writes)   # conditional: kept up to date
+        self.assertIn((todo.DONE, ("r3",)), writes)
+        self.assertEqual(marks, [("S04", "✅")])
+        self.assertNotIn(todo.ADD, [w[0] for w in writes])                                             # S05 deleted on the phone: not rebuilt
+        self.assertTrue(next(m for m in saved if m["id"] == "S05").get("deleted"))
+
 if __name__ == "__main__": unittest.main()
