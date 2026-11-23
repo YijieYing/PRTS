@@ -92,6 +92,8 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 - `todo add "<标题>" [--notes N] [--due YYYY-MM-DD[THH:MM]]`、`todo list [--all]`（每行一个 JSON）、`todo done <id>`。只标记完成，从不删除。
 - 只放用户本人要做的事。agent 的工作进 `ROADMAP.md` 或派发任务。
 - 通过 osascript 操作。这台 Mac 已经允许访问提醒事项，不需要再授权。
+- `todo update <id> [--title T] [--due YYYY-MM-DD[THH:MM]]` 修改标题或截止时间；`todo get --prefix "[S"` 一次批量返回含 `completed` 的 JSON。
+- `todo sync-roadmap [--dry] [--daily]` 按 `config/config.toml` 把 Outreach roadmap 与「PRTS」提醒事项同步。沿用 `state/outreach-reminders.jsonl` 映射，条件性事项、检查类和无 DDL 事项不新建；`--dry` 不写入，`--daily` 按 Asia/Tokyo 每天 12:00 后成功一次。用户 11-23 决定按天同步，不按小时。
 
 ## 送达（2026-11-12）
 - **每小时提醒：`bin/remind`，由 launchd 运行**（`config/launchd/com.prts.reporter-remind.plist`，全天每小时第 7 分钟）。

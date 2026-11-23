@@ -6,3 +6,11 @@ wechat_outbox = "~/PRTS/reporter/state/outbox/latest-wechat.txt"   # CodexBridge
 # aquant 每日渠道（2026-10-21 与 aquant session 约定）
 aquant_daily_dir = "~/Projects/aquant/outputs/daily"
 aquant_daily_email = false   # 默认只走微信；改成 true 会每天把全文发到邮箱
+
+[[roadmap_reminders]]
+project = "Outreach"
+map = "outreach-reminders.jsonl"
+time = "14:00"
+skip_kinds = ["检查"]
+conditional = "仅当"
+before = ["python3", "~/outreach/agent/build.py"]

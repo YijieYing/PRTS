@@ -10,6 +10,7 @@ echo "== $(date '+%F %T') remind"
 "$M/bin/recap" --auto --synced </dev/null || echo "recap failed" >&2
 "$P/pulse/bin/pulse" check </dev/null || echo "pulse check failed (rc=$?)" >&2
 "$M/bin/ask" expire </dev/null >/dev/null || echo "ask expire failed" >&2
+"$M/bin/todo" sync-roadmap --daily </dev/null || echo "roadmap reminders sync failed" >&2
 # Quiet suppresses all question pushes, including blocking; recap is independent.
 quiet=$("$P/pulse/bin/pulse" now </dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("quiet",False))')
 python3 -c 'import sys; sys.path.insert(0,sys.argv[1]); from ddl import main; main(sys.argv[2] == "True")' "$M/lib" "$quiet" </dev/null || echo "DDL reminders failed" >&2

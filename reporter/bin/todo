@@ -1,31 +1,26 @@
 #!/usr/bin/env python3
-"""todo — the user's to-do list, kept in Apple Reminders (list "PRTS"), so it syncs to iPhone.
-
-  todo add "<title>" [--notes N] [--due YYYY-MM-DD[THH:MM]] [--list L]
-  todo list [--all] [--list L]          # open items (or all) as JSON lines: id, title, due, done
-  todo done <id>                        # mark completed (never deletes)
-
-Only agents acting for the user call this; items are the user's own tasks, not agent work
-(agent work goes to ROADMAP or a dispatched task). Nothing is ever deleted from Reminders.
-"""
-import argparse, json, subprocess, sys
-
-LIST = 'PRTS'
-
+"""User reminders plus the daily Outreach roadmap synchronizer."""
+import argparse, datetime as dt, fcntl, json, os, shlex, subprocess, sys, tempfile
+from pathlib import Path
+from zoneinfo import ZoneInfo
+ROOT = Path(__file__).resolve().parents[1]
+LIST = "PRTS"
+STATE = Path(os.environ.get("PRTS_REPORTER_STATE", ROOT / "state"))
 
 def osa(script, *args):
-    r = subprocess.run(['osascript', '-', *args], input=script, capture_output=True, text=True)
-    if r.returncode:
-        sys.exit('todo: ' + r.stderr.strip())
+    command = os.environ.get("PRTS_TODO_OSASCRIPT") or os.environ.get("TODO_OSASCRIPT") or "osascript"
+    try:
+        r = subprocess.run([command, "-", *args], input=script, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(str(exc))
+    if r.returncode: raise RuntimeError(r.stderr.strip() or f"exit {r.returncode}")
     return r.stdout.strip()
-
 
 ENSURE = '''on run argv
 tell application "Reminders"
   if not (exists list (item 1 of argv)) then make new list with properties {name:(item 1 of argv)}
 end tell
 end run'''
-
 ADD = '''on run argv
 set {L, T, N, dueText} to argv
 tell application "Reminders"
@@ -49,55 +44,182 @@ tell application "Reminders"
   return id of r
 end tell
 end run'''
-
 LIST_ITEMS = '''on run argv
 set {L, ALLFLAG} to argv
-set out to ""
 tell application "Reminders"
   if ALLFLAG is "1" then
-    set rs to reminders of list L
+    set {ids, names, dues, dones} to {id, name, due date, completed} of (reminders of list L)
   else
-    set rs to (reminders of list L whose completed is false)
+    set {ids, names, dues, dones} to {id, name, due date, completed} of (reminders of list L whose completed is false)
   end if
-  repeat with r in rs
-    set d to due date of r
-    if d is missing value then
-      set ds to ""
-    else
-      set ds to (d as «class isot» as string)
-    end if
-    set out to out & (id of r) & tab & (name of r) & tab & ds & tab & (completed of r) & linefeed
-  end repeat
 end tell
-return out
-end run'''
+return my rows(ids, names, dues, dones)
+end run
 
+on rows(ids, names, dues, dones)
+set out to ""
+repeat with i from 1 to count of ids
+  set d to item i of dues
+  if d is missing value then
+    set ds to ""
+  else
+    set ds to (d as «class isot» as string)
+  end if
+  set out to out & (item i of ids) & tab & (item i of names) & tab & ds & tab & (item i of dones) & linefeed
+end repeat
+return out
+end rows'''
+GET_ITEMS = LIST_ITEMS.replace('set {L, ALLFLAG} to argv', 'set {L, P} to argv').replace('''  if ALLFLAG is "1" then
+    set {ids, names, dues, dones} to {id, name, due date, completed} of (reminders of list L)
+  else
+    set {ids, names, dues, dones} to {id, name, due date, completed} of (reminders of list L whose completed is false)
+  end if''', '''  set {ids, names, dues, dones} to {id, name, due date, completed} of (reminders of list L whose name starts with P)''')
 DONE = '''on run argv
 tell application "Reminders" to set completed of (first reminder whose id is (item 1 of argv)) to true
 end run'''
+UPDATE = '''on run argv
+set {rid, newName, dueText} to argv
+tell application "Reminders"
+  set r to first reminder whose id is rid
+  if newName is not "" then set name of r to newName
+  if dueText is not "" then
+    set dd to current date
+    set year of dd to (text 1 thru 4 of dueText) as integer
+    set day of dd to 1
+    set month of dd to (text 6 thru 7 of dueText) as integer
+    set day of dd to (text 9 thru 10 of dueText) as integer
+    set hours of dd to (text 12 thru 13 of dueText) as integer
+    set minutes of dd to (text 15 thru 16 of dueText) as integer
+    set seconds of dd to 0
+    set due date of r to dd
+  end if
+end tell
+end run'''
 
+def parse_items(raw):
+    out=[]
+    for line in raw.splitlines():
+        if line:
+            rid,title,due,completed=line.split("\t",3); done=completed.lower()=="true"
+            out.append({"id":rid,"title":title,"due":due or None,"completed":done,"done":done})
+    return out
+
+def validate_due(value):
+    if value and len(value) not in (10,16): raise ValueError("--due must be YYYY-MM-DD or YYYY-MM-DDTHH:MM")
+
+def write_json(path,value):
+    path.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix=path.name+".",dir=path.parent)
+    try:
+        with os.fdopen(fd,"w") as f: json.dump(value,f,ensure_ascii=False); f.write("\n"); f.flush(); os.fsync(f.fileno())
+        os.replace(tmp,path)
+    finally:
+        if os.path.exists(tmp): os.unlink(tmp)
+
+def write_mapping(path, rows):
+    path.parent.mkdir(parents=True,exist_ok=True); fd,tmp=tempfile.mkstemp(prefix=path.name+".",dir=path.parent)
+    try:
+        with os.fdopen(fd,"w") as f:
+            for row in rows: f.write(json.dumps(row,ensure_ascii=False)+"\n")
+            f.flush(); os.fsync(f.fileno())
+        os.replace(tmp,path)
+    finally:
+        if os.path.exists(tmp): os.unlink(tmp)
+
+def roadmap_items(project):
+    command=os.environ.get("PRTS_ROADMAP_BIN") or str(ROOT.parent/"interaction/bin/roadmap")
+    r=subprocess.run([command,"list",project,"--json"],capture_output=True,text=True)
+    if r.returncode: raise RuntimeError(r.stderr.strip() or "roadmap failed")
+    payload=json.loads(r.stdout)
+    return next((x["roadmap"]["items"] for x in payload if x.get("name")==project),[])
+
+def roadmap_mark(project, ident, status):
+    command=os.environ.get("PRTS_ROADMAP_BIN") or str(ROOT.parent/"interaction/bin/roadmap")
+    evidence=f"提醒事项里勾完（{dt.datetime.now(ZoneInfo('Asia/Tokyo')).date().isoformat()}）"
+    r=subprocess.run([command,"mark",project,ident,status,"--evidence",evidence],capture_output=True,text=True)
+    if r.returncode: raise RuntimeError(r.stderr.strip() or "roadmap mark failed")
+
+def sync(dry=False,daily=False):
+    import tomllib
+    cfg=tomllib.loads((ROOT/"config/config.toml").read_text()); rules=cfg.get("roadmap_reminders",[])
+    if not rules: print("roadmap reminders: no rules"); return 0
+    now=dt.datetime.now(ZoneInfo("Asia/Tokyo")); day=now.date().isoformat(); dayfile=STATE/"roadmap-reminders-day.json"
+    if daily and (now.hour<12 or (dayfile.exists() and json.loads(dayfile.read_text()).get("date")==day)): return 0
+    lockpath=STATE/"roadmap-reminders.lock"; lockpath.parent.mkdir(parents=True,exist_ok=True)
+    with lockpath.open("w") as lock:
+        try: fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError: return 0
+        return sync_locked(rules,dry,daily,day,dayfile)
+
+def sync_locked(rules,dry,daily,day,dayfile):
+    rule=rules[0]; project=rule["project"]; mapping_path=STATE/rule.get("map","outreach-reminders.jsonl")
+    existing=[json.loads(x) for x in mapping_path.read_text().splitlines() if x.strip()] if mapping_path.exists() else []
+    byid={x["id"]:x for x in existing}; messages=[]; warnings=[]
+    try: reminders=parse_items(osa(GET_ITEMS,LIST,"[S"))
+    except Exception as exc: print(f"roadmap reminders failed: {exc}",file=sys.stderr); return 1
+    rby={x["id"]:x for x in reminders}; marks=[]
+    items=roadmap_items(project)
+    if not dry:
+        before=rule.get("before",[])
+        commands = [before] if before and all(isinstance(x,str) for x in before) else before
+        for command in commands:
+            argv=[os.path.expanduser(x) for x in command] if isinstance(command,list) else shlex.split(os.path.expanduser(command))
+            p=subprocess.run(argv,capture_output=True,text=True)
+            if p.returncode: warnings.append(f"before 失败: {command}")
+        items=roadmap_items(project)
+    elif rule.get("before"): warnings.append("dry: 跳过 before")
+    writes=[]; changed=False
+    for item in items:
+        ident=item.get("id"); status=item.get("status") or ""; title=item.get("title",""); ddl=item.get("ddl") or ""; rec=byid.get(ident)
+        rem=rby.get(rec.get("reminder")) if rec and not rec.get("deleted") else None
+        if rec and rec.get("deleted"): continue
+        if rec and not rem: rec["deleted"]=True; changed=True; messages.append(f"被删 {ident}"); continue
+        if rec and rem and rem["completed"] and status not in ("✅","❌"):
+            marks.append((ident,"✅")); messages.append(f"写回 ✅ {ident}")
+        if rec and status in ("✅","❌") and rem and not rem["completed"]: writes.append((DONE,(rec["reminder"],),f"勾完 {ident}")); continue
+        if item.get("kind") in rule.get("skip_kinds",[]): continue
+        if status in ("✅","❌") or not ddl or rule.get("conditional","") in title: continue
+        due=ddl+"T"+rule.get("time","14:00"); desired=f"[{ident}] {title}"
+        if not rec: writes.append((ADD,(LIST,desired,"",due),f"新建 {ident}")); continue
+        if rem and (rem.get("title")!=desired or (rem.get("due") or "")[:16]!=due):
+            labels=[]
+            if rem.get("title")!=desired: labels.append("改名")
+            if (rem.get("due") or "")[:16]!=due: labels.append("改期")
+            writes.append((UPDATE,(rec["reminder"],desired,due),f"{'/'.join(labels)} {ident}"))
+    if dry:
+        plan=[f"写回 ✅ {i}" for i,_ in marks]+[x[2] for x in writes]
+        print("roadmap reminders (dry): "+("；".join(plan) if plan else "无变更")); return 0
+    try:
+        for ident,status in marks: roadmap_mark(project,ident,status)
+        for script,args,msg in writes:
+            result=osa(script,*args)
+            if script is ADD:
+                ident=msg.split()[-1]; ddl=next((x.get("ddl") for x in items if x.get("id")==ident),None); byid[ident]={"id":ident,"reminder":result,"due":ddl+"T"+rule.get("time","14:00") if ddl else None}; changed=True
+            messages.append(msg)
+    except Exception as exc: print(f"roadmap reminders failed: {exc}",file=sys.stderr); return 1
+    if changed: write_mapping(mapping_path,list(byid.values()))
+    if daily: write_json(dayfile,{"date":day})
+    messages.extend("警告 "+w for w in warnings); print("roadmap reminders: "+("；".join(messages) if messages else "无变更")); return 0
 
 def main():
-    p = argparse.ArgumentParser(prog='todo')
-    sub = p.add_subparsers(dest='cmd', required=True)
-    a = sub.add_parser('add'); a.add_argument('title'); a.add_argument('--notes', default='')
-    a.add_argument('--due', default=''); a.add_argument('--list', default=LIST)
-    l = sub.add_parser('list'); l.add_argument('--all', action='store_true'); l.add_argument('--list', default=LIST)
-    d = sub.add_parser('done'); d.add_argument('id')
-    x = p.parse_args()
-    if x.cmd == 'add':
-        if x.due and len(x.due) not in (10, 16):
-            p.error('--due must be YYYY-MM-DD or YYYY-MM-DDTHH:MM')
-        osa(ENSURE, x.list)
-        print(osa(ADD, x.list, x.title, x.notes, x.due))
-    elif x.cmd == 'list':
-        osa(ENSURE, x.list)
-        for line in osa(LIST_ITEMS, x.list, '1' if x.all else '0').splitlines():
-            rid, title, due, done = line.split('\t')
-            print(json.dumps(dict(id=rid, title=title, due=due or None, done=done == 'true'), ensure_ascii=False))
-    else:
-        osa(DONE, x.id)
-
-
-if __name__ == '__main__':
-    main()
+    p=argparse.ArgumentParser(prog="todo"); s=p.add_subparsers(dest="cmd",required=True)
+    a=s.add_parser("add"); a.add_argument("title"); a.add_argument("--notes",default=""); a.add_argument("--due",default=""); a.add_argument("--list",default=LIST)
+    l=s.add_parser("list"); l.add_argument("--all",action="store_true"); l.add_argument("--list",default=LIST)
+    d=s.add_parser("done"); d.add_argument("id")
+    u=s.add_parser("update"); u.add_argument("id"); u.add_argument("--title"); u.add_argument("--due")
+    g=s.add_parser("get"); g.add_argument("--prefix",required=True); g.add_argument("--list",default=LIST)
+    q=s.add_parser("sync-roadmap"); q.add_argument("--dry",action="store_true"); q.add_argument("--daily",action="store_true")
+    x=p.parse_args()
+    try:
+        if x.cmd=="add": validate_due(x.due); osa(ENSURE,x.list); print(osa(ADD,x.list,x.title,x.notes,x.due))
+        elif x.cmd=="list":
+            osa(ENSURE,x.list)
+            for i in parse_items(osa(LIST_ITEMS,x.list,"1" if x.all else "0")): print(json.dumps({"id":i["id"],"title":i["title"],"due":i["due"],"done":i["done"]},ensure_ascii=False))
+        elif x.cmd=="get": print(json.dumps(parse_items(osa(GET_ITEMS,x.list,x.prefix)),ensure_ascii=False))
+        elif x.cmd=="done": osa(DONE,x.id)
+        elif x.cmd=="update":
+            if not x.title and not x.due: p.error("update requires --title or --due")
+            if x.due: validate_due(x.due)
+            osa(UPDATE,x.id,x.title or "",x.due or "")
+        else: sys.exit(sync(x.dry,x.daily))
+    except (RuntimeError,ValueError) as exc: p.exit(1,"todo: "+str(exc))
+if __name__=="__main__": main()

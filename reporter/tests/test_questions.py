@@ -22,7 +22,7 @@ class Questions(unittest.TestCase):
         self.module = self.root / 'reporter'
         for part in ('bin', 'lib', 'config'):
             shutil.copytree(ROOT / part, self.module / part, ignore=shutil.ignore_patterns('__pycache__'))
-        self.env = dict(os.environ, PRTS_REPORTER_STATE=str(self.root / 'data'), TZ='Asia/Tokyo')
+        self.env = dict(os.environ, PRTS_REPORTER_STATE=str(self.root / 'data'), TZ='Asia/Tokyo', PRTS_TODO_OSASCRIPT='/usr/bin/false')   # remind's daily reminders sync must never touch real Reminders
         self.log = self.root / 'data/questions.jsonl'
         self.ask = self.module / 'bin/ask'
         self.pulse = self.root / 'pulse/bin/pulse'
