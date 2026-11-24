@@ -35,6 +35,7 @@ class Modules(unittest.TestCase):
 import json,os,pathlib,sys
 with open(os.environ['TEST_CALLS'],'a') as f: f.write(json.dumps({'bin':pathlib.Path(sys.argv[0]).name,'args':sys.argv[1:],'stdin':sys.stdin.read()})+'\\n')
 if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
+if os.environ.get('TEST_CAPACITY')=='default' and not any(x.startswith('model=') for x in sys.argv): print('at capacity'); sys.exit(1)
 '''
         for name in ('codex', 'osascript'):
             f = self.stub / name; f.write_text(script); f.chmod(0o755)
@@ -141,6 +142,17 @@ if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
         env = dict(self.env, TEST_CAPACITY='1')
         self.run_cmd('interaction/bin/resume', 'full', 'uuid', self.repo, self.prompt, '2', '0', env=env, rc=75)
         self.assertEqual([r['event'] for r in self.rows('interaction/bin/status', 'full')], ['start','thread','capacity','capacity','gave_up'])
+        # two capacity failures in a row switch to the fallback model at once; it then succeeds
+        env = dict(self.env, TEST_CAPACITY='default', CODEX_FALLBACK_MODELS='spare-model')
+        self.run_cmd('interaction/bin/resume', 'switch', 'uuid', self.repo, self.prompt, '4', '0', env=env)
+        rows = self.rows('interaction/bin/status', 'switch')
+        self.assertEqual([r['event'] for r in rows], ['start','thread','capacity','capacity','model_switch','exit'])
+        self.assertEqual((rows[4]['from'], rows[4]['to'], rows[4]['after_try'], rows[5]['try']), ('default', 'spare-model', 2, 3))
+        last = json.loads(self.calls.read_text().splitlines()[-1])['args']
+        self.assertEqual(last[:2], ['-c', 'model="spare-model"'])
+        # a model pinned for the run is never replaced
+        self.run_cmd('interaction/bin/resume', 'pinned', 'uuid', self.repo, self.prompt, '3', '0', env=dict(env, TEST_CAPACITY='1', CODEX_TOP='-c model="mine"'), rc=75)
+        self.assertNotIn('model_switch', [r['event'] for r in self.rows('interaction/bin/status', 'pinned')])
         # a successful run that merely quotes the phrase is not a capacity failure (no retry)
         self.run_cmd('interaction/bin/resume', 'quote', 'uuid', self.repo, self.prompt, '2', '0', env=dict(self.env, TEST_QUOTE='1'))
         self.assertEqual([r['event'] for r in self.rows('interaction/bin/status', 'quote')], ['start','thread','exit'])

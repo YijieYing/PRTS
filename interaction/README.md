@@ -27,7 +27,7 @@ L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify aler
 - `github_poll.jsonl`：PR 游标追加日志，格式和压缩规则见下节；不进 git。
 - `events/queue.jsonl`：id/t/level/source/text/status；队列写入与 ack 共用锁。
 
-`lib/codex` 统一关闭 stdin，默认授予 workspace-write 和仓库 git 目录权限、禁用命令联网，重试 at capacity。dispatch 使用 `CODEX_TRIES` / `CODEX_GAP`（默认 6 / 600），wake 使用 `WAKE_TRIES` / `WAKE_GAP`。容量耗尽返回 75。精确会话名查询依赖 Codex 内部 SQLite 格式，集中在适配层；优先传 UUID。`lib/wake_state` 独占内部状态动作，`bin/wake` 不接受 `_claim` 等内部子命令。
+`lib/codex` 统一关闭 stdin，默认授予 workspace-write 和仓库 git 目录权限、禁用命令联网，重试 at capacity。dispatch 使用 `CODEX_TRIES` / `CODEX_GAP`（默认 6 / 600），wake 使用 `WAKE_TRIES` / `WAKE_GAP`。同一模型连续满载 `CODEX_SWITCH_AFTER`（默认 2）次后，下一次立刻改用 `CODEX_FALLBACK_MODELS`（逗号分隔，默认 `gpt-6-sol`）里的下一个模型（`codex -c model=…`），registry 记 `model_switch {from,to,after_try}`，之后的 capacity 事件带 `model`；本次运行显式指定了模型（`-m`/`--model`/`-c model=`，含 `CODEX_TOP`）或 queue 模式时不换。容量耗尽返回 75。精确会话名查询依赖 Codex 内部 SQLite 格式，集中在适配层；优先传 UUID。`lib/wake_state` 独占内部状态动作，`bin/wake` 不接受 `_claim` 等内部子命令。
 
 沙盒放宽（R5）：仅 `dispatch` / `resume` 显式指定 `--sandbox network` 或 `--sandbox full` 时生效，每次都必须同时提供非空 `--approved-by "用户原话或出处"`，缺少或只有空白则拒绝，包括 dry-run。批准说明是调用者提供的审计依据，必须来自用户实际授权；工具不会自行取得或验证授权。resume 不继承上轮的放宽和批准。
 
