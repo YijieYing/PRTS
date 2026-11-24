@@ -23,7 +23,7 @@ L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify aler
 
 - `tasks/<task>/`：prompt.md、last.md、run.log / run-resume-N.log，保留既有布局。
 - `wakes/<id>/`：spec.json、prompt.txt、运行日志和 last.md。
-- `registry.jsonl`：t/name/event 等兼容记录；唯一写入实现是 `lib/registry`。不进 git（11-19 起），不要 `git restore`/`checkout` 它；需要备份就复制文件。
+- `registry.jsonl`：t/name/event 等兼容记录（start 事件含 pid、tries、gap，AgentConsole 用来显示「排队重试」）；唯一写入实现是 `lib/registry`。不进 git（11-19 起），不要 `git restore`/`checkout` 它；需要备份就复制文件。
 - `github_poll.jsonl`：PR 游标追加日志，格式和压缩规则见下节；不进 git。
 - `events/queue.jsonl`：id/t/level/source/text/status；队列写入与 ack 共用锁。
 

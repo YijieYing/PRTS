@@ -139,7 +139,7 @@ def main():
         return 0
     if a.start:
         start = dict(name=a.name, event='start', pid=os.getpid(), cwd=a.cwd, prompt=a.prompt,
-                     sandbox=a.sandbox or 'workspace-write', approved_by=a.approved_by)
+                     sandbox=a.sandbox or 'workspace-write', approved_by=a.approved_by, tries=a.tries, gap=a.gap)
         if a.tag:
             start['tags'] = dict(x.split('=', 1) for x in a.tag if '=' in x)
         if a.roadmap:
