@@ -121,5 +121,35 @@ class Worktrees(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', 'nested'), self.git('rev-parse', 'local'))
         self.assertEqual(self.git('rev-parse', 'explicit'), self.git('rev-parse', 'main'))
 
+    def age_git(self, path, days=2):
+        gd = Path(self.git('rev-parse', '--git-dir', cwd=path))
+        if not gd.is_absolute(): gd = path / gd
+        stamp = __import__('time').time() - days * 86400
+        for name in ('HEAD', 'index', 'logs/HEAD'):
+            p = gd / name
+            if p.exists(): os.utime(p, (stamp, stamp))
+
+    def auto(self, *args, ok=True):
+        return self.run_cmd(BIN / 'worktrees', 'auto', *args, ok=ok)
+
+    def test_auto_rule_a_remote_deleted_and_pending_branch(self):
+        self.dispatch('gone', '--dry')
+        path = self.path('gone'); (path / 'file').write_text('work'); self.git('commit', '-am', 'work', cwd=path)
+        self.git('push', '-u', 'origin', 'gone', cwd=path)
+        self.auto()
+        self.git('push', 'origin', '--delete', 'gone')
+        self.age_git(path, 2)
+        out = self.auto().stdout
+        self.assertIn('rule=A', out); self.assertFalse(path.exists())
+        state = json.loads((self.state / 'worktrees' / 'auto-state.json').read_text())
+        self.assertTrue(any(p['branch'] == 'gone' for p in state['pending_branches']))
+
+    def test_auto_dry_and_daily_do_not_write(self):
+        self.dispatch('preview', '--dry')
+        path = self.path('preview'); self.age_git(path, 2)
+        before = (self.state / 'worktrees' / 'auto-state.json').exists()
+        self.auto('--dry'); self.assertEqual(before, (self.state / 'worktrees' / 'auto-state.json').exists())
+        self.auto('--daily'); self.assertEqual(self.auto('--daily').returncode, 0)
+
 
 if __name__ == '__main__': unittest.main()
