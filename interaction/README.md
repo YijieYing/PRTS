@@ -6,7 +6,7 @@
 |---|---|
 | `bin/dispatch` | `<task> <workdir> [prompt文件] [--worktree 分支 [--base ref]] [--roadmap 工程:编号] [--sandbox workspace或network或full] [--approved-by "用户原话或出处"（仅 full）] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）复制 prompt、记录命令（带 `--worktree` 时也准备工作树），不启动 Codex 或写 registry |
 | `bin/roadmap` | `list [工程] [--json]`；`mark 工程 编号 状态 [--evidence 文本]`：解析或提交单条状态与证据 |
-| `bin/worktrees` | `list` 或 `clean [--dry] [--all]`：列出工作树；只清理干净且已合并的工作树 |
+| `bin/worktrees` | `list`、`clean [--dry] [--all]` 或 `auto [--dry] [--daily]`：列出、清理或自动清理工作树 |
 | `bin/resume` | `<task> <session UUID> <cwd> <消息文件> [重试次数=6] [间隔秒=600] [--sandbox workspace或network或full] [--approved-by "用户原话或出处"（仅 full）] [--dry]`；同步执行 |
 | `bin/wake` | `add <带时区ISO时间或HH:MM> <UUID或精确会话名> <prompt文件> [--name NAME] [--mode resume或queue]`；`list`；`cancel <id>` |
 | `bin/github_poll` | 不带参数运行一次，从 registry 的 cwd 派生 GitHub 仓库，PR 变化进入 L1 复核队列 |
@@ -118,6 +118,8 @@ clean 使用本地 `origin/<默认分支>` 引用判断提交包含关系（不�
 有已跟踪改动或未跟踪文件就跳过；忽略文件不计入改动。未合并时说明原因，并在没有任何远程引用包含当前提交时标为「未推送」。通过检查后仅用 `git worktree remove`、`git branch -d`，不用强制删除。若 `-d` 拒绝（例如 squash 后无可证明已合并的 upstream），工作树已移除而分支保留，并打印原因。`--dry` 只读，不移除工作树或分支；运行中的任务应由调用方验收后再清理。
 
 回归：`python3 interaction/tests/test_worktrees.py`，真实临时仓库和裸远程、Codex/gh 替身，子进程关闭 stdin；不清理真实工作树。
+
+`worktrees auto` 扫描登记工作树和常见项目目录。规则 A 是远程同名分支已删除，规则 B 是提交已合并；刚创建且没有自己的提交时，需闲置至少 7 天。规则 A 的 `seen` 记录在远程删除后仍会保留，只在 worktree 登记消失后移除；fetch 失败时不更新该仓库的记录。删除前必须满足：不是主检出、未锁定、不是 detached，工作区干净，提交可证明不会丢失，并且没有进程或活着的派发使用、私有 Git 文件闲置至少 24 小时。进程检查每次只调用一次 `lsof -a -d cwd -Fn`，cwd 等于 worktree 或位于其子目录都算正在使用，无法读取时保守跳过。分支删除前保留 14 天；超过 7 天的根目录杂物移入 `~/.Trash`。状态在 `state/worktrees/auto-state.json`，日志在 `state/worktrees/auto.jsonl`，删除事件进入事件队列。`--daily` 每个本地日期只运行一次，`--dry` 只输出判断。`reporter/bin/remind` 每小时调用 `auto --daily`。
 
 ## 清理不再用的会话（tidy-sessions）
 `interaction/bin/tidy-sessions [--apply]`：归档本机不会再用的 Codex 会话，可用 `codex unarchive <id>` 恢复。只看 AgentConsole `/api/state` 里 dormant（没有进程占用）的会话；空闲 ≥7 天，或者是派发任务的执行者、任务已审查且空闲 ≥2 天，就归档。不加 `--apply` 只列出候选。
