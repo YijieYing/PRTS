@@ -109,7 +109,7 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
   - 每小时 remind 调用 `recap --auto --synced`：最近一个已完成逻辑日未发则兜底发送；当前逻辑日开始满 18 小时且连续空闲达到 `[recap].idle_minutes`（pulse 配置，默认 90）后可提前结束。默认日界 05:00，所以提前判断从 23:00 开始，凌晨 03:07 生成的日期仍属于前一日；05:07 无论活动是否停止，都补发前一日。不会遍历补发更早历史。
   - 空闲依据 `pulse recap-status`：Computer History 没有活跃分钟，Claude/Codex 没有用户消息，ChatGPT 没有会话访问（现有来源只有浏览历史，作为用户交互的保守代理，不能核实实际发言），Ear 没有最近转写句子。后台 agent 输出不算活动；短句和未分诊句子也会阻止结束。Ear 同步失败、证据读取异常时不提前判定，05:00 兜底仍发送，并沿用 Ear 数据缺失说明。旧 Ear 来源不能提供逐句静默证明，仅走兜底。
   - `state/recap-sent.json`（支持 `PRTS_REPORTER_STATE`）在文件锁内记录各日期的 note/alert/sent。自动发送跳过已完成日期；部分失败只重试未成功的渠道，手动重跑明确允许重新写入和推送。通知服务没有事务确认，外部送达成功至本地登记前崩溃仍可能重发；Bark/macOS 部分成功亦无法精确去重。
-  - `bin/recap --dry [YYYY-MM-DD]` 是严格只读预览：使用现存同日分类 JSON 与 Ear 缓存重新渲染到 stdout，不同步、不调用模型、不写 state、不写备忘录、不推送；无同日 JSON 时报错。用于检查完整时间线，不能证明最新远端录音已同步。
+  - `bin/recap --dry [YYYY-MM-DD]` 是严格只读预览：使用现存同日分类 JSON 与 Ear 缓存重新渲染到 stdout，不同步、不调用模型、不写 state、不写备忘录、不推送；无同日 JSON 时报错。用于检查完整时间线，不能证明最新远端录音已同步。正常日报调用 pulse 的分类批次缓存，缓存按日期目录和输入哈希复用已成功批次；单批失败或中断后重跑只补缺失批次。recap 给 pulse day 的模型流程最多 3600 秒，以覆盖 500–700 段的首次分类；后续重跑通常只需处理失败批次。
   - 自动运行日志在 `state/out/remind.log`。旧的 23:40 recap 模板已删除；旧 Claude 任务 `prts-daily-recap` 也应继续暂停，`config/claude-tasks/` 仅为历史备查。
 
 用户需要卸载已装的 `com.prts.reporter-recap`，并重新安装 remind 模板才会采用全天排程。以下命令由用户执行，本次代码变更不操作已安装任务：

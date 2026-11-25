@@ -1,5 +1,7 @@
 """pulse v1: segments, daily review and actionable chore reminders."""
 import argparse
+import hashlib
+import inspect
 from collections import defaultdict
 from datetime import datetime, timedelta, time
 import fcntl
@@ -276,7 +278,11 @@ def schema():
     props['category'] = {'type':'string', 'enum':[k for k in CATEGORIES if k != 'unclassified']}
     for key in ('learned', 'produced'):
         props[key] = {'type':'array', 'items':{'type':'string'}, 'maxItems':3}
-    item = {'type':'object', 'properties':props, 'required':list(props), 'additionalProperties':False}
+    # topic/suggestion are intentionally optional at the model boundary: a
+    # chore omission is repaired below, while every other field remains strict.
+    item = {'type':'object', 'properties':props,
+            'required':[k for k in props if k not in ('topic','suggestion')],
+            'additionalProperties':False}
     return {'type':'object', 'properties':{'segments':{'type':'array', 'items':item}}, 'required':['segments'], 'additionalProperties':False}
 
 
@@ -370,7 +376,19 @@ def clean_learned(values):
     return result[:3]
 
 
-def classify(data, state, c=None):
+def _classification_result(value):
+    """Return a model result only when it has the expected batch envelope."""
+    if not isinstance(value, dict) or not isinstance(value.get('segments'), list):
+        return None
+    return value
+
+
+def _short_fallback(value, limit=80):
+    value = ' '.join(str(value or '').split()).strip('。；;，, ')
+    return value[:limit] if value else '未命名杂务'
+
+
+def classify(data, state, c=None, cache_dir=None):
     if not data['segments']: return
     c = c if c is not None else config()
     canonicalize(data['segments'], c)
@@ -400,15 +418,32 @@ def classify(data, state, c=None):
               + definitions + '\n判断标准是用户的脑子在做什么\n活动 JSON：\n')
     packed = [pack(s) for s in data['segments']]
     items = []
+    cache = Path(cache_dir) if cache_dir else None
+    if cache: cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='classify-', dir=state) as tmp:
         tmp = Path(tmp)
         (tmp/'schema.json').write_text(json.dumps(schema()))
         command = os.environ.get('PULSE_RUN', str(ROOT/'interaction/bin/run'))
-        for n, batch in enumerate(batches(packed, PROMPT_BUDGET - len(prompt))):
-            (tmp/'prompt.txt').write_text(prompt + json.dumps(batch, ensure_ascii=False))
-            result = run([command, str(tmp/'prompt.txt'), '--output-schema', str(tmp/'schema.json'), '-o', str(tmp/f'answer-{n}.json')])
+        def ask(batch, label):
+            request = prompt + json.dumps(batch, ensure_ascii=False)
+            key = hashlib.sha256(request.encode('utf-8')).hexdigest()
+            cached = cache / (key + '.json') if cache else None
+            if cached and cached.is_file():
+                try:
+                    value = _classification_result(json.loads(cached.read_text()))
+                    if value is not None:
+                        return value
+                except (OSError, ValueError, json.JSONDecodeError):
+                    pass
+            (tmp/'prompt.txt').write_text(request)
+            result = run([command, str(tmp/'prompt.txt'), '--output-schema', str(tmp/'schema.json'), '-o', str(tmp/f'answer-{label}.json')])
             if result.returncode: raise RuntimeError('分类失败: ' + result.stderr[-2500:])
-            items += json.loads(result.stdout)['segments']
+            value = _classification_result(json.loads(result.stdout))
+            if value is None: raise ValueError('分类结果格式无效')
+            if cached: cached.write_text(json.dumps(value, ensure_ascii=False, indent=2))
+            return value
+        for n, batch in enumerate(batches(packed, PROMPT_BUDGET - len(prompt))):
+            items += ask(batch, n).get('segments', [])
     if len(items) != len(data['segments']) or {r['id'] for r in items} != {s['id'] for s in data['segments']}:
         raise ValueError('分类 id 不完整或重复')
     by_id = {r['id']:r for r in items}
@@ -416,11 +451,12 @@ def classify(data, state, c=None):
         r = by_id[s['id']]
         if r.get('category') not in CATEGORIES: raise ValueError('无效分类')
         for key in ('reason','summary','topic','suggestion'):
+            if key in ('topic','suggestion') and r.get('category') == 'chore' and key not in r:
+                r[key] = ''
             if not isinstance(r.get(key), str): raise ValueError('无效分类字段 ' + key)
         for key in ('learned','produced'):
             if not isinstance(r.get(key),list) or len(r[key]) > 3 or not all(isinstance(v,str) for v in r[key]): raise ValueError('无效提取字段')
         r['learned'] = clean_learned(r['learned'])
-        if r['category'] == 'chore' and (not r['topic'].strip() or not r['suggestion'].strip()): raise ValueError('杂务缺少主题/建议')
         attribution = r.get('project')
         if attribution is not None and (not isinstance(attribution, str) or attribution not in candidates):
             warning = f"项目归属候选外：段 {s['id']} 返回 {attribution!r}，按 null 处理"
@@ -436,6 +472,45 @@ def classify(data, state, c=None):
             if attribution is not None: hint = ''
         s.update(r)
         s.update(project=attribution, project_source=origin, project_hint=hint.strip())
+
+    # A model occasionally omits one of the two chore fields. Re-ask only
+    # those segments once, so a single weak row cannot invalidate the day.
+    missing = [s for s in data['segments'] if s.get('category') == 'chore' and
+               (not str(s.get('topic') or '').strip() or not str(s.get('suggestion') or '').strip())]
+    if missing:
+        repair_prompt = (prompt.replace('活动 JSON：\n',
+            '这是一次字段修复。只返回下面这些段；category、id、summary 等字段保持原意，杂务必须填写非空 topic 和 suggestion。\n活动 JSON：\n'))
+        repair_items = [pack(s) | {'category': s.get('category'), 'summary': s.get('summary',''),
+                                   'reason': s.get('reason','')} for s in missing]
+        request = repair_prompt + json.dumps(repair_items, ensure_ascii=False)
+        key = hashlib.sha256(request.encode('utf-8')).hexdigest()
+        cache = Path(cache_dir) if cache_dir else None
+        cached = cache / (key + '.json') if cache else None
+        repaired = None
+        if cached and cached.is_file():
+            try: repaired = _classification_result(json.loads(cached.read_text()))
+            except (OSError, ValueError, json.JSONDecodeError): repaired = None
+        if repaired is None:
+            with tempfile.TemporaryDirectory(prefix='classify-repair-', dir=state) as tmp:
+                tmp = Path(tmp); (tmp/'schema.json').write_text(json.dumps(schema(), ensure_ascii=False))
+                (tmp/'prompt.txt').write_text(request)
+                command = os.environ.get('PULSE_RUN', str(ROOT/'interaction/bin/run'))
+                result = run([command, str(tmp/'prompt.txt'), '--output-schema', str(tmp/'schema.json'), '-o', str(tmp/'answer.json')])
+                if result.returncode == 0:
+                    repaired = _classification_result(json.loads(result.stdout))
+                    if repaired is not None and cached:
+                        cached.write_text(json.dumps(repaired, ensure_ascii=False, indent=2))
+        by_repaired = {r.get('id'): r for r in (repaired or {}).get('segments', [])}
+        for s in missing:
+            r = by_repaired.get(s['id'])
+            if isinstance(r, dict):
+                for key in ('topic', 'suggestion'):
+                    if isinstance(r.get(key), str) and r[key].strip(): s[key] = r[key].strip()
+            if not str(s.get('topic') or '').strip() or not str(s.get('suggestion') or '').strip():
+                warning = f"杂务字段缺失已兜底：段 {s['id']}"
+                data.setdefault('warnings', []).append(warning)
+                s['topic'] = s.get('topic','').strip() or _short_fallback(s.get('summary') or s.get('reason'))
+                s['suggestion'] = s.get('suggestion','').strip() or '整理这段杂务的待办'
 
 
 def _episode_line(s):
@@ -1165,7 +1240,10 @@ def main():
                     reuse(data,cache_path,c)
                     if cache_path.exists(): data['episodes']=json.loads(cache_path.read_text()).get('episodes')
                 else:
-                    classify(data,state,c)
+                    if 'cache_dir' in inspect.signature(classify).parameters:
+                        classify(data,state,c,cache_dir=days/(date+'.classification'))
+                    else:  # compatibility for callers replacing classify in tests/tools
+                        classify(data,state,c)
             except (OSError, ValueError, KeyError, RuntimeError) as error:
                 data['classification_status']='failed'
                 data['error']=str(error)

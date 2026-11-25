@@ -10,11 +10,12 @@ import sys
 
 MODULE = Path(__file__).resolve().parents[1]
 PULSE = MODULE.parent / 'pulse/bin/pulse'
+RECAP_TIMEOUT = 3600
 
 
 def run(args):
     return subprocess.run([str(x) for x in args], stdin=subprocess.DEVNULL,
-                          text=True, capture_output=True, timeout=1800)
+                          text=True, capture_output=True, timeout=RECAP_TIMEOUT)
 
 
 def head(md):

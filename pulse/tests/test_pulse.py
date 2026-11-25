@@ -116,6 +116,43 @@ class PulseTests(unittest.TestCase):
         self.assertGreater(len(groups),1); self.assertEqual(sum(groups,[]),items)
         self.assertTrue(all(len(json.dumps(g))<=1000 or len(g)==1 for g in groups))
 
+    def test_chore_missing_fields_are_repaired_then_fallback(self):
+        segment = dict(id='chore-1', source='computer', session='x', title='终端',
+                       start=self.start, end=self.start+60, intervals=[[self.start,self.start+60]],
+                       messages=[], project=None)
+        data = {'segments':[segment], 'warnings':[]}
+        calls=[]
+        def model(cmd, **kwargs):
+            prompt=Path(cmd[1]).read_text(); calls.append(prompt)
+            row=json.loads(prompt.split('活动 JSON：\n')[1])[0]
+            return subprocess.CompletedProcess(cmd, 0, json.dumps({'segments':[dict(
+                id=row['id'], category='chore', reason='排查', summary='排查上传失败',
+                learned=[], produced=[], project=None, project_hint='')]}), '')
+        with patch.object(pulse,'run',side_effect=model), patch('sys.stderr'):
+            pulse.classify(data,self.state,self.c)
+        self.assertEqual(len(calls),2)
+        self.assertIn('字段修复',calls[1])
+        self.assertEqual(segment['topic'],'排查上传失败')
+        self.assertEqual(segment['suggestion'],'整理这段杂务的待办')
+        self.assertTrue(any('杂务字段缺失已兜底' in w for w in data['warnings']))
+
+    def test_classification_cache_reuses_completed_batch(self):
+        segment = dict(id='cached-1', source='computer', session='x', title='终端',
+                       start=self.start, end=self.start+60, intervals=[[self.start,self.start+60]],
+                       messages=[], project=None)
+        def model(cmd, **kwargs):
+            row=json.loads(Path(cmd[1]).read_text().split('活动 JSON：\n')[1])[0]
+            return subprocess.CompletedProcess(cmd, 0, json.dumps({'segments':[dict(
+                id=row['id'], category='input', reason='阅读', summary='阅读文档',
+                topic='', suggestion='', learned=[], produced=[], project=None, project_hint='')]}), '')
+        cache=self.state/'2026-11-11.classification'
+        with patch.object(pulse,'run',side_effect=model) as called:
+            pulse.classify({'segments':[copy.deepcopy(segment)],'warnings':[]},self.state,self.c,cache_dir=cache)
+            self.assertEqual(called.call_count,1)
+            pulse.classify({'segments':[copy.deepcopy(segment)],'warnings':[]},self.state,self.c,cache_dir=cache)
+            self.assertEqual(called.call_count,1)
+        self.assertEqual(len(list(cache.glob('*.json'))),1)
+
     def test_project_attribution_rules_candidates_and_batches(self):
         Path(self.c['sources']['projects']).write_text('[[project]]\nname="Octopus"\npath="/work/Octopus"\n')
         self.c['mapping'].append(dict(name='仅配置未命中',path='/unused'))
