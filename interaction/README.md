@@ -4,10 +4,10 @@
 
 | 命令 | 用法 |
 |---|---|
-| `bin/dispatch` | `<task> <workdir> [prompt文件] [--worktree 分支 [--base ref]] [--roadmap 工程:编号] [--sandbox network或full --approved-by "用户原话或出处"] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）复制 prompt、记录命令（带 `--worktree` 时也准备工作树），不启动 Codex 或写 registry |
+| `bin/dispatch` | `<task> <workdir> [prompt文件] [--worktree 分支 [--base ref]] [--roadmap 工程:编号] [--sandbox workspace或network或full] [--approved-by "用户原话或出处"（仅 full）] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）复制 prompt、记录命令（带 `--worktree` 时也准备工作树），不启动 Codex 或写 registry |
 | `bin/roadmap` | `list [工程] [--json]`；`mark 工程 编号 状态 [--evidence 文本]`：解析或提交单条状态与证据 |
 | `bin/worktrees` | `list` 或 `clean [--dry] [--all]`：列出工作树；只清理干净且已合并的工作树 |
-| `bin/resume` | `<task> <session UUID> <cwd> <消息文件> [重试次数=6] [间隔秒=600] [--sandbox network或full --approved-by "用户原话或出处"] [--dry]`；同步执行 |
+| `bin/resume` | `<task> <session UUID> <cwd> <消息文件> [重试次数=6] [间隔秒=600] [--sandbox workspace或network或full] [--approved-by "用户原话或出处"（仅 full）] [--dry]`；同步执行 |
 | `bin/wake` | `add <带时区ISO时间或HH:MM> <UUID或精确会话名> <prompt文件> [--name NAME] [--mode resume或queue]`；`list`；`cancel <id>` |
 | `bin/github_poll` | 不带参数运行一次，从 registry 的 cwd 派生 GitHub 仓库，PR 变化进入 L1 复核队列 |
 | `bin/event` | `add <L0或L1或L2> <source> <text> [--thread KEY] [--project NAME] [--kind KIND] [--id ID]`；`from-agentconsole` 从 stdin 读一个 JSON；`list [--new]`；`ack <id>` |
@@ -27,20 +27,23 @@ L0 只入队；L1 等总控验收；L2 入队后调用 `reporter/bin/notify aler
 - `github_poll.jsonl`：PR 游标追加日志，格式和压缩规则见下节；不进 git。
 - `events/queue.jsonl`：id/t/level/source/text/status；队列写入与 ack 共用锁。
 
-`lib/codex` 统一关闭 stdin，默认授予 workspace-write 和仓库 git 目录权限、禁用命令联网，重试 at capacity。dispatch 使用 `CODEX_TRIES` / `CODEX_GAP`（默认 6 / 600），wake 使用 `WAKE_TRIES` / `WAKE_GAP`。同一模型连续满载 `CODEX_SWITCH_AFTER`（默认 2）次后，下一次立刻改用 `CODEX_FALLBACK_MODELS`（逗号分隔，默认 `gpt-6-sol`）里的下一个模型（`codex -c model=…`），registry 记 `model_switch {from,to,after_try}`，之后的 capacity 事件带 `model`；本次运行显式指定了模型（`-m`/`--model`/`-c model=`，含 `CODEX_TOP`）或 queue 模式时不换。容量耗尽返回 75。精确会话名查询依赖 Codex 内部 SQLite 格式，集中在适配层；优先传 UUID。`lib/wake_state` 独占内部状态动作，`bin/wake` 不接受 `_claim` 等内部子命令。
+`lib/codex` 统一关闭 stdin，默认授予 workspace-write 和仓库 git 目录权限、允许命令联网（见下文沙盒），重试 at capacity。dispatch 使用 `CODEX_TRIES` / `CODEX_GAP`（默认 6 / 600），wake 使用 `WAKE_TRIES` / `WAKE_GAP`。同一模型连续满载 `CODEX_SWITCH_AFTER`（默认 2）次后，下一次立刻改用 `CODEX_FALLBACK_MODELS`（逗号分隔，默认 `gpt-6-sol`）里的下一个模型（`codex -c model=…`），registry 记 `model_switch {from,to,after_try}`，之后的 capacity 事件带 `model`；本次运行显式指定了模型（`-m`/`--model`/`-c model=`，含 `CODEX_TOP`）或 queue 模式时不换。容量耗尽返回 75。精确会话名查询依赖 Codex 内部 SQLite 格式，集中在适配层；优先传 UUID。`lib/wake_state` 独占内部状态动作，`bin/wake` 不接受 `_claim` 等内部子命令。
 
-沙盒放宽（R5）：仅 `dispatch` / `resume` 显式指定 `--sandbox network` 或 `--sandbox full` 时生效，每次都必须同时提供非空 `--approved-by "用户原话或出处"`，缺少或只有空白则拒绝，包括 dry-run。批准说明是调用者提供的审计依据，必须来自用户实际授权；工具不会自行取得或验证授权。resume 不继承上轮的放宽和批准。
+沙盒（R5；11-25 用户定：「默认 network，按需 full」）：`dispatch` / `resume` 默认 `network`，不用写批准；`full` 必须同时提供非空 `--approved-by "用户原话或出处"`，缺少或只有空白则拒绝，包括 dry-run。批准说明是调用者提供的审计依据，必须来自用户实际授权；工具不会自行取得或验证授权。resume 不继承上轮的沙盒选择和批准，每轮都按本轮参数（不写就是 `network`）。
 
-- `network`：`-c 'sandbox_mode="workspace-write"' -c sandbox_workspace_write.network_access=true`，保留工作区写入范围。
-- `full`：`-c 'sandbox_mode="danger-full-access"'`，取消 Codex 沙盒限制。
-- 默认：`workspace-write`、`sandbox_workspace_write.network_access=false`；所有模式仍用 `approval_policy="never"`，不在无人值守运行中弹批准提示。
-- `start` 事件记录 `sandbox`（`workspace-write` / `network` / `full`）和 `approved_by`（默认 `null`，放宽时原样保留说明）。dry-run 只写命令日志，不执行 Codex、不写 registry；dispatch 写 `run.log`，resume 写 `run-resume-1.log`。
+- `workspace`：`-c 'sandbox_mode="workspace-write"' -c sandbox_workspace_write.network_access=false`，只写工作区，不联网；任务明确不该联网时用。
+- `network`（默认）：同上但 `network_access=true`。依赖缺了 Codex 自己装，不用事先在 worktree 里装好。
+- `full`：`-c 'sandbox_mode="danger-full-access"'`，取消沙盒。只给确实需要的任务：iOS/Xcode 模拟器（`xcodebuild test`、`simctl`、`devicectl` 要连 CoreSimulator 等系统服务，`network` 也连不上）、真机、launchd 等系统服务、要写工作区外的文件。用户 11-16 已授权（「对于需要的任务，我给你开 codex 沙箱的权限」），派发的 session 自己判断，`--approved-by` 引用这句即可。
+- 所有模式都用 `approval_policy="never"`，不在无人值守运行中弹批准提示。exec/resume 的 prompt 末尾自动加一段「派发器附注」：说明本次沙箱，并要求被沙箱拦住时在报告开头单列「沙箱受阻」，写命令、报错原文和没跑成的检查，不拿替代检查冒充通过。
+- 拦截检测：`lib/codex` 运行中每 20 秒扫一遍运行日志，命令输出里出现沙箱拦截（`network` 联网失败、`simulator` 连不上 CoreSimulator、`system` 系统服务、`filesystem` 写权限）时，每种只记一次 registry 事件 `sandbox_blocked {kind, sandbox, command, line, try}`。失败的命令查全部四种；显示成功的命令（输出接了 `| tail` 之类）只在它确实调用了联网工具或 Xcode 工具时查网络和模拟器两种，避免 Codex 读到含这些字样的源码时误报。`bin/wait` 打印报告后附上本轮的沙箱受阻清单；AgentConsole 在该任务上显示「沙箱受阻（…）」。并行命令的输出可能交错，`command` 偶尔对不上，但拦截本身是真的。
+- `start` 事件记录 `sandbox`（`workspace` / `network` / `full`；11-25 之前的记录里默认值写作 `workspace-write`）和 `approved_by`（未写为 `null`）。dry-run 只写命令日志，不执行 Codex、不写 registry；dispatch 写 `run.log`，resume 写 `run-resume-1.log`。
 - 原始 Codex 参数和 `CODEX_TOP` 不接受沙盒、批准策略、权限配置及 profile 覆盖；使用上述显式接口。模型及推理配置仍可透传。
+- `wake` 定时唤醒不走这套：仍是 workspace-write、不联网（`lib/wake_state`）。
 
 仅预览的示例（批准文字需替换成真实用户授权依据）：
 
 ```sh
-interaction/bin/dispatch example /path/to/repo prompt.md --sandbox network --approved-by "用户授权出处" --dry
+interaction/bin/dispatch example /path/to/repo prompt.md --sandbox workspace --dry
 interaction/bin/resume example SESSION_UUID /path/to/repo message.md 6 600 --sandbox full --approved-by "用户授权出处" --dry
 ```
 

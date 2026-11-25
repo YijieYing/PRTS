@@ -25,4 +25,18 @@ rc=$?
 [ $rc -eq 2 ] && exit 2
 echo "== $name finished, rc=$rc =="
 cat "$S/tasks/$name/last.md" 2>/dev/null || echo "(no last.md)"
+# Sandbox blocks the run hit (lib/codex watches the log): the report alone may gloss over them.
+python3 - "$S/registry.jsonl" "$name" <<'PY'
+import json, sys
+hits = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    try: e = json.loads(line)
+    except ValueError: continue
+    if e.get("name") != sys.argv[2]: continue
+    if e.get("event") == "start": hits = []
+    elif e.get("event") == "sandbox_blocked": hits.append(e)
+if hits:
+    print(f"\n== 沙箱受阻（sandbox={hits[0].get('sandbox')}）：以下检查没在真实环境跑成，复核时补跑，或用 --sandbox full 重派 ==")
+    for e in hits: print(f"- {e['kind']}: {e.get('command', '')}\n  {e.get('line', '')}")
+PY
 exit $rc

@@ -42,6 +42,82 @@ def check_overrides(args, parser):
                    or k in ('profile', 'profiles', 'experimental_network') for k in keys):
                 parser.error('permission config overrides require --sandbox network|full --approved-by TEXT')
 
+# Sandbox per run (user 11-25): network by default; full only for tasks that need system services
+# (simulators, devices, launchd) or files outside the workspace, with --approved-by naming the grant.
+SANDBOXES = {
+    'workspace': ('workspace-write', False, '只能写工作区，不能联网'),
+    'network': ('workspace-write', True, '只能写工作区，可以联网（依赖缺了可以自己装）'),
+    'full': ('danger-full-access', False, '不受沙箱限制'),
+}
+DEFAULT_SANDBOX = 'network'
+
+NOTE = """
+
+---
+（派发器附注）本次运行的沙箱：{desc}。如果某条命令被沙箱拦住（联网失败、连不上 CoreSimulator 等系统服务、写不了工作区外的文件），不要换成别的检查冒充通过：在最终报告开头单列「沙箱受阻」，写明命令、报错原文、因此没跑成的检查；不受影响的部分照常完成。"""
+
+# Signatures of a command the sandbox stopped. A failed command's output is scanned for all kinds;
+# a "succeeded" one (output piped through tail, `|| true`) only for network/simulator errors and only
+# when the command runs such a tool, so files the agent reads that quote these phrases never match.
+BLOCKS = (
+    ('network', re.compile(r'tcp connect error|Could not resolve host|nodename nor servname|'
+                           r'Temporary failure in name resolution|Network is unreachable|failed to lookup address', re.I)),
+    ('simulator', re.compile(r'CoreSimulatorService connection|not connected to CoreSimulatorService|'
+                             r'Could not kickstart simdiskimaged', re.I)),
+    ('system', re.compile(r'bootstrap_look_up|launchctl: .*(?:not permitted|denied)|Sandbox: \S+ deny', re.I)),
+    ('filesystem', re.compile(r'Operation not permitted|Read-only file system', re.I)),
+)
+TOOLS = {
+    'network': re.compile(r'\b(?:uv|uvx|pip3?|npm|npx|pnpm|yarn|curl|wget|brew|cargo|poetry|gem|bundle|gh|ssh)\b|'
+                          r'\bgit\s+(?:fetch|clone|pull|push|ls-remote)|\bgo\s+(?:get|mod)'),
+    'simulator': re.compile(r'\b(?:xcodebuild|simctl|devicectl|xcrun|swift\s+test)\b'),
+}
+_RESULT = re.compile(r'^ (?:exited (-?\d+)|succeeded) in ')
+_END = re.compile(r'^(?:exec|codex|thinking|user|tokens used)$|^ (?:exited -?\d+|succeeded) in ')
+
+
+def blocked(text):
+    """[(kind, command, line)] for each command whose output shows a sandbox block."""
+    lines, out = text.splitlines(), []
+    for i, line in enumerate(lines):
+        m = _RESULT.match(line)
+        if not m:
+            continue
+        failed = m[1] not in (None, '0')
+        cmd = next((x.strip() for x in reversed(lines[max(0, i - 4):i]) if x.startswith('/')), '')
+        kinds = [(k, pat) for k, pat in BLOCKS if failed or (k in TOOLS and TOOLS[k].search(cmd))]
+        if not kinds:
+            continue
+        found = {}
+        for out_line in lines[i + 1:i + 400]:
+            if _END.match(out_line):
+                break
+            for kind, pattern in kinds:
+                if kind not in found and pattern.search(out_line):
+                    found[kind] = out_line.strip()
+        if len(found) > 1:
+            found.pop('filesystem', None)   # "Operation not permitted" under a network/simulator error
+        out += [(k, cmd[:300], v[:300]) for k, v in found.items()]
+    return out
+
+
+def watch(proc, log, report, every=20):
+    """Wait for proc; meanwhile report each new kind of sandbox block in its log, once."""
+    seen = set()
+    def scan():
+        try: text = log.read_text(errors='replace')
+        except OSError: return
+        for kind, cmd, line in blocked(text):
+            if kind not in seen:
+                seen.add(kind); report(kind, cmd, line)
+    while True:
+        try:
+            rc = proc.wait(timeout=every)
+            scan(); return rc
+        except subprocess.TimeoutExpired:
+            scan()
+
+
 def canonical(target):
     try: return str(uuid.UUID(target))
     except ValueError:
@@ -98,7 +174,7 @@ def main():
     p.add_argument('--thread'); p.add_argument('--target'); p.add_argument('--output'); p.add_argument('--wake-id')
     p.add_argument('--binary', default='codex'); p.add_argument('--dry', action='store_true')
     p.add_argument('--check', action='store_true', help=argparse.SUPPRESS)
-    p.add_argument('--sandbox', choices=['network', 'full'])
+    p.add_argument('--sandbox', choices=list(SANDBOXES))
     p.add_argument('--approved-by')
     p.add_argument('--tag', action='append', default=[])
     p.add_argument('--tries', type=int, default=int(os.environ.get('CODEX_TRIES', '6')))
@@ -110,12 +186,13 @@ def main():
     p.add_argument('extra', nargs=argparse.REMAINDER)
     a = p.parse_args()
     if a.tries < 1 or a.gap < 0: p.error('tries must be positive and gap nonnegative')
-    if a.sandbox and not (a.approved_by and a.approved_by.strip()):
-        p.error('--sandbox requires nonblank --approved-by (user quote or source)')
-    if a.approved_by is not None and not a.sandbox:
-        p.error('--approved-by requires --sandbox network|full')
+    if a.sandbox == 'full' and not (a.approved_by and a.approved_by.strip()):
+        p.error('--sandbox full requires nonblank --approved-by (user quote or source)')
+    if a.approved_by is not None and a.sandbox != 'full':
+        p.error('--approved-by only goes with --sandbox full')
     if a.mode == 'queue' and a.sandbox:
         p.error('queue cannot change sandbox permissions')
+    sandbox = None if a.mode == 'queue' else a.sandbox or DEFAULT_SANDBOX
     extra = a.extra[1:] if a.extra[:1] == ['--'] else a.extra
     top = shlex.split(os.environ.get('CODEX_TOP', ''))
     check_overrides(extra, p)
@@ -131,9 +208,10 @@ def main():
     else:
         cmd += ['exec', '-C', a.cwd]
         if a.mode == 'resume': cmd += ['resume']
-        sandbox_mode = 'danger-full-access' if a.sandbox == 'full' else 'workspace-write'
+        sandbox_mode, network, desc = SANDBOXES[sandbox]
+        prompt += NOTE.format(desc=desc)
         cmd += ['-c', 'sandbox_mode=' + json.dumps(sandbox_mode), '-c', 'approval_policy="never"',
-                '-c', 'sandbox_workspace_write.network_access=' + ('true' if a.sandbox == 'network' else 'false'),
+                '-c', 'sandbox_workspace_write.network_access=' + ('true' if network else 'false'),
                 '-c', 'sandbox_workspace_write.writable_roots=' + json.dumps(roots, ensure_ascii=False)]
         cmd += extra
         if a.output: cmd += ['-o', a.output]
@@ -147,7 +225,7 @@ def main():
         return 0
     if a.start:
         start = dict(name=a.name, event='start', pid=os.getpid(), cwd=a.cwd, prompt=a.prompt,
-                     sandbox=a.sandbox or 'workspace-write', approved_by=a.approved_by, tries=a.tries, gap=a.gap)
+                     sandbox=sandbox, approved_by=a.approved_by, tries=a.tries, gap=a.gap)
         if a.tag:
             start['tags'] = dict(x.split('=', 1) for x in a.tag if '=' in x)
         if a.roadmap:
@@ -170,8 +248,13 @@ def main():
         log = Path(a.log.format(i=i))
         run = cmd if model is None else [cmd[0], '-c', 'model=' + json.dumps(model)] + cmd[1:]
         with log.open('w') as f:
+            def report(kind, command, line, i=i):
+                if not a.wake_id and a.mode != 'queue':
+                    registry['append'](dict(name=a.name, event='sandbox_blocked', kind=kind, sandbox=sandbox,
+                                            command=command, line=line) | {'try': i})
             try:
-                rc = subprocess.run(run, cwd=a.cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT).returncode
+                proc = subprocess.Popen(run, cwd=a.cwd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT)
+                rc = watch(proc, log, report)
             except OSError as e:
                 f.write(str(e) + '\n'); rc = 127
         # Only a failed run whose last lines report capacity is retried: a successful run's log can

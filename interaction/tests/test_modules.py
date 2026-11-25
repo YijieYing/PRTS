@@ -36,6 +36,7 @@ import json,os,pathlib,sys
 with open(os.environ['TEST_CALLS'],'a') as f: f.write(json.dumps({'bin':pathlib.Path(sys.argv[0]).name,'args':sys.argv[1:],'stdin':sys.stdin.read()})+'\\n')
 if os.environ.get('TEST_CAPACITY')=='1': print('at capacity'); sys.exit(1)
 if os.environ.get('TEST_CAPACITY')=='default' and not any(x.startswith('model=') for x in sys.argv): print('at capacity'); sys.exit(1)
+if os.environ.get('TEST_BLOCKED'): print(open(os.environ['TEST_BLOCKED']).read())
 '''
         for name in ('codex', 'osascript'):
             f = self.stub / name; f.write_text(script); f.chmod(0o755)
@@ -129,6 +130,7 @@ if os.environ.get('TEST_CAPACITY')=='default' and not any(x.startswith('model=')
         self.run_cmd('interaction/bin/dispatch', 'dry', self.repo, self.prompt, '--model', 'test', env=env)
         log = (self.state / 'tasks/dry/run.log').read_text()
         self.assertIn('workspace-write', log)
+        self.assertIn('sandbox_workspace_write.network_access=true', log)   # network by default (user 11-25)
         self.assertIn(str(self.repo / '.git'), log)
         self.assertIn('< /dev/null', log)
         self.assertFalse(self.calls.exists())
@@ -137,7 +139,8 @@ if os.environ.get('TEST_CAPACITY')=='default' and not any(x.startswith('model=')
         self.run_cmd('interaction/bin/resume', 'resume', 'uuid', self.repo, self.prompt, '2', '0')
         call = json.loads(self.calls.read_text().splitlines()[0])
         self.assertEqual(call['stdin'], '')
-        self.assertEqual(call['args'][-1], self.prompt.read_text())
+        self.assertTrue(call['args'][-1].startswith(self.prompt.read_text()))
+        self.assertIn('沙箱受阻', call['args'][-1])
         self.assertFalse((self.root / 'INJECTED').exists())
         env = dict(self.env, TEST_CAPACITY='1')
         self.run_cmd('interaction/bin/resume', 'full', 'uuid', self.repo, self.prompt, '2', '0', env=env, rc=75)
@@ -170,10 +173,11 @@ if os.environ.get('TEST_CAPACITY')=='default' and not any(x.startswith('model=')
     def test_sandbox_dry(self):
         for mode in ('dispatch', 'resume'):
             args = (self.repo, self.prompt) if mode == 'dispatch' else ('uuid', self.repo, self.prompt)
-            for sandbox in (None, 'network', 'full'):
+            for sandbox in (None, 'workspace', 'network', 'full'):
                 with self.subTest(mode=mode, sandbox=sandbox):
                     name = mode + '-' + str(sandbox)
-                    options = ['--sandbox', sandbox, '--approved-by', '用户说：允许 "联网"\n出处 #42'] if sandbox else []
+                    options = ['--sandbox', sandbox] if sandbox else []
+                    if sandbox == 'full': options += ['--approved-by', '用户说：允许 "联网"\n出处 #42']
                     self.run_cmd('interaction/bin/' + mode, name, *args, *options, '--dry')
                     logname = 'run.log' if mode == 'dispatch' else 'run-resume-1.log'
                     log = (self.state / 'tasks' / name / logname).read_text()
@@ -181,23 +185,25 @@ if os.environ.get('TEST_CAPACITY')=='default' and not any(x.startswith('model=')
                     configs = [command[i+1] for i, arg in enumerate(command) if arg == '-c']
                     expected = 'danger-full-access' if sandbox == 'full' else 'workspace-write'
                     self.assertIn('sandbox_mode=' + json.dumps(expected), configs)
-                    self.assertIn('sandbox_workspace_write.network_access=' + ('true' if sandbox == 'network' else 'false'), configs)
+                    self.assertIn('sandbox_workspace_write.network_access=' + ('true' if sandbox in (None, 'network') else 'false'), configs)
                     self.assertIn('approval_policy="never"', configs)
-                    self.assertEqual(command[-1], self.prompt.read_text())
+                    self.assertTrue(command[-1].startswith(self.prompt.read_text()))
+                    self.assertIn(('可以联网' if sandbox in (None, 'network') else '不能联网' if sandbox == 'workspace' else '不受沙箱限制'), command[-1])
                     self.assertNotIn('--approved-by', command)
                     self.assertEqual('resume' in command, mode == 'resume')
         self.assertFalse(self.calls.exists())
         self.assertFalse((self.state / 'registry.jsonl').exists())
         # Optional prompt still works when flags immediately follow the workdir.
         self.run_cmd('interaction/bin/dispatch', 'dispatch-network', self.repo,
-                     '--sandbox=network', '--approved-by=fixture', '--dry')
+                     '--sandbox=full', '--approved-by=fixture', '--dry')
 
     def test_sandbox_requires_approval(self):
         for mode in ('dispatch', 'resume'):
             args = (self.repo, self.prompt) if mode == 'dispatch' else ('uuid', self.repo, self.prompt)
-            for options in (['--sandbox', 'network'], ['--sandbox', 'full'],
+            for options in (['--sandbox', 'full'],
                             ['--sandbox', 'full', '--approved-by', ''],
-                            ['--sandbox', 'network', '--approved-by', ' \n\t'],
+                            ['--sandbox', 'full', '--approved-by', ' \n\t'],
+                            ['--sandbox', 'network', '--approved-by', 'fixture'],
                             ['--sandbox', 'unknown', '--approved-by', 'fixture'],
                             ['--approved-by', 'fixture'], ['--sandbox'], ['--approved-by']):
                 with self.subTest(mode=mode, options=options):
@@ -223,19 +229,43 @@ if os.environ.get('TEST_CAPACITY')=='default' and not any(x.startswith('model=')
             args = (self.repo, self.prompt) if mode == 'dispatch' else ('uuid', self.repo, self.prompt, '1', '0')
             for sandbox in (None, 'network', 'full'):
                 name = mode + '-' + str(sandbox)
-                options = ['--sandbox', sandbox, '--approved-by', approval] if sandbox else []
+                options = ['--sandbox', sandbox] if sandbox else []
+                if sandbox == 'full': options += ['--approved-by', approval]
                 self.run_cmd('interaction/bin/' + mode, name, *args, *options)
                 rows = self.rows('interaction/bin/status', name)
                 self.assertEqual(rows[0]['event'], 'start')
-                self.assertEqual(rows[0]['sandbox'], sandbox or 'workspace-write')
-                self.assertEqual(rows[0]['approved_by'], approval if sandbox else None)
+                self.assertEqual(rows[0]['sandbox'], sandbox or 'network')
+                self.assertEqual(rows[0]['approved_by'], approval if sandbox == 'full' else None)
                 self.assertEqual(rows[-1]['event'], 'exit')
         self.assertEqual(len(self.calls.read_text().splitlines()), 6)
         self.assertFalse((self.root / 'INJECTED').exists())
         # Resume never inherits the previous run's relaxed permissions or approval.
         self.run_cmd('interaction/bin/resume', 'resume-full', 'uuid', self.repo, self.prompt)
         start = [r for r in self.rows('interaction/bin/status', 'resume-full') if r['event'] == 'start'][-1]
-        self.assertEqual((start['sandbox'], start['approved_by']), ('workspace-write', None))
+        self.assertEqual((start['sandbox'], start['approved_by']), ('network', None))
+
+    def test_sandbox_blocks_are_recorded_and_waited(self):
+        out = self.root / 'blocked-output'
+        out.write_text('exec\n/bin/zsh -lc \'uv run ruff check\' in /repo\n exited 1 in 3618ms:\n'
+                       '  ├─▶ tcp connect error\n  ╰─▶ Operation not permitted (os error 1)\n'
+                       'exec\n/bin/zsh -lc \'xcodebuild test 2>&1 | tail\' in /repo\n succeeded in 9ms:\n'
+                       'CoreSimulatorService connection became invalid.\n'
+                       'exec\n/bin/zsh -lc \'sed -n 1,9p lib/codex\' in /repo\n succeeded in 0ms:\n'
+                       "    ('network', re.compile(r'tcp connect error CoreSimulatorService connection'))\n"
+                       'exec\n/bin/zsh -lc \'touch ~/x\' in /repo\n exited 1 in 0ms:\n'
+                       'touch: /Users/x/x: Operation not permitted\n')
+        self.run_cmd('interaction/bin/resume', 'boxed', 'uuid', self.repo, self.prompt, '1', '0',
+                     env=dict(self.env, TEST_BLOCKED=str(out)))
+        hits = [r for r in self.rows('interaction/bin/status', 'boxed') if r['event'] == 'sandbox_blocked']
+        self.assertEqual([h['kind'] for h in hits], ['network', 'simulator', 'filesystem'])
+        self.assertEqual(hits[0]['command'], "/bin/zsh -lc 'uv run ruff check' in /repo")
+        self.assertEqual((hits[0]['sandbox'], hits[0]['try']), ('network', 1))
+        waited = self.run_cmd('interaction/bin/wait', 'boxed', '1')
+        self.assertIn('沙箱受阻（sandbox=network）', waited)
+        self.assertIn('CoreSimulatorService', waited)
+        # a clean run of the same task resets the warning
+        self.run_cmd('interaction/bin/resume', 'boxed', 'uuid', self.repo, self.prompt, '1', '0')
+        self.assertNotIn('沙箱受阻', self.run_cmd('interaction/bin/wait', 'boxed', '1'))
 
     def test_sandbox_override_rejection(self):
         for extra in (['--', '--sandbox', 'danger-full-access'], ['-s', 'danger-full-access'],

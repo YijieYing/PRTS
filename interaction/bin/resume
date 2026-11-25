@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: resume <name> <thread> <cwd> <msg-file> [tries] [gap_s] [--sandbox network|full --approved-by TEXT] [--dry]
+# usage: resume <name> <thread> <cwd> <msg-file> [tries] [gap_s] [--sandbox workspace|network|full] [--approved-by TEXT (full only)] [--dry]
 set -eu
 I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 name=${1:?name required}; tid=${2:?thread required}; cwd=${3:?cwd required}; msg=${4:?msg-file required}

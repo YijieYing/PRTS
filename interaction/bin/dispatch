@@ -1,5 +1,5 @@
 #!/bin/bash
-# usage: dispatch <task> <workdir> [prompt-file] [--worktree BRANCH [--base REF]] [--roadmap PROJECT:ID] [--sandbox network|full --approved-by TEXT] [--dry] [extra codex exec args...]
+# usage: dispatch <task> <workdir> [prompt-file] [--worktree BRANCH [--base REF]] [--roadmap PROJECT:ID] [--sandbox workspace|network|full] [--approved-by TEXT (full only)] [--dry] [extra codex exec args...]
 set -eu
 I=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 S=${PRTS_INTERACTION_STATE:-$I/state}
