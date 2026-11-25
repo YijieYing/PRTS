@@ -278,11 +278,9 @@ def schema():
     props['category'] = {'type':'string', 'enum':[k for k in CATEGORIES if k != 'unclassified']}
     for key in ('learned', 'produced'):
         props[key] = {'type':'array', 'items':{'type':'string'}, 'maxItems':3}
-    # topic/suggestion are intentionally optional at the model boundary: a
-    # chore omission is repaired below, while every other field remains strict.
-    item = {'type':'object', 'properties':props,
-            'required':[k for k in props if k not in ('topic','suggestion')],
-            'additionalProperties':False}
+    # Strict structured output needs every property in `required`; an empty
+    # chore topic/suggestion is repaired in classify() instead.
+    item = {'type':'object', 'properties':props, 'required':list(props), 'additionalProperties':False}
     return {'type':'object', 'properties':{'segments':{'type':'array', 'items':item}}, 'required':['segments'], 'additionalProperties':False}
 
 
