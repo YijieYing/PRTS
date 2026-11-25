@@ -116,7 +116,7 @@ clean 使用本地 `origin/<默认分支>` 引用判断提交包含关系（不�
 
 回归：`python3 interaction/tests/test_worktrees.py`，真实临时仓库和裸远程、Codex/gh 替身，子进程关闭 stdin；不清理真实工作树。
 
-`worktrees auto` 扫描登记工作树和常见项目目录。规则 A 是远程同名分支已删除，规则 B 是提交已合并；刚创建且没有自己的提交时，需闲置至少 7 天。删除前必须满足：不是主检出、未锁定、不是 detached，工作区干净，提交可证明不会丢失，并且没有进程或活着的派发使用、私有 Git 文件闲置至少 24 小时。分支删除前保留 14 天；超过 7 天的根目录杂物移入 `~/.Trash`。状态在 `state/worktrees/auto-state.json`，日志在 `state/worktrees/auto.jsonl`，删除事件进入事件队列。`--daily` 每个本地日期只运行一次，`--dry` 只输出判断。`reporter/bin/remind` 每小时调用 `auto --daily`。
+`worktrees auto` 扫描登记工作树和常见项目目录。规则 A 是远程同名分支已删除，规则 B 是提交已合并；刚创建且没有自己的提交时，需闲置至少 7 天。规则 A 的 `seen` 记录在远程删除后仍会保留，只在 worktree 登记消失后移除；fetch 失败时不更新该仓库的记录。删除前必须满足：不是主检出、未锁定、不是 detached，工作区干净，提交可证明不会丢失，并且没有进程或活着的派发使用、私有 Git 文件闲置至少 24 小时。进程检查每次只调用一次 `lsof -a -d cwd -Fn`，cwd 等于 worktree 或位于其子目录都算正在使用，无法读取时保守跳过。分支删除前保留 14 天；超过 7 天的根目录杂物移入 `~/.Trash`。状态在 `state/worktrees/auto-state.json`，日志在 `state/worktrees/auto.jsonl`，删除事件进入事件队列。`--daily` 每个本地日期只运行一次，`--dry` 只输出判断。`reporter/bin/remind` 每小时调用 `auto --daily`。
 
 ## 清理不再用的会话（tidy-sessions）
 `interaction/bin/tidy-sessions [--apply]`：归档本机不会再用的 Codex 会话，可用 `codex unarchive <id>` 恢复。只看 AgentConsole `/api/state` 里 dormant（没有进程占用）的会话；空闲 ≥7 天，或者是派发任务的执行者、任务已审查且空闲 ≥2 天，就归档。不加 `--apply` 只列出候选。

@@ -94,7 +94,7 @@ def inventory(all_repos=False):
     rows = registry['rows']()
     for r in rows:
         if r.get('cwd'): candidates.append(Path(r['cwd']))
-        if r.get('worktree'): candidates.append(Path(r['worktree']['repo']))
+        if r.get('worktree', {}).get('repo'): candidates.append(Path(r['worktree']['repo']))
     repos = set()
     for p in candidates:
         try: repos.add(repository(p))
@@ -162,13 +162,18 @@ def _alive_registry(path):
             return True
     return False
 
-def _in_use(path):
+def _cwd_snapshot():
     try:
-        p = subprocess.run(['lsof', '-a', '-d', 'cwd', '-Fn', '--', str(path)], capture_output=True, text=True, timeout=5)
-        if p.returncode == 1: return False
-        if p.returncode != 0: return True
-        return any(line.startswith('n' + str(path)) for line in p.stdout.splitlines())
-    except (OSError, subprocess.TimeoutExpired): return True
+        p = subprocess.run(['lsof', '-a', '-d', 'cwd', '-Fn'], capture_output=True, text=True, timeout=5)
+        if p.returncode == 1: return set(), True
+        if p.returncode != 0: return set(), True
+        return {line[1:] for line in p.stdout.splitlines() if line.startswith('n')}, False
+    except (OSError, subprocess.TimeoutExpired): return set(), True
+
+def _in_use(path, cwds, unavailable=False):
+    if unavailable: return True
+    target = str(path.resolve())
+    return any(cwd == target or cwd.startswith(target + os.sep) for cwd in cwds)
 
 def _event(action, repo, path='', branch='', rule='', reason=''):
     row = dict(t=dt.datetime.now(dt.timezone.utc).isoformat(), action=action, repo=str(repo), path=str(path), branch=branch, rule=rule, reason=reason)
@@ -189,55 +194,71 @@ def auto(dry=False, daily=False):
             except subprocess.TimeoutExpired: fetch_ok = False
             if not fetch_ok: fetch_reason = 'fetch origin 失败，本次不使用规则 A'
         rows = entries(repo); repo_key = str(repo); previous = state['seen'].setdefault(repo_key, {})
+        cwds, lsof_unavailable = _cwd_snapshot()
         current = {}
+        present_branches = set()
         for row in rows:
             path = Path(row['worktree']).resolve(); branch = row.get('branch','').removeprefix('refs/heads/'); rule='-'; reasons=[]
             idle_now = _idle(path)
-            if path == repo: reasons.append('主检出，保留')
-            if 'locked' in row: reasons.append('worktree 已锁定')
-            if not branch: reasons.append('detached HEAD，保留')
+            protected = path == repo or 'locked' in row or not branch
+            if branch: present_branches.add(branch)
+            if path == repo: reasons = ['主检出，保留']
+            elif 'locked' in row: reasons = ['worktree 已锁定']
+            elif not branch: reasons = ['detached HEAD，保留']
             head = row.get('HEAD','')
             remote_ref = 'refs/remotes/origin/' + branch if branch else ''
             remote_exists = bool(remote_ref and git(repo, 'show-ref', '--verify', '--quiet', remote_ref, check=False).returncode == 0)
             if remote_exists: current[branch] = git(repo, 'rev-parse', remote_ref).stdout.strip()
             gone = fetch_ok and branch and not remote_exists and ((branch in previous) or (git(path, 'config', '--get', 'branch.'+branch+'.merge', check=False).stdout.strip() == 'refs/heads/'+branch and '[gone]' in git(path, 'for-each-ref', '--format=%(upstream:track)', 'refs/heads/'+branch, check=False).stdout))
             merged = False
-            if branch:
+            if branch and not protected:
                 try: merged = inspect(repo, row, path)[2]
                 except Exception: pass
             if gone: rule='A'
             elif merged: rule='B'
-            if rule == 'B':
+            if rule == 'B' and not protected:
                 base = default_ref(repo)
                 mb = git(repo, 'merge-base', head, base, check=False).stdout.strip()
-                if mb and git(repo, 'rev-list', '--count', mb+'..'+head, check=False).stdout.strip() == '0' and not _git_idle(path, 7*86400): reasons.append('刚建且闲置不足 7 天')
-            if fetch_reason: reasons.append(fetch_reason)
+                reflog = git(repo, 'reflog', 'show', '--format=%gs', branch, check=False).stdout
+                own_history = any(x.startswith(('commit:', 'rebase', 'cherry-pick')) for x in reflog.splitlines())
+                if mb and git(repo, 'rev-list', '--count', mb+'..'+head, check=False).stdout.strip() == '0' and not own_history and not _git_idle(path, 7*86400): reasons.append('刚建且闲置不足 7 天')
+            if not protected and fetch_reason: reasons.append(fetch_reason)
             dirty = bool(git(path, 'status', '--porcelain', '--untracked-files=all', check=False).stdout.strip())
-            if dirty: reasons.append('有改动或无法读取工作区')
-            if rule == 'A':
+            if not protected and dirty: reasons.append('有改动或无法读取工作区')
+            if not protected and rule == 'A':
                 contained = (branch in previous and git(repo, 'merge-base', '--is-ancestor', head, previous[branch], check=False).returncode == 0) or git(repo, 'for-each-ref', '--contains', head, '--format=%(refname)', 'refs/remotes/').stdout.strip()
                 if not contained: reasons.append('远程已删，但本地有远程没见过的提交')
-            elif rule not in ('B',): reasons.append('未满足规则 A/B')
-            if _in_use(path): reasons.append('可能正在使用')
-            if _alive_registry(path): reasons.append('有活着的派发')
-            if not idle_now: reasons.append('闲置不足 24 小时')
+            elif not protected and rule not in ('B',): reasons.append('未满足规则 A/B')
+            if not protected and _in_use(path, cwds, lsof_unavailable): reasons.append('可能正在使用')
+            if not protected and _alive_registry(path): reasons.append('有活着的派发')
+            if not protected and not idle_now: reasons.append('闲置不足 24 小时')
             print(f'{path}\tbranch={branch or "(detached)"}\trepo={repo}\trule={rule}\treason={"；".join(reasons) or "可删除"}')
-            if reasons or path == repo or dry: continue
+            if reasons or protected or dry: continue
             try:
                 git(repo, 'worktree', 'remove', str(path)); deleted += 1; changed = True
                 state['pending_branches'].append(dict(repo=repo_key, branch=branch, sha=head, removed_at=dt.datetime.now().isoformat(), rule=rule)); _event('worktree_removed', repo, path, branch, rule, '；'.join(reasons) or '安全检查通过')
-            except (ValueError, subprocess.TimeoutExpired) as e: print('  ERROR '+str(e)); failed=True
-        state['seen'][repo_key] = current
+            except (ValueError, subprocess.TimeoutExpired) as e:
+                _event('remove_failed', repo, path, branch, rule, str(e)); print('  ERROR '+str(e)); failed=True
+        if fetch_ok:
+            retained = {b: sha for b, sha in previous.items() if b in present_branches and b not in current}
+            retained.update(current)
+            state['seen'][repo_key] = retained
     # Branch retention and old debris are deliberately skipped in dry runs.
     if not dry:
         kept=[]
+        all_wt = {str(repo): entries(Path(repo)) for repo in {p.get('repo') for p in state['pending_branches']} if repo and Path(repo).exists()}
         for p in state['pending_branches']:
+            exists = git(p['repo'], 'show-ref', '--verify', '--quiet', 'refs/heads/'+p['branch'], check=False).returncode == 0
+            sha_same = exists and git(p['repo'], 'rev-parse', p['branch'], check=False).stdout.strip() == p['sha']
+            if not exists:
+                _event('branch_dropped', p['repo'], '', p['branch'], p['rule'], '分支已不存在'); continue
+            if not sha_same:
+                _event('branch_dropped', p['repo'], '', p['branch'], p['rule'], '分支 sha 变了'); continue
             try: old = (dt.datetime.now() - dt.datetime.fromisoformat(p.get('removed_at',''))).total_seconds() >= 14*86400
             except (ValueError, TypeError): old = False
             if not old: kept.append(p); continue
-            if any(r.get('repo') == p['repo'] and r.get('branch') == p['branch'] for r in state['pending_branches'] if r is not p): kept.append(p); continue
-            if git(p['repo'], 'show-ref', '--verify', '--quiet', 'refs/heads/'+p['branch'], check=False).returncode == 0 and git(p['repo'], 'rev-parse', p['branch'], check=False).stdout.strip() == p['sha']:
-                cmd = '-d' if p['rule']=='B' else '-D'; git(p['repo'], 'branch', cmd, '--', p['branch'], check=False); _event('branch_removed', p['repo'], '', p['branch'], p['rule'], '保留期满')
+            if any(r.get('branch') == 'refs/heads/'+p['branch'] for r in all_wt.get(p['repo'], [])): kept.append(p); continue
+            cmd = '-d' if p['rule']=='B' else '-D'; git(p['repo'], 'branch', cmd, '--', p['branch'], check=False); _event('branch_removed', p['repo'], '', p['branch'], p['rule'], '保留期满')
         state['pending_branches'] = kept
         trash = Path.home()/'.Trash'; trash.mkdir(parents=True, exist_ok=True)
         for base in [root()]:

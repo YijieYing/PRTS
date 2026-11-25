@@ -128,6 +128,7 @@ class Worktrees(unittest.TestCase):
         for name in ('HEAD', 'index', 'logs/HEAD'):
             p = gd / name
             if p.exists(): os.utime(p, (stamp, stamp))
+        if gd.exists(): os.utime(gd, (stamp, stamp))
 
     def auto(self, *args, ok=True):
         return self.run_cmd(BIN / 'worktrees', 'auto', *args, ok=ok)
@@ -150,6 +151,59 @@ class Worktrees(unittest.TestCase):
         before = (self.state / 'worktrees' / 'auto-state.json').exists()
         self.auto('--dry'); self.assertEqual(before, (self.state / 'worktrees' / 'auto-state.json').exists())
         self.auto('--daily'); self.assertEqual(self.auto('--daily').returncode, 0)
+
+    def test_auto_rule_a_new_local_commit_is_skipped(self):
+        self.dispatch('new-after-delete', '--dry'); path = self.path('new-after-delete')
+        self.git('push', '-u', 'origin', 'new-after-delete', cwd=path); self.auto()
+        self.git('push', 'origin', '--delete', 'new-after-delete')
+        (path / 'file').write_text('unseen'); self.git('commit', '-am', 'unseen', cwd=path); self.age_git(path, 2)
+        self.assertIn('远程已删，但本地有远程没见过的提交', self.auto().stdout); self.assertTrue(path.exists())
+
+    def test_auto_rule_b_merged_and_fresh_idle_window(self):
+        self.dispatch('merged-auto', '--dry'); path = self.path('merged-auto')
+        (path / 'file').write_text('merged'); self.git('commit', '-am', 'merged', cwd=path)
+        self.git('merge', '--ff-only', 'merged-auto'); self.git('push', 'origin', 'main'); self.age_git(path, 2)
+        out = self.auto().stdout; self.assertFalse(path.exists(), out)
+        self.dispatch('fresh-two', '--dry'); fresh = self.path('fresh-two'); self.age_git(fresh, 2)
+        self.assertTrue(fresh.exists()); self.git('worktree', 'prune'); self.age_git(fresh, 8); out = self.auto().stdout; self.assertIn('rule=B', out)
+
+    def test_auto_dirty_young_and_live_dispatch_are_skipped(self):
+        self.dispatch('dirty-auto', '--dry'); dirty = self.path('dirty-auto'); self.age_git(dirty, 2)
+        (dirty / 'untracked').write_text('x'); self.assertIn('有改动', self.auto().stdout); self.assertTrue(dirty.exists())
+        self.dispatch('young-auto', '--dry'); young = self.path('young-auto'); self.assertIn('闲置不足 24 小时', self.auto().stdout)
+        self.dispatch('live-auto', '--dry'); live = self.path('live-auto'); self.age_git(live, 2)
+        with (self.state / 'registry.jsonl').open('a') as f: f.write(json.dumps({'name':'live','event':'start','pid':os.getpid(),'cwd':str(live),'worktree':{'path':str(live)}})+'\n')
+        self.assertIn('有活着的派发', self.auto().stdout); self.assertTrue(live.exists())
+
+    def test_auto_upstream_alias_is_not_rule_a(self):
+        self.dispatch('alias-upstream', '--dry'); path = self.path('alias-upstream')
+        self.git('branch', '--set-upstream-to=origin/main', 'alias-upstream', cwd=path)
+        self.assertIn('rule=-', self.auto().stdout)
+
+    def test_auto_protected_main_detached_and_locked(self):
+        self.dispatch('detached-auto', '--dry'); detached = self.path('detached-auto')
+        self.git('checkout', '--detach', cwd=detached); out = self.auto().stdout
+        self.assertIn('detached HEAD，保留', out)
+        self.git('worktree', 'lock', str(detached)); out = self.auto().stdout
+        self.assertIn(str(self.repo)+'\tbranch=main', out); self.assertIn('worktree 已锁定', out)
+
+    def test_auto_pending_branch_removed_after_14_days(self):
+        self.dispatch('pending-14', '--dry'); path = self.path('pending-14'); self.git('push', '-u', 'origin', 'pending-14', cwd=path); self.auto(); self.git('push', 'origin', '--delete', 'pending-14'); self.age_git(path, 2); self.auto()
+        state_path = self.state / 'worktrees' / 'auto-state.json'; state = json.loads(state_path.read_text())
+        for p in state['pending_branches']:
+            p['removed_at'] = '2000-01-01T00:00:00'
+        state_path.write_text(json.dumps(state)); self.auto(); self.assertNotIn('refs/heads/pending-14', self.git('show-ref'))
+
+    def test_auto_lsof_child_directory_skips(self):
+        self.dispatch('child-cwd', '--dry'); path = self.path('child-cwd'); self.age_git(path, 2)
+        (self.home / 'bin' / 'lsof').write_text(f'#!/bin/sh\nprintf "n{path}/interaction\\n"\n')
+        (self.home / 'bin' / 'lsof').chmod(0o755)
+        self.assertIn('可能正在使用', self.auto().stdout); self.assertTrue(path.exists())
+
+    def test_auto_prunes_missing_registration_and_trashes_old_debris(self):
+        self.dispatch('missing-auto', '--dry'); missing = self.path('missing-auto'); shutil = __import__('shutil'); shutil.rmtree(missing)
+        old = self.root / 'repo' / '.ci.log'; old.write_text('old'); os.utime(old, (1, 1)); new = self.root / 'repo' / 'new.ci.log'; new.write_text('new')
+        self.auto(); self.assertNotIn(str(missing), self.git('worktree', 'list')); self.assertTrue((self.home / '.Trash' / '.ci.log').exists()); self.assertTrue(new.exists())
 
 
 if __name__ == '__main__': unittest.main()
