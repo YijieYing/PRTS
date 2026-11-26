@@ -6,7 +6,7 @@
 |---|---|
 | `bin/dispatch` | `<task> <workdir> [prompt文件] [--worktree 分支 [--base ref]] [--roadmap 工程:编号] [--sandbox network或full --approved-by "用户原话或出处"] [--dry] [Codex exec 参数...]`；省略 prompt 时读该任务的 `prompt.md`。异步启动并检查活动；`--dry`（兼容 `DISPATCH_DRY=1`）复制 prompt、记录命令（带 `--worktree` 时也准备工作树），不启动 Codex 或写 registry |
 | `bin/roadmap` | `list [工程] [--json]`；`mark 工程 编号 状态 [--evidence 文本]`：解析或提交单条状态与证据 |
-| `bin/worktrees` | `list` 或 `clean [--dry] [--all]`：列出工作树；只清理干净且已合并的工作树 |
+| `bin/worktrees` | `list`、`auto [--dry] [--daily] [--now] [--repo PATH...]` 或 `clean [--dry] [--all]`：安全清理工作树 |
 | `bin/resume` | `<task> <session UUID> <cwd> <消息文件> [重试次数=6] [间隔秒=600] [--sandbox network或full --approved-by "用户原话或出处"] [--dry]`；同步执行 |
 | `bin/wake` | `add <带时区ISO时间或HH:MM> <UUID或精确会话名> <prompt文件> [--name NAME] [--mode resume或queue]`；`list`；`cancel <id>` |
 | `bin/github_poll` | 不带参数运行一次，从 registry 的 cwd 派生 GitHub 仓库，PR 变化进入 L1 复核队列 |
@@ -110,7 +110,9 @@ interaction/bin/worktrees clean
 
 dispatch 不自动清理。**调用方验收、合并之后，运行 `worktrees clean`。** list 输出路径、分支、仓库、改动、合并状态和 registry 中对应任务名。默认只扫描统一根目录中的登记工作树；`--all` 扩展到当前仓库、统一根目录与 registry 所发现仓库的全部登记工作树，始终保留主检出、锁定工作树和 detached HEAD。
 
-clean 使用本地 `origin/<默认分支>` 引用判断提交包含关系（不自动 fetch；需要最新状态时先自行 fetch）；无远程时使用主检出 HEAD。也可通过 `gh pr list --head <分支> --state merged` 识别 squash 合并，限定默认目标分支并核对 PR 的 headRefOid 等于当前提交，防止误用同名旧 PR。gh 不可用或失败时只依赖提交包含关系。
+`worktrees auto` 每小时运行，闲置门槛为 30 分钟；规则 A（远程分支删除且没有未见提交）和规则 B（已合并且满足 7 天保护期）保持不变。`--now` 只跳过闲置检查，仍检查干净、lsof、活派发、锁定和 detached 等条件；`--repo` 可重复指定仓库。没有非主检出的仓库直接跳过，不 fetch。`--daily` 保留作兼容参数。
+
+`clean [--dry] [--all]` 等价于 `auto --now`：默认只处理 `inventory()` 中的登记仓库，`--all` 扩展到 `inventory(True)`。合并验收后立即运行它；输出沿用 auto。lsof、活派发和其它安全检查仍然有效。闲置超过 7 天且规则 A/B 都不成立的工作树只产生一次 L1 `worktrees_stale` 提醒，列表变化后才会再次提醒。
 
 有已跟踪改动或未跟踪文件就跳过；忽略文件不计入改动。未合并时说明原因，并在没有任何远程引用包含当前提交时标为「未推送」。通过检查后仅用 `git worktree remove`、`git branch -d`，不用强制删除。若 `-d` 拒绝（例如 squash 后无可证明已合并的 upstream），工作树已移除而分支保留，并打印原因。`--dry` 只读，不移除工作树或分支；运行中的任务应由调用方验收后再清理。
 

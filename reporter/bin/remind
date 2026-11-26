@@ -6,6 +6,8 @@ set -u
 M=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)   # reporter/
 P=$(dirname "$M")                                         # PRTS root
 echo "== $(date '+%F %T') remind"
+mkdir -p "$P/interaction/state/worktrees"
+( "$P/interaction/bin/worktrees" auto </dev/null >>"$P/interaction/state/worktrees/auto.log" 2>&1 & )
 "$P/pulse/bin/pulse" ear sync --no-notify </dev/null || echo "warning: pulse ear sync failed (rc=$?)" >&2
 "$M/bin/recap" --auto --synced </dev/null || echo "recap failed" >&2
 "$P/pulse/bin/pulse" check </dev/null || echo "pulse check failed (rc=$?)" >&2
