@@ -9,19 +9,23 @@ import sys
 import datetime as dt
 import shutil
 import time
+import fcntl
+
+IDLE_SECONDS = 1800
+STALE_SECONDS = 7 * 86400
 
 registry = runpy.run_path(str(Path(__file__).with_name('registry')))
 
 
-def run(args, cwd=None, check=True):
-    p = subprocess.run(args, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+def run(args, cwd=None, check=True, timeout=60):
+    p = subprocess.run(args, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
     if check and p.returncode:
         raise ValueError(p.stderr.strip() or p.stdout.strip() or 'command failed: ' + ' '.join(args))
     return p
 
 
-def git(repo, *args, check=True):
-    return run(['git', '-C', str(repo), *args], check=check)
+def git(repo, *args, check=True, timeout=60):
+    return run(['git', '-C', str(repo), *args], check=check, timeout=timeout)
 
 
 def root():
@@ -138,7 +142,7 @@ def _age(path):
     except OSError: return float('inf')
 
 def _idle(path):
-    return _git_idle(path, 86400)
+    return _git_idle(path, IDLE_SECONDS)
 
 def _git_idle(path, seconds):
     gd = git(path, 'rev-parse', '--git-dir', check=False).stdout.strip()
@@ -180,21 +184,72 @@ def _event(action, repo, path='', branch='', rule='', reason=''):
     p = registry['state']() / 'worktrees'; p.mkdir(parents=True, exist_ok=True)
     with (p / 'auto.jsonl').open('a') as f: f.write(json.dumps(row, ensure_ascii=False) + '\n')
 
-def auto(dry=False, daily=False):
+def _merged_prs(repo, cache):
+    key = str(repo)
+    if key in cache: return cache[key]
+    result = {}
+    try:
+        p = run(['gh', 'pr', 'list', '--state', 'merged', '--json', 'headRefName,headRefOid', '--limit', '1000'], cwd=repo, check=False, timeout=15)
+        if p.returncode == 0:
+            for row in json.loads(p.stdout):
+                result.setdefault(row.get('headRefName'), set()).add(row.get('headRefOid'))
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        result = {}
+    cache[key] = result
+    return result
+
+
+def _repo_selection(all_repos=False, requested=None):
+    if requested:
+        result = []
+        for item in requested:
+            result.append(repository(Path(item).expanduser()))
+        return sorted(set(result))
+    if all_repos is not None:
+        found = {repo for repo, _, _, _ in inventory(all_repos)}
+        return sorted(found)
+    return scan_repositories()
+
+
+def auto(dry=False, daily=False, now=False, all_repos=None, requested=None, verbose=False):
     state, state_path = _auto_state(); today = dt.datetime.now().date().isoformat()
     if daily and state.get('last_daily') == today: return 0
+    lock_handle = None
+    if not dry:
+        lock_path = registry['state']() / 'worktrees' / 'auto.lock'
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_handle = lock_path.open('a+')
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print('另一个 auto 正在运行')
+            return 0
     state.setdefault('seen', {}); state.setdefault('pending_branches', [])
     changed = False; deleted = 0; failed = False
-    for repo in scan_repositories():
+    try:
+        repos = _repo_selection(all_repos, requested)
+    except (ValueError, OSError):
+        repos = []
+    cwds, lsof_unavailable = _cwd_snapshot()
+    merged_cache = {}
+    stale = []
+    for repo in repos:
+        rows = entries(repo)
+        non_main = [r for r in rows if Path(r['worktree']).resolve() != repo]
+        if not non_main:
+            if verbose:
+                print(f'{repo}\tbranch=main\trepo={repo}\trule=-\treason=无非主检出 worktree，跳过')
+            continue
+        stale_idle = {str(Path(r['worktree']).resolve()): _git_idle(Path(r['worktree']).resolve(), STALE_SECONDS)
+                      for r in non_main}
         if not dry: git(repo, 'worktree', 'prune', check=False)
         fetch_ok = True
         fetch_reason = ''
         if git(repo, 'remote', 'get-url', 'origin', check=False).returncode == 0 and not dry:
-            try: fetch_ok = git(repo, 'fetch', '--prune', 'origin', check=False).returncode == 0
+            try: fetch_ok = git(repo, 'fetch', '--prune', 'origin', check=False, timeout=30).returncode == 0
             except subprocess.TimeoutExpired: fetch_ok = False
             if not fetch_ok: fetch_reason = 'fetch origin 失败，本次不使用规则 A'
         rows = entries(repo); repo_key = str(repo); previous = state['seen'].setdefault(repo_key, {})
-        cwds, lsof_unavailable = _cwd_snapshot()
         current = {}
         present_branches = set()
         for row in rows:
@@ -211,9 +266,15 @@ def auto(dry=False, daily=False):
             if remote_exists: current[branch] = git(repo, 'rev-parse', remote_ref).stdout.strip()
             gone = fetch_ok and branch and not remote_exists and ((branch in previous) or (git(path, 'config', '--get', 'branch.'+branch+'.merge', check=False).stdout.strip() == 'refs/heads/'+branch and '[gone]' in git(path, 'for-each-ref', '--format=%(upstream:track)', 'refs/heads/'+branch, check=False).stdout))
             merged = False
-            if branch and not protected:
-                try: merged = inspect(repo, row, path)[2]
-                except Exception: pass
+            if branch and not protected and not gone:
+                try:
+                    ref = default_ref(repo)
+                    merged = git(repo, 'merge-base', '--is-ancestor', head, ref, check=False).returncode == 0
+                    if not merged and ref.startswith('refs/remotes/origin/'):
+                        prs = _merged_prs(repo, merged_cache)
+                        merged = head in prs.get(branch, set()) or head in prs.get(None, set())
+                except (ValueError, OSError, subprocess.TimeoutExpired):
+                    pass
             if gone: rule='A'
             elif merged: rule='B'
             if rule == 'B' and not protected:
@@ -231,7 +292,11 @@ def auto(dry=False, daily=False):
             elif not protected and rule not in ('B',): reasons.append('未满足规则 A/B')
             if not protected and _in_use(path, cwds, lsof_unavailable): reasons.append('可能正在使用')
             if not protected and _alive_registry(path): reasons.append('有活着的派发')
-            if not protected and not idle_now: reasons.append('闲置不足 24 小时')
+            if not protected and not now and not idle_now: reasons.append('闲置不足 30 分钟')
+            if not protected and rule not in ('A', 'B') and stale_idle.get(str(path), False):
+                stale.append(str(path))
+            if path == repo and not verbose:
+                continue
             print(f'{path}\tbranch={branch or "(detached)"}\trepo={repo}\trule={rule}\treason={"；".join(reasons) or "可删除"}')
             if reasons or protected or dry: continue
             try:
@@ -268,6 +333,12 @@ def auto(dry=False, daily=False):
                     dest=trash/f.name
                     if dest.exists(): dest=trash/(f.name+'.'+str(int(time.time())))
                     shutil.move(str(f), str(dest)); _event('debris_trashed', '', f, '', '-', '超过 7 天')
+        old_stale = state.get('stale_paths', [])
+        if stale != old_stale and stale:
+            text = f"{len(stale)} 个 worktree 闲置超过 7 天且未合并：" + '、'.join(stale)
+            subprocess.run([str(Path(__file__).parents[1]/'bin/event'),'add','L1','worktrees_stale',text], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, check=False)
+            state['stale_date'] = today
+        state['stale_paths'] = stale
         state['last_daily'] = today if daily else state.get('last_daily'); _save_auto(state, state_path)
         if deleted:
             subprocess.run([str(Path(__file__).parents[1]/'bin/event'),'add','L0','worktrees_auto',f'删除 {deleted} 个 worktree'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, check=False)
@@ -309,13 +380,17 @@ def main():
     p.add_argument('--dry', action='store_true')
     p.add_argument('--daily', action='store_true')
     p.add_argument('--all', action='store_true')
-    p.add_argument('--repo'); p.add_argument('--branch'); p.add_argument('--base')
+    p.add_argument('--repo', action='append'); p.add_argument('--branch'); p.add_argument('--base')
+    p.add_argument('--now', action='store_true'); p.add_argument('--verbose', action='store_true')
     a = p.parse_args()
     if a.command == 'prepare':
-        print(json.dumps(prepare(a.repo, a.branch, a.base)))
+        repo_arg = a.repo[-1] if isinstance(a.repo, list) else a.repo
+        print(json.dumps(prepare(repo_arg, a.branch, a.base)))
         return
     if a.command == 'auto':
-        raise SystemExit(auto(a.dry, a.daily))
+        raise SystemExit(auto(a.dry, a.daily, a.now, None, a.repo, a.verbose))
+    if a.command == 'clean':
+        raise SystemExit(auto(a.dry, False, True, a.all, a.repo, a.verbose))
     failed = False
     for repo, row, path, tasks in inventory(a.all):
         branch, dirty, merged, reason = inspect(repo, row, path)

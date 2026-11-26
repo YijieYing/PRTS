@@ -97,8 +97,8 @@ closed 包含 outcome；default_used 包含 value；default_ok 包含布尔 ok�
 
 ## 送达（2026-11-12）
 - **每小时提醒：`bin/remind`，由 launchd 运行**（`config/launchd/com.prts.reporter-remind.plist`，全天每小时第 7 分钟）。
+  它会把 `interaction/bin/worktrees auto` 放到后台运行，日志写入 `interaction/state/worktrees/auto.log`，并用 `auto.lock` 的非阻塞 `fcntl.flock` 防止重叠；因此不会拖慢后续提醒。
   - 依次运行 `pulse ear sync --no-notify`、`recap --auto --synced`、`pulse check`、`ask expire`，随后检查 DDL/组会提醒，非 quiet 时再运行 `ask due --channel bark`。
-  - 每小时在 roadmap 同步后调用 `interaction/bin/worktrees auto --daily`，按本地日期自动清理已用完的工作树。
   - 有待推送的问题，才用 `notify alert` 推到手机（Bark）和电脑（macOS 通知）；没有就什么都不发。
   - 推送标题直接用第一条问题本身，多条时注明「共 N 条」（11-13 用户反馈：「PRTS 提醒」这种标题让人不想点开）。
   - Ear 每轮只同步一次；同步失败只记日志，不中断提醒。quiet 时段暂停所有问题推送（包括 blocking），但日报照常写备忘录、照常推送。
