@@ -62,6 +62,16 @@ def default_ref(repo):
     return 'HEAD'
 
 
+def merged_into_default(repo, head, ref):
+    """Ancestor of the default branch on origin, or of the local branch with the same name
+    (locally merged but not pushed yet, e.g. PRTS main; 11-26)."""
+    refs = [ref]
+    if ref.startswith('refs/remotes/origin/'):
+        local = 'refs/heads/' + ref.removeprefix('refs/remotes/origin/')
+        if git(repo, 'show-ref', '--verify', '--quiet', local, check=False).returncode == 0: refs.append(local)
+    return any(git(repo, 'merge-base', '--is-ancestor', head, r, check=False).returncode == 0 for r in refs)
+
+
 def prepare(repo, branch, base=None):
     source = repo
     repo = repository(repo)
@@ -269,7 +279,7 @@ def auto(dry=False, daily=False, now=False, all_repos=None, requested=None, verb
             if branch and not protected and not gone:
                 try:
                     ref = default_ref(repo)
-                    merged = git(repo, 'merge-base', '--is-ancestor', head, ref, check=False).returncode == 0
+                    merged = merged_into_default(repo, head, ref)
                     if not merged and ref.startswith('refs/remotes/origin/'):
                         prs = _merged_prs(repo, merged_cache)
                         merged = head in prs.get(branch, set()) or head in prs.get(None, set())
@@ -353,7 +363,7 @@ def inspect(repo, row, path):
     reason = ''
     try:
         ref = default_ref(repo)
-        merged = git(repo, 'merge-base', '--is-ancestor', row['HEAD'], ref, check=False).returncode == 0
+        merged = merged_into_default(repo, row['HEAD'], ref)
         if not merged and branch and ref.startswith('refs/remotes/origin/'):
             # Any merged PR whose head is exactly this commit counts: repos often merge into a
             # branch other than the default (EchoAsRecord: default main, PRs into dev; 11-15).

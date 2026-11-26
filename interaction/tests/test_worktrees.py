@@ -192,6 +192,13 @@ class Worktrees(unittest.TestCase):
         self.dispatch('fresh-two', '--dry'); fresh = self.path('fresh-two'); self.age_git(fresh, 2)
         self.assertTrue(fresh.exists()); self.git('worktree', 'prune'); self.age_git(fresh, 8); out = self.auto().stdout; self.assertIn('rule=B', out)
 
+    def test_clean_removes_worktree_merged_into_unpushed_local_main(self):
+        self.dispatch('local-merge', '--dry'); path = self.path('local-merge')
+        (path / 'file').write_text('local'); self.git('commit', '-am', 'local', cwd=path)
+        self.git('merge', '--no-ff', '--no-edit', 'local-merge')
+        out = self.run_cmd(BIN / 'worktrees', 'clean').stdout
+        self.assertIn('rule=B', out); self.assertFalse(path.exists(), out)
+
     def test_auto_dirty_young_and_live_dispatch_are_skipped(self):
         self.dispatch('dirty-auto', '--dry'); dirty = self.path('dirty-auto'); self.age_git(dirty, 2)
         (dirty / 'untracked').write_text('x'); self.assertIn('有改动', self.auto().stdout); self.assertTrue(dirty.exists())
